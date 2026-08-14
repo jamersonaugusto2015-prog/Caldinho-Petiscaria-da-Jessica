@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #B91C1C;
+  --color-brand-primary-hover: #991B1B;
+  --color-brand-secondary: #D97706;
+  --color-bg-main: #F5F5F4;
+  --color-bg-dark: #121214;
+  --color-surface-card: #FFFFFF;
+  --color-surface-border: #E7E5E4;
+  --color-text-heading: #1C1917;
+  --color-text-body: #57534E;
+
+  --color-status-received: #2563EB;
+  --color-status-preparing: #D97706;
+  --color-status-delivering: #7C3AED;
+  --color-status-delivered: #059669;
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/* Google Material Symbols (ícones do splash) */
+.splash-icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 72px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0;
+}
+
+/* Custom Scrollbar Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Leaflet: pinos customizados */
+.live-map-pin {
+  background: transparent;
+  border: none;
+}
+.live-map-pin-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.live-map-pin-pulse {
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 4px 12px rgba(0, 0, 0, 0.35);
+  animation: lmPulse 1.6s ease-in-out infinite;
+}
+@keyframes lmPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+.leaflet-container {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.leaflet-container a.leaflet-control-zoom-in,
+.leaflet-container a.leaflet-control-zoom-out {
+  color: #1c1917;
+}
+
+/* Impressão térmica (80mm) */
+@media print {
+  @page {
+    margin: 0;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  .print-area .receipt-divider {
+    border-color: #000 !important;
+  }
+}
+

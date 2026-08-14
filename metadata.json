@@ -1,0 +1,6 @@
+{
+  "name": "Caldinho Express",
+  "description": "Aplicativo delivery de caldinhos, petiscos e bebidas com acompanhamento em tempo real, painel do restaurante e modo entregador.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

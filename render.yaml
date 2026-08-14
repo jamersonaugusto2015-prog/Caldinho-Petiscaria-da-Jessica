@@ -1,0 +1,26 @@
+# Render Blueprint — deploy automático do Caldinho Express
+# Como usar: github -> New Blueprint -> selecione este repo (ou crie o serviço Web manualmente)
+services:
+  - type: web
+    name: caldinho-express
+    runtime: node
+    plan: free # free = hiberna após 15min sem acesso e acorda sozinho
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: PORT
+        value: 10000
+      - key: TZ
+        value: America/Recife
+      - key: DATA_DIR
+        value: /data
+      - key: CORS_ORIGIN
+        sync: false # preencha com https://seu-app.onrender.com
+    disk:
+      name: caldinho-data
+      mountPath: /data
+      sizeGB: 1
