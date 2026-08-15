@@ -98,14 +98,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     await placeAndHandle(paymentMethod);
   };
 
-  // "Continuar para Pagamento": com PIX cadastrado, vai direto para a tela do QR
+  // "Continuar para Pagamento": abre a escolha da forma (PIX padrão, cartão e dinheiro disponíveis)
   const handleContinueToPayment = () => {
     if (!dadosValid) return;
-    if (settings.pixKey) {
-      void placeAndHandle('pix');
-    } else {
-      setStep('pagamento');
-    }
+    setStep('pagamento');
   };
 
   const deliveryLabel =
@@ -444,11 +440,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 text-center space-y-2">
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-[#059669]">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>QR Code PIX de R$ {total.toFixed(2)} gerado após confirmar o pedido</span>
+                        <span>PIX de R$ {total.toFixed(2)} — chave da loja na próxima tela</span>
                       </div>
                       <p className="text-[11px] text-[#57534E]">
-                        Você poderá escanear o QR Code na próxima tela. O pedido será confirmado pela cozinha
-                        após o pagamento.
+                        Após confirmar, você copia a chave PIX da loja, paga no seu banco e envia o
+                        comprovante pelo WhatsApp. A cozinha confirma o pedido.
                       </p>
                     </div>
                   )}
@@ -534,22 +530,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
               {step === 'dados' ? (
                 <button
                   type="button"
-                  disabled={!dadosValid || isProcessing}
+                  disabled={!dadosValid}
                   onClick={handleContinueToPayment}
                   className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-4 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm disabled:opacity-50"
                 >
-                  {isProcessing ? (
-                    <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  ) : (
-                    <QrCode className="w-4 h-4" />
-                  )}
-                  <span>
-                    {isProcessing
-                      ? 'Gerando PIX...'
-                      : settings.pixKey
-                      ? 'Continuar para Pagamento (PIX)'
-                      : 'Continuar para Pagamento'}
-                  </span>
+                  <span>Continuar para Pagamento</span>
                   <span className="text-xs font-bold text-[#FDE68A]">R$ {total.toFixed(2)}</span>
                 </button>
               ) : (
