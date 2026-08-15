@@ -40,7 +40,7 @@ import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
 import { api } from '../../lib/api';
-import { generatePixCopyPaste, generateRandomPixKey, validatePixKey } from '../../shared/pix';
+import { generatePixCopyPaste, generateRandomPixKey, validatePixKey, normalizePixKey } from '../../shared/pix';
 import { formatHourRange } from '../../shared/geo';
 import { resizeImage, ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 
@@ -1747,6 +1747,12 @@ const customers: CustomerSummary[] = (() => {
                   <div className="text-[10px] font-extrabold text-[#1C1917] uppercase tracking-wider">
                     Prévia do PIX (copia e cola) — sua chave em destaque:
                   </div>
+                  {normalizePixKey(configDraft.pixKey) !== configDraft.pixKey.trim() && (
+                    <div className="text-[9px] text-[#92400E] font-bold bg-[#FEF3C7] border border-[#FCD34D] rounded-lg px-2 py-1 break-all">
+                      Pontuação removida automaticamente: {configDraft.pixKey.trim()} →{' '}
+                      {normalizePixKey(configDraft.pixKey)}
+                    </div>
+                  )}
                   <div className="text-[9px] font-mono text-[#57534E] break-all leading-relaxed">
                     {generatePixCopyPaste({
                       pixKey: configDraft.pixKey,
@@ -1757,7 +1763,7 @@ const customers: CustomerSummary[] = (() => {
                     })}
                   </div>
                   <div className="text-[9px] text-[#065F46] font-bold bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-2 py-1 break-all">
-                    Sua chave: {configDraft.pixKey}
+                    Sua chave no código: {normalizePixKey(configDraft.pixKey)}
                   </div>
                 </div>
               )}

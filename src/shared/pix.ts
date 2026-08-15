@@ -36,7 +36,7 @@ export interface PixPayloadOptions {
 }
 
 export function generatePixCopyPaste(opts: PixPayloadOptions): string {
-  const key = opts.pixKey.trim();
+  const key = normalizePixKey(opts.pixKey);
   const gui = emvField('00', 'br.gov.bcb.pix');
   const keyField = emvField('01', key);
   const mai = emvField('26', gui + keyField);
@@ -54,18 +54,36 @@ export function generatePixCopyPaste(opts: PixPayloadOptions): string {
   return payload + emvField('63', crc16(payload));
 }
 
-/** Valida o formato da chave PIX. Retorna mensagem de erro ou null se OK. */
-export function validatePixKey(key: string): string | null {
-  const k = key.trim();
-  if (!k) return null;
+/**
+ * Normaliza a chave PIX para o formato exigido pelo BR Code:
+ * - E-mail: usado como está
+ * - Chave aleatória (EVP, 32 hex): usada como está
+ * - CPF/CNPJ: remove pontos, traços e barras (11 ou 14 dígitos)
+ * - Telefone: preserva o "+55" (ex: +5581999990000)
+ */
+export function normalizePixKey(raw: string): string {
+  const k = raw.trim();
+  if (!k) return '';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k)) return k; // e-mail
+  if (/^[0-9a-fA-F]{32}$/.test(k)) return k.toUpperCase(); // chave aleatória (EVP)
   const digits = k.replace(/\D/g, '');
-  const isCpf = /^\d{11}$/.test(digits) && digits.length === 11;
-  const isCnpj = /^\d{14}$/.test(digits) && digits.length === 14;
-  const isPhone = /^\d{15}$/.test(digits) && digits.length === 15;
-  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k);
-  const isEvp = /^[0-9a-fA-F]{32}$/.test(k);
-  if (isCpf || isCnpj || isPhone || isEmail || isEvp) return null;
-  return 'Formato de chave PIX incomum. Confira: CPF (11 dígitos), CNPJ (14), telefone com DDD e DDI (ex: +5581999990000), e-mail ou chave aleatória (32 caracteres).';
+  if (digits.length === 11) return digits; // CPF (remove pontuação)
+  if (digits.length === 14) return digits; // CNPJ (remove pontuação)
+  if (/^\+55\d{10,11}$/.test(k)) return k; // telefone com DDI (ex: +5581999990000)
+  return k; // mantém como está (sem reconhecer, evita corromper a chave)
+}
+
+/** Valida o formato da chave PIX. Retorna mensagem de erro ou null se OK. */
+export function validatePixKey(raw: string): string | null {
+  const k = raw.trim();
+  if (!k) return null;
+  const n = normalizePixKey(k);
+  const digits = n.replace(/\D/g, '');
+  if (n.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n)) return null; // e-mail
+  if (/^[0-9a-fA-F]{32}$/.test(n)) return null; // aleatória
+  if (digits.length === 11 || digits.length === 14) return null; // CPF/CNPJ
+  if (/^\+55\d{10,11}$/.test(n)) return null; // telefone
+  return 'Formato de chave PIX incomum. Aceito: CPF (11 dígitos), CNPJ (14), telefone com +55 e DDI (ex: +5581999990000), e-mail ou chave aleatória (32 caracteres).';
 }
 
 /** Gera uma chave PIX aleatória (EVP) válida de 32 caracteres. */

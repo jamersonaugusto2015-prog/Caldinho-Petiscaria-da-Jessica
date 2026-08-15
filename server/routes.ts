@@ -14,6 +14,7 @@ import {
 } from './db';
 import { verifyPassword, hashPassword } from './auth';
 import { generatePixCopyPaste } from './pix';
+import { normalizePixKey } from '../src/shared/pix';
 import { UPLOADS_DIR } from './paths';
 import {
   Product,
@@ -819,7 +820,7 @@ export function createRoutes(io: Server): Router {
     if (num(b.routeFactor) !== undefined) upsert.run('route_factor', String(num(b.routeFactor)));
     if (num(b.driverFeePerDelivery) !== undefined)
       upsert.run('driver_fee_per_delivery', String(num(b.driverFeePerDelivery)));
-    if (typeof b.pixKey === 'string') upsert.run('pix_key', b.pixKey.trim());
+    if (typeof b.pixKey === 'string') upsert.run('pix_key', normalizePixKey(b.pixKey));
     if (typeof b.pixMerchantName === 'string') upsert.run('pix_merchant_name', b.pixMerchantName.trim());
     if (typeof b.pixMerchantCity === 'string') upsert.run('pix_merchant_city', b.pixMerchantCity.trim());
     if (Array.isArray(b.openingHours)) upsert.run('opening_hours', JSON.stringify(b.openingHours));
