@@ -38,7 +38,7 @@ import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
 import { formatHourRange } from '../../shared/geo';
-import { resizeImage, ACCEPTED_IMAGE_TYPES } from '../../lib/image';
+import { resizeImage, ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 
 const WEEKDAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -279,7 +279,12 @@ export const KitchenView: React.FC<{
   };
 
   const handleNewProductImage = async (file: File) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      triggerToast(invalid);
+      return;
+    }
     setNewImageUploading(true);
     try {
       const dataUrl = await resizeImage(file);
@@ -783,7 +788,12 @@ const customers: CustomerSummary[] = (() => {
                       onChange={async (e) => {
                         const f = e.target.files?.[0];
                         e.target.value = '';
-                        if (!f || !f.type.startsWith('image/')) return;
+                        if (!f) return;
+                        const invalid = validateImageFile(f);
+                        if (invalid) {
+                          triggerToast(invalid);
+                          return;
+                        }
                         try {
                           const dataUrl = await resizeImage(f);
                           const url = await uploadImage(dataUrl, 'produto-' + p.id);
@@ -2389,7 +2399,12 @@ const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({
     });
 
   const handleFile = async (file: File) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setError(null);
     setUploading(true);
     try {
@@ -2785,7 +2800,12 @@ const PromoDoDiaCard: React.FC<{
     });
 
   const handleFile = async (file: File) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setError(null);
     setUploading(true);
     try {
@@ -2952,11 +2972,16 @@ const StoreLogoUpload: React.FC<{
     });
 
   const handleFile = async (file: File) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setError(null);
     setUploading(true);
     try {
-      const dataUrl = await resizeImage(file);
+      const dataUrl = await resizeImage(file, 400, 0.9);
       const url = await uploadImage(dataUrl, 'logo-loja');
       if (url) await setStoreLogo(url);
     } catch (err) {
