@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
 import { useClient, useCartTotals } from './ClientStore';
 import { formatKm } from '../../shared/geo';
+import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
   QrCode,
@@ -18,6 +18,7 @@ import {
   Loader2,
   Clock,
   AlertCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { Order } from '../../types';
 
@@ -43,7 +44,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAddressList, setShowAddressList] = useState(false);
   const [pendingPix, setPendingPix] = useState<Order | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState('');
   const [confirmError, setConfirmError] = useState('');
 
   const nameValid = customerName.trim().length >= 3;
@@ -56,17 +56,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!pendingPix?.payment.pixCopyPaste) return;
-    QRCode.toDataURL(pendingPix.payment.pixCopyPaste, { width: 240, margin: 1, errorCorrectionLevel: 'M' })
-      .then(setQrDataUrl)
-      .catch(() => {});
-  }, [pendingPix]);
-
-  const handleCopyPix = () => {
-    if (!pendingPix?.payment.pixCopyPaste) return;
+  const handleCopyPixKey = () => {
+    if (!settings.pixKey) return;
     navigator.clipboard
-      .writeText(pendingPix.payment.pixCopyPaste)
+      .writeText(settings.pixKey)
       .then(() => {
         setPixCopied(true);
         setTimeout(() => setPixCopied(false), 3000);
@@ -154,44 +147,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                 <span>Pedido {pendingPix.id} aguardando PIX de R$ {pendingPix.total.toFixed(2)}</span>
               </div>
 
-              {qrDataUrl ? (
-                <div className="bg-white p-3 rounded-2xl inline-block shadow-sm mx-auto border border-[#E7E5E4]">
-                  <img src={qrDataUrl} alt="QR Code PIX" className="w-48 h-48" />
+              <div>
+                <p className="text-[11px] text-[#57534E] mb-1.5">
+                  Pague <strong>R$ {pendingPix.total.toFixed(2)}</strong> para a chave PIX abaixo e envie o
+                  comprovante no WhatsApp:
+                </p>
+                <div className="bg-[#F5F5F4] border-2 border-dashed border-[#B91C1C]/40 rounded-2xl p-3.5">
+                  <div className="text-[9px] font-extrabold text-[#57534E] uppercase tracking-wider mb-1">
+                    Chave PIX da loja
+                  </div>
+                  <div className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
+                    {settings.pixKey}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyPixKey}
+                    className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
+                  >
+                    {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{pixCopied ? 'Chave copiada!' : 'Copiar chave PIX'}</span>
+                  </button>
                 </div>
+              </div>
+
+              {settings.storeWhatsApp ? (
+                <a
+                  href={whatsAppLink(
+                    settings.storeWhatsApp,
+                    `Olá! 🍲 Pedido ${pendingPix.id} no valor de R$ ${pendingPix.total.toFixed(
+                      2
+                    )} pago via PIX. Segue o comprovante:`
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full bg-[#25D366] hover:bg-[#1EBE5B] text-white font-extrabold py-3.5 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  Enviar comprovante no WhatsApp
+                </a>
               ) : (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="w-8 h-8 text-[#B91C1C] animate-spin" />
-                </div>
+                <p className="text-[11px] text-[#A8A29E]">
+                  Após pagar, aguarde a loja confirmar o pagamento pelo WhatsApp.
+                </p>
               )}
 
               <p className="text-[11px] text-[#57534E] max-w-xs mx-auto">
-                Abra o aplicativo do seu banco, escolha <strong>Pagar via Pix</strong>, escaneie o QR Code
-                ou use o código abaixo. O pedido só sai da cozinha após a confirmação do pagamento.
+                A loja confirma o pagamento manualmente quando receber o seu comprovante. Assim que
+                confirmar, o acompanhamento do pedido é liberado automaticamente.
               </p>
-
-              {settings.pixKey && (
-                <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl px-3 py-2 text-[10px] text-[#57534E]">
-                  <span className="font-bold text-[#1C1917]">Chave PIX da loja:</span>{' '}
-                  <span className="font-mono break-all">{settings.pixKey}</span>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={pendingPix.payment.pixCopyPaste || ''}
-                  className="bg-[#F5F5F4] border border-[#E7E5E4] text-[10px] text-[#57534E] rounded-xl p-2.5 font-mono flex-1 truncate"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyPix}
-                  className="bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1 transition"
-                >
-                  {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{pixCopied ? 'Copiado!' : 'Copiar'}</span>
-                </button>
-              </div>
             </div>
 
             <button

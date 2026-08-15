@@ -32,6 +32,7 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   pixKey: '',
   pixMerchantName: 'Caldinho Express',
   pixMerchantCity: 'Recife',
+  storeWhatsApp: '',
   openingHours: DEFAULT_OPENING_HOURS,
   sizeOptions: DEFAULT_SIZE_OPTIONS,
   orderEnabled: true,

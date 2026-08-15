@@ -188,6 +188,7 @@ export interface StoreSettings {
   pixKey: string;
   pixMerchantName: string;
   pixMerchantCity: string;
+  storeWhatsApp: string; // WhatsApp da loja p/ receber comprovantes (ex: 5581999990000)
   openingHours: (OpeningHour | null)[]; // 7 dias: domingo=0 ... sábado=6
   sizeOptions: SizeOption[]; // tamanhos ofertados (ex: caldinhos em ml)
   orderEnabled: boolean; // chave geral aberta/fechada

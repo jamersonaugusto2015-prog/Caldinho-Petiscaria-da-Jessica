@@ -139,6 +139,7 @@ export const KitchenView: React.FC<{
     pixKey: settings.pixKey,
     pixMerchantName: settings.pixMerchantName,
     pixMerchantCity: settings.pixMerchantCity,
+    storeWhatsApp: settings.storeWhatsApp,
     openingHours: settings.openingHours.map((h) => (h ? { ...h } : null)),
     orderEnabled: settings.orderEnabled,
     forceOpen: settings.forceOpen,
@@ -167,6 +168,7 @@ export const KitchenView: React.FC<{
       pixKey: settings.pixKey,
       pixMerchantName: settings.pixMerchantName,
       pixMerchantCity: settings.pixMerchantCity,
+      storeWhatsApp: settings.storeWhatsApp,
       openingHours: settings.openingHours.map((h) => (h ? { ...h } : null)),
       orderEnabled: settings.orderEnabled,
       forceOpen: settings.forceOpen,
@@ -1457,6 +1459,7 @@ const customers: CustomerSummary[] = (() => {
                   pixKey: configDraft.pixKey,
                   pixMerchantName: configDraft.pixMerchantName,
                   pixMerchantCity: configDraft.pixMerchantCity,
+                  storeWhatsApp: configDraft.storeWhatsApp,
                   openingHours: configDraft.openingHours,
                   orderEnabled: configDraft.orderEnabled,
                   forceOpen: configDraft.forceOpen,
@@ -1788,6 +1791,23 @@ const customers: CustomerSummary[] = (() => {
                     className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#57534E] mb-1">
+                  WhatsApp para receber comprovantes (com DDI)
+                </label>
+                <input
+                  type="text"
+                  inputMode="tel"
+                  value={configDraft.storeWhatsApp}
+                  onChange={(e) => setCfg('storeWhatsApp', e.target.value.replace(/\D/g, '').slice(0, 15))}
+                  placeholder="Ex: 5581999990000"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
+                />
+                <p className="text-[10px] text-[#A8A29E] mt-1">
+                  O cliente verá o botão "Enviar comprovante no WhatsApp" após o pagamento PIX. Você
+                  confirma o pedido no kanban quando receber o comprovante.
+                </p>
               </div>
               <p className="text-[10px] text-[#A8A29E]">
                 Com a chave cadastrada, o cliente recebe um QR Code PIX real (BR Code válido) no valor exato

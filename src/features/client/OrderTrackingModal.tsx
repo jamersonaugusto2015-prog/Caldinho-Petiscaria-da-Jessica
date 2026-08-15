@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
+import React, { useState } from 'react';
 import { useClient } from './ClientStore';
 import { LiveMap } from '../../components/common/LiveMap';
 import { formatKm } from '../../shared/geo';
+import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
   MessageSquare,
@@ -17,8 +17,8 @@ import {
   QrCode,
   Copy,
   Check,
-  Loader2,
   ShieldCheck,
+  MessageCircle,
 } from 'lucide-react';
 import { OrderStatus } from '../../types';
 
@@ -36,16 +36,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
-  const [pixQrDataUrl, setPixQrDataUrl] = useState('');
   const [pixCopied, setPixCopied] = useState(false);
-
-  useEffect(() => {
-    if (!order || order.payment.isPaid || order.payment.method !== 'pix' || !order.payment.pixCopyPaste) return;
-    QRCode.toDataURL(order.payment.pixCopyPaste, { width: 240, margin: 1, errorCorrectionLevel: 'M' })
-      .then(setPixQrDataUrl)
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id, order?.payment.isPaid]);
 
   if (!order) return null;
 
@@ -79,54 +70,58 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 <span>Pague para liberar o acompanhamento do pedido</span>
               </div>
 
-              {pixQrDataUrl ? (
-                <div className="bg-white p-3 rounded-2xl inline-block shadow-sm mx-auto border border-[#E7E5E4]">
-                  <img src={pixQrDataUrl} alt="QR Code PIX" className="w-48 h-48" />
+              <div>
+                <p className="text-[11px] text-[#57534E] mb-1.5">
+                  Pague <strong>R$ {order.total.toFixed(2)}</strong> para a chave PIX abaixo e envie o
+                  comprovante no WhatsApp:
+                </p>
+                <div className="bg-[#F5F5F4] border-2 border-dashed border-[#B91C1C]/40 rounded-2xl p-3.5">
+                  <div className="text-[9px] font-extrabold text-[#57534E] uppercase tracking-wider mb-1">
+                    Chave PIX da loja
+                  </div>
+                  <div className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
+                    {settings.pixKey}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!settings.pixKey) return;
+                      navigator.clipboard
+                        .writeText(settings.pixKey)
+                        .then(() => {
+                          setPixCopied(true);
+                          setTimeout(() => setPixCopied(false), 3000);
+                        })
+                        .catch(() => {});
+                    }}
+                    className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
+                  >
+                    {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{pixCopied ? 'Chave copiada!' : 'Copiar chave PIX'}</span>
+                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="w-8 h-8 text-[#B91C1C] animate-spin" />
-                </div>
-              )}
-
-              <p className="text-[11px] text-[#57534E] max-w-xs mx-auto">
-                Abra o aplicativo do seu banco, escolha <strong>Pagar via Pix</strong> e escaneie o QR Code
-                ou use o código abaixo. Assim que a loja confirmar o pagamento, o rastreio da entrega será
-                liberado automaticamente.
-              </p>
-
-              {settings.pixKey && (
-                <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl px-3 py-2 text-[10px] text-[#57534E]">
-                  <span className="font-bold text-[#1C1917]">Chave PIX da loja:</span>{' '}
-                  <span className="font-mono break-all">{settings.pixKey}</span>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={order.payment.pixCopyPaste || ''}
-                  className="bg-[#F5F5F4] border border-[#E7E5E4] text-[10px] text-[#57534E] rounded-xl p-2.5 font-mono flex-1 truncate"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!order.payment.pixCopyPaste) return;
-                    navigator.clipboard
-                      .writeText(order.payment.pixCopyPaste)
-                      .then(() => {
-                        setPixCopied(true);
-                        setTimeout(() => setPixCopied(false), 3000);
-                      })
-                      .catch(() => {});
-                  }}
-                  className="bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1 transition"
-                >
-                  {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{pixCopied ? 'Copiado!' : 'Copiar'}</span>
-                </button>
               </div>
+
+              {settings.storeWhatsApp ? (
+                <a
+                  href={whatsAppLink(
+                    settings.storeWhatsApp,
+                    `Olá! 🍲 Pedido ${order.id} no valor de R$ ${order.total.toFixed(
+                      2
+                    )} pago via PIX. Segue o comprovante:`
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full bg-[#25D366] hover:bg-[#1EBE5B] text-white font-extrabold py-3.5 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  Enviar comprovante no WhatsApp
+                </a>
+              ) : (
+                <p className="text-[11px] text-[#A8A29E]">
+                  Após pagar, aguarde a loja confirmar o pagamento.
+                </p>
+              )}
             </div>
 
             <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-3.5 text-[11px] text-[#065F46] font-bold flex items-start gap-2">

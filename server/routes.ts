@@ -823,6 +823,9 @@ export function createRoutes(io: Server): Router {
     if (typeof b.pixKey === 'string') upsert.run('pix_key', normalizePixKey(b.pixKey));
     if (typeof b.pixMerchantName === 'string') upsert.run('pix_merchant_name', b.pixMerchantName.trim());
     if (typeof b.pixMerchantCity === 'string') upsert.run('pix_merchant_city', b.pixMerchantCity.trim());
+    if (typeof b.storeWhatsApp === 'string') {
+      upsert.run('store_whatsapp', b.storeWhatsApp.replace(/\D/g, '').slice(0, 15));
+    }
     if (Array.isArray(b.openingHours)) upsert.run('opening_hours', JSON.stringify(b.openingHours));
     if (
       Array.isArray(b.sizeOptions) &&
