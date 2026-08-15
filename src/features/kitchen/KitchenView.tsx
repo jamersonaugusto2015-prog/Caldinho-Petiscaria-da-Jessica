@@ -32,11 +32,13 @@ import {
   Camera,
   ChevronDown,
   Printer,
+  LocateFixed,
 } from 'lucide-react';
 import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
+import { api } from '../../lib/api';
 import { formatHourRange } from '../../shared/geo';
 import { resizeImage, ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 
@@ -176,6 +178,12 @@ export const KitchenView: React.FC<{
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [financePeriod, setFinancePeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
+  const [storeCep, setStoreCep] = useState('');
+  const [storeAddress, setStoreAddress] = useState('');
+  const [storeLocating, setStoreLocating] = useState(false);
+  const [storeLocateError, setStoreLocateError] = useState('');
+  const [storeLocateLabel, setStoreLocateLabel] = useState('');
+
   const toggleOrder = (id: string) =>
     setExpandedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -281,6 +289,52 @@ export const KitchenView: React.FC<{
     setNewImagePreview('');
     setNewComboSlots([]);
     setNewExtras([]);
+  };
+
+  // ---------- Local da loja: busca por CEP ou endereço ----------
+  const handleStoreCepLookup = async () => {
+    const cep = storeCep.replace(/\D/g, '');
+    if (cep.length !== 8) {
+      setStoreLocateError('Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    setStoreLocateError('');
+    setStoreLocating(true);
+    try {
+      const r = await api.get<{ street: string; neighborhood: string; city: string }>(`/cep/${cep}`);
+      const query = [r.street, r.neighborhood, r.city].filter(Boolean).join(', ');
+      const geo = await api.post<{ lat: number; lng: number; label: string }>('/geocode', { query });
+      setCfg('storeLat', geo.lat);
+      setCfg('storeLng', geo.lng);
+      setStoreLocateLabel(geo.label || `${r.street}, ${r.neighborhood} - ${r.city}`);
+      setStoreAddress(`${r.street}, ${r.neighborhood} - ${r.city}`);
+    } catch (err) {
+      setStoreLocateError(err instanceof Error ? err.message : 'CEP não encontrado.');
+    } finally {
+      setStoreLocating(false);
+    }
+  };
+
+  const handleStoreAddressLookup = async () => {
+    const query = storeAddress.trim();
+    if (!query) {
+      setStoreLocateError('Digite o endereço da loja.');
+      return;
+    }
+    setStoreLocateError('');
+    setStoreLocating(true);
+    try {
+      const geo = await api.post<{ lat: number; lng: number; label: string }>('/geocode', { query });
+      setCfg('storeLat', geo.lat);
+      setCfg('storeLng', geo.lng);
+      setStoreLocateLabel(geo.label);
+    } catch (err) {
+      setStoreLocateError(
+        err instanceof Error ? err.message : 'Endereço não encontrado. Use o pino no mapa.'
+      );
+    } finally {
+      setStoreLocating(false);
+    }
   };
 
   const handleNewProductImage = async (file: File) => {
@@ -1448,13 +1502,69 @@ const customers: CustomerSummary[] = (() => {
               <div>
                 <label className="block text-[11px] font-bold text-[#57534E] mb-1 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-[#B91C1C]" />
-                  Local da Loja (arraste o pino no mapa)
+                  Local da Loja (CEP, endereço ou pino no mapa)
                 </label>
+
+                <div className="space-y-2 mb-2">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={storeCep}
+                      onChange={(e) => setStoreCep(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                      placeholder="CEP da loja (ex: 51011040)"
+                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleStoreCepLookup}
+                      disabled={storeLocating}
+                      className="px-3.5 rounded-xl bg-[#B91C1C] hover:bg-[#991B1B] text-white text-[11px] font-extrabold flex items-center gap-1.5 transition disabled:opacity-50 shrink-0"
+                    >
+                      {storeLocating ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <LocateFixed className="w-3.5 h-3.5" />
+                      )}
+                      Buscar CEP
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={storeAddress}
+                      onChange={(e) => setStoreAddress(e.target.value)}
+                      placeholder="Ou digite o endereço: Av. Conselheiro Aguiar, 500 - Pina"
+                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleStoreAddressLookup}
+                      disabled={storeLocating}
+                      className="px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white text-[11px] font-extrabold flex items-center gap-1.5 transition disabled:opacity-50 shrink-0"
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" />
+                      Localizar
+                    </button>
+                  </div>
+                  {storeLocateLabel && (
+                    <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl p-2 text-[10px] font-bold text-[#065F46] break-words">
+                      📍 {storeLocateLabel}
+                    </div>
+                  )}
+                  {storeLocateError && (
+                    <div className="bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl p-2 text-[10px] font-bold text-[#B91C1C] break-words">
+                      {storeLocateError}
+                    </div>
+                  )}
+                </div>
+
                 <LiveMap
                   pickPosition={{ lat: configDraft.storeLat, lng: configDraft.storeLng }}
                   onPick={(lat, lng) => {
                     setCfg('storeLat', lat);
                     setCfg('storeLng', lng);
+                    setStoreLocateLabel('');
                   }}
                   heightClass="h-44"
                 />
