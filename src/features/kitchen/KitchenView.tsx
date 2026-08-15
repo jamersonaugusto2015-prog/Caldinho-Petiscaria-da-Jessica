@@ -33,12 +33,14 @@ import {
   ChevronDown,
   Printer,
   LocateFixed,
+  Sparkles,
 } from 'lucide-react';
 import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
 import { api } from '../../lib/api';
+import { generatePixCopyPaste, generateRandomPixKey, validatePixKey } from '../../shared/pix';
 import { formatHourRange } from '../../shared/geo';
 import { resizeImage, ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 
@@ -1700,15 +1702,65 @@ const customers: CustomerSummary[] = (() => {
                 Pagamento PIX
               </h4>
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1">Chave PIX (CPF, e-mail, telefone ou aleatória)</label>
-                <input
-                  type="text"
-                  value={configDraft.pixKey}
-                  onChange={(e) => setCfg('pixKey', e.target.value)}
-                  placeholder="Ex: contato@caldinhoexpress.com.br"
-                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                />
+                <label className="block text-[11px] font-bold text-[#57534E] mb-1">
+                  Chave PIX (CPF, e-mail, telefone ou aleatória)
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={configDraft.pixKey}
+                    onChange={(e) => setCfg('pixKey', e.target.value)}
+                    placeholder="Ex: contato@caldinhoexpress.com.br"
+                    className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCfg('pixKey', generateRandomPixKey());
+                      triggerToast('Chave aleatória gerada! Salve as alterações para ativar.');
+                    }}
+                    title="Gerar chave PIX aleatória (EVP)"
+                    className="px-3 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white text-[11px] font-extrabold flex items-center gap-1.5 transition shrink-0"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#FDE68A]" />
+                    Gerar aleatória
+                  </button>
+                </div>
+                {configDraft.pixKey.trim() && (
+                  <>
+                    {validatePixKey(configDraft.pixKey) ? (
+                      <p className="text-[10px] text-[#B91C1C] font-bold mt-1">
+                        ⚠️ {validatePixKey(configDraft.pixKey)}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-[#059669] font-bold mt-1">
+                        ✓ Chave válida — será usada nos QR Codes dos pedidos
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
+
+              {/* Pré-visualização: comprova que a chave cadastrada é a que entra no BR Code */}
+              {configDraft.pixKey.trim() && !validatePixKey(configDraft.pixKey) && (
+                <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 space-y-1.5">
+                  <div className="text-[10px] font-extrabold text-[#1C1917] uppercase tracking-wider">
+                    Prévia do PIX (copia e cola) — sua chave em destaque:
+                  </div>
+                  <div className="text-[9px] font-mono text-[#57534E] break-all leading-relaxed">
+                    {generatePixCopyPaste({
+                      pixKey: configDraft.pixKey,
+                      amount: 10,
+                      merchantName: configDraft.pixMerchantName || 'LOJA',
+                      merchantCity: configDraft.pixMerchantCity || 'BRASIL',
+                      txid: 'PREVIA',
+                    })}
+                  </div>
+                  <div className="text-[9px] text-[#065F46] font-bold bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-2 py-1 break-all">
+                    Sua chave: {configDraft.pixKey}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-bold text-[#57534E] mb-1">Nome do recebedor</label>
