@@ -2,7 +2,7 @@
 # Como usar: github -> New Blueprint -> selecione este repo (ou crie o serviço Web manualmente)
 services:
   - type: web
-    name: caldinho-express
+    name: caldinhodajessica
     runtime: node
     plan: starter # disco persistente (banco SQLite + fotos). Grátis não suporta disco.
     buildCommand: npm install && npm run build
@@ -19,7 +19,7 @@ services:
       - key: DATA_DIR
         value: /data
       - key: CORS_ORIGIN
-        sync: false # preencha com https://caldinho-express.onrender.com
+        sync: false # preencha com https://caldinhodajessica.onrender.com
     disk:
       name: caldinho-data
       mountPath: /data
