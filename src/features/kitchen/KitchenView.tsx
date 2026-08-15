@@ -33,7 +33,7 @@ import {
   ChevronDown,
   Printer,
 } from 'lucide-react';
-import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot } from '../../types';
+import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
@@ -110,6 +110,7 @@ export const KitchenView: React.FC<{
   const [newImagePreview, setNewImagePreview] = useState('');
   const [newImageUploading, setNewImageUploading] = useState(false);
   const [newComboSlots, setNewComboSlots] = useState<ComboSlot[]>([]);
+  const [newExtras, setNewExtras] = useState<ExtraOption[]>([]);
   const newImageRef = React.useRef<HTMLInputElement>(null);
 
   const [driverModalOpen, setDriverModalOpen] = useState(false);
@@ -265,6 +266,9 @@ export const KitchenView: React.FC<{
               })),
           }
         : {}),
+      allowedExtras: newExtras
+        .filter((e) => e.name.trim())
+        .map((e) => ({ ...e, name: e.name.trim() })),
     };
 
     addProduct(newProd);
@@ -276,6 +280,7 @@ export const KitchenView: React.FC<{
     setNewImage('');
     setNewImagePreview('');
     setNewComboSlots([]);
+    setNewExtras([]);
   };
 
   const handleNewProductImage = async (file: File) => {
@@ -2004,6 +2009,13 @@ const customers: CustomerSummary[] = (() => {
               )}
 
               <div>
+                <label className="block text-[#1C1917] font-bold mb-1.5">
+                  Adicionais / Acompanhamentos (opcional)
+                </label>
+                <ExtrasEditor extras={newExtras} onChange={setNewExtras} />
+              </div>
+
+              <div>
                 <label className="block text-[#1C1917] font-bold mb-1">Imagem do Produto</label>
                 <div className="flex items-center gap-3">
                   <div
@@ -2236,6 +2248,68 @@ const CouponForm: React.FC<{ saveCoupon: (c: Coupon) => Promise<void> }> = ({ sa
   );
 };
 
+const ExtrasEditor: React.FC<{
+  extras: ExtraOption[];
+  onChange: (extras: ExtraOption[]) => void;
+}> = ({ extras, onChange }) => {
+  const updateExtra = (idx: number, patch: Partial<{ name: string; price: number }>) =>
+    onChange(extras.map((e, i) => (i === idx ? { ...e, ...patch } : e)));
+
+  const addExtra = () =>
+    onChange([
+      ...extras,
+      { id: 'ext-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), name: '', price: 0 },
+    ]);
+
+  return (
+    <div className="space-y-1.5">
+      {extras.length === 0 && (
+        <p className="text-[10px] text-[#A8A29E] italic">
+          Nenhum adicional. O cliente verá os adicionais na hora de escolher o produto.
+        </p>
+      )}
+      {extras.map((extra, idx) => (
+        <div key={extra.id} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={extra.name}
+            onChange={(e) => updateExtra(idx, { name: e.target.value })}
+            placeholder="Ex: Queijo Coalho em Cubos"
+            className="flex-1 bg-white border border-[#E7E5E4] rounded-lg p-2 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+          />
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[11px] font-bold text-[#57534E]">+R$</span>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={extra.price}
+              onChange={(e) => updateExtra(idx, { price: Number(e.target.value) || 0 })}
+              className="w-16 bg-white border border-[#E7E5E4] rounded-lg p-2 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(extras.filter((_, i) => i !== idx))}
+            className="p-2 rounded-full border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] transition shrink-0"
+            title="Remover adicional"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={addExtra}
+        className="w-full py-2 rounded-xl border border-dashed border-[#B91C1C] hover:bg-[#FEF2F2] text-[#B91C1C] text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
+      >
+        <PlusCircle className="w-3.5 h-3.5" />
+        Adicionar Adicional
+      </button>
+    </div>
+  );
+};
+
 const ComboSlotsEditor: React.FC<{
   slots: ComboSlot[];
   onChange: (slots: ComboSlot[]) => void;
@@ -2451,21 +2525,6 @@ const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({
     onClose();
   };
 
-  const updateExtra = (idx: number, patch: Partial<{ name: string; price: number }>) =>
-    setForm((f) => ({
-      ...f,
-      allowedExtras: f.allowedExtras.map((e, i) => (i === idx ? { ...e, ...patch } : e)),
-    }));
-
-  const addExtra = () =>
-    setForm((f) => ({
-      ...f,
-      allowedExtras: [...f.allowedExtras, { id: 'ext-' + Date.now() + '-' + f.allowedExtras.length, name: '', price: 0 }],
-    }));
-
-  const removeExtra = (idx: number) =>
-    setForm((f) => ({ ...f, allowedExtras: f.allowedExtras.filter((_, i) => i !== idx) }));
-
   const toggle = (key: 'available' | 'isPopular' | 'isFlashPromo') =>
     setForm((f) => ({ ...f, [key]: !f[key] }));
 
@@ -2631,59 +2690,11 @@ const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({
             <label className="block text-[#1C1917] font-bold mb-1.5">
               Adicionais / Acompanhamentos (opcional)
             </label>
-            <div className="space-y-1.5">
-              {form.allowedExtras.map((extra, idx) => (
-                <div key={extra.id} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={extra.name}
-                    onChange={(e) => updateExtra(idx, { name: e.target.value })}
-                    placeholder="Ex: Queijo Coalho em Cubos"
-                    className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[11px] font-bold text-[#57534E]">+R$</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={extra.price}
-                      onChange={(e) => updateExtra(idx, { price: Number(e.target.value) || 0 })}
-                      className="w-16 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeExtra(idx)}
-                    className="p-2 rounded-full border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] transition shrink-0"
-                    title="Remover adicional"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addExtra}
-                className="w-full py-2 rounded-xl border border-dashed border-[#B91C1C] hover:bg-[#FEF2F2] text-[#B91C1C] text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                Adicionar Adicional
-              </button>
-            </div>
+            <ExtrasEditor
+              extras={form.allowedExtras}
+              onChange={(allowedExtras) => setForm((f) => ({ ...f, allowedExtras }))}
+            />
           </div>
-
-          {form.category === 'combos' && (
-            <div>
-              <label className="block text-[#1C1917] font-bold mb-1.5">
-                Sabores do Combo (o cliente escolhe 1 opção por item)
-              </label>
-              <ComboSlotsEditor
-                slots={form.comboSlots}
-                onChange={(comboSlots) => setForm((f) => ({ ...f, comboSlots }))}
-              />
-            </div>
-          )}
 
           <div>
             <label className="block text-[#1C1917] font-bold mb-1">URL da Imagem (alternativa ao upload)</label>

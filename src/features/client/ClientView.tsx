@@ -77,13 +77,7 @@ export const ClientView: React.FC = () => {
         <>
           {caldinhoDoDia && !searchQuery && selectedCategory === 'all' && (
             <article
-              onClick={() =>
-                addToCart({
-                  product: caldinhoDoDia,
-                  selectedExtras: [],
-                  quantity: 1,
-                })
-              }
+              onClick={() => setSelectedProduct(caldinhoDoDia)}
               className="group relative w-full overflow-hidden rounded-2xl bg-[#7F1D1D] shadow-xl shadow-[#B91C1C]/15 transition-all duration-300 active:scale-[0.99]"
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden">
