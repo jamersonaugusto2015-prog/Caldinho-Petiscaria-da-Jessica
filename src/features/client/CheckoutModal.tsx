@@ -74,17 +74,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
       .catch(() => {});
   };
 
-  const handleConfirmOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const placeAndHandle = async (method: 'pix' | 'card' | 'cash') => {
     setConfirmError('');
-    if (!dadosValid) {
-      setStep('dados');
-      return;
-    }
     setIsProcessing(true);
     const res = await placeOrder(
-      paymentMethod,
-      paymentMethod === 'cash' && changeForAmount ? Number(changeForAmount) : undefined,
+      method,
+      method === 'cash' && changeForAmount ? Number(changeForAmount) : undefined,
       { name: customerName.trim(), phone: customerPhone.trim() }
     );
     setIsProcessing(false);
@@ -94,10 +89,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
       return;
     }
     const order = res.order;
-    if (paymentMethod === 'pix' && order.payment.pixCopyPaste) {
+    if (method === 'pix' && order.payment.pixCopyPaste) {
       setPendingPix(order); // mostra o PIX real para pagamento
     } else {
       onOrderPlaced();
+    }
+  };
+
+  const handleConfirmOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dadosValid) {
+      setStep('dados');
+      return;
+    }
+    await placeAndHandle(paymentMethod);
+  };
+
+  // "Continuar para Pagamento": com PIX cadastrado, vai direto para a tela do QR
+  const handleContinueToPayment = () => {
+    if (!dadosValid) return;
+    if (settings.pixKey) {
+      void placeAndHandle('pix');
+    } else {
+      setStep('pagamento');
     }
   };
 
@@ -154,6 +168,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                 Abra o aplicativo do seu banco, escolha <strong>Pagar via Pix</strong>, escaneie o QR Code
                 ou use o código abaixo. O pedido só sai da cozinha após a confirmação do pagamento.
               </p>
+
+              {settings.pixKey && (
+                <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl px-3 py-2 text-[10px] text-[#57534E]">
+                  <span className="font-bold text-[#1C1917]">Chave PIX da loja:</span>{' '}
+                  <span className="font-mono break-all">{settings.pixKey}</span>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <input
@@ -510,11 +531,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
               {step === 'dados' ? (
                 <button
                   type="button"
-                  disabled={!dadosValid}
-                  onClick={() => setStep('pagamento')}
+                  disabled={!dadosValid || isProcessing}
+                  onClick={handleContinueToPayment}
                   className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-4 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm disabled:opacity-50"
                 >
-                  <span>Continuar para Pagamento</span>
+                  {isProcessing ? (
+                    <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  ) : (
+                    <QrCode className="w-4 h-4" />
+                  )}
+                  <span>
+                    {isProcessing
+                      ? 'Gerando PIX...'
+                      : settings.pixKey
+                      ? 'Continuar para Pagamento (PIX)'
+                      : 'Continuar para Pagamento'}
+                  </span>
                   <span className="text-xs font-bold text-[#FDE68A]">R$ {total.toFixed(2)}</span>
                 </button>
               ) : (
