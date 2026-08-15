@@ -4,7 +4,7 @@ services:
   - type: web
     name: caldinho-express
     runtime: node
-    plan: free # free = hiberna após 15min sem acesso e acorda sozinho
+    plan: starter # disco persistente (banco SQLite + fotos). Grátis não suporta disco.
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
@@ -19,7 +19,7 @@ services:
       - key: DATA_DIR
         value: /data
       - key: CORS_ORIGIN
-        sync: false # preencha com https://seu-app.onrender.com
+        sync: false # preencha com https://caldinho-express.onrender.com
     disk:
       name: caldinho-data
       mountPath: /data
