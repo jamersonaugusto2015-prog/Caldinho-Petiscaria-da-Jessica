@@ -2,11 +2,18 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../../lib/auth';
 import { useKitchen } from './KitchenStore';
+import { announceNewOrder } from '../../lib/sound';
 import { Sparkles, LogOut, Bell, BellOff } from 'lucide-react';
 
 export const KitchenHeader: React.FC = () => {
   const navigate = useNavigate();
   const { settings, storeLogo, saveSettings, soundEnabled, toggleSound } = useKitchen();
+
+  const handleToggleSound = () => {
+    const turningOn = !soundEnabled;
+    toggleSound();
+    if (turningOn) announceNewOrder(); // teste da voz ao ligar
+  };
 
   const handleLogout = () => {
     logout('kitchen');
@@ -70,8 +77,8 @@ export const KitchenHeader: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={toggleSound}
-              title={soundEnabled ? 'Alerta sonoro ligado — clique para desligar' : 'Alerta sonoro desligado — clique para ligar'}
+              onClick={handleToggleSound}
+              title={soundEnabled ? 'Alerta sonoro ligado — clique para desligar' : 'Alerta sonoro desligado — clique para ligar e testar a voz'}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold transition border ${
                 soundEnabled
                   ? 'bg-[#1C1917] text-[#FDE68A] border-[#44403C] hover:bg-[#292524]'

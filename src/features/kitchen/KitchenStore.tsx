@@ -12,7 +12,7 @@ import {
 } from '../../types';
 import { api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
-import { playNewOrderSound, unlockAudio } from '../../lib/sound';
+import { playNewOrderSound, announceNewOrder, unlockAudio } from '../../lib/sound';
 import { DEFAULT_STORE_SETTINGS } from '../../shared/defaults';
 
 interface KitchenContextType {
@@ -137,7 +137,10 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useSocketEvent<Order>('order:new', (order) => {
     setOrders((prev) => (prev.some((o) => o.id === order.id) ? prev : [order, ...prev]));
     triggerToast(`🆕 Novo pedido ${order.id} chegou na cozinha! R$ ${order.total.toFixed(2)}`);
-    if (soundEnabled) playNewOrderSound();
+    if (soundEnabled) {
+      playNewOrderSound();
+      announceNewOrder(order.id); // voz feminina: "Novo pedido CX-XXXX chegou!" (2x)
+    }
     loadTrends();
     loadReport();
   });
