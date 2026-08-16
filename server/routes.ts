@@ -38,7 +38,6 @@ import {
   computeCartItemTotal,
   computeCartTotals,
   findCoupon,
-  loyaltyPointsEarned,
 } from '../src/shared/pricing';
 import { effectiveDistanceKm, isStoreOpen, round2 } from '../src/shared/geo';
 
@@ -444,7 +443,7 @@ export function createRoutes(io: Server): Router {
       payment,
       createdAt: now,
       estimatedDeliveryMinutes: Math.max(15, Math.round(12 + distanceKm * 2 + 3)),
-      loyaltyPointsEarned: loyaltyPointsEarned(totals.total),
+      loyaltyPointsEarned: 0, // fidelidade agora conta pedidos ENTREGUES (1 selo por entrega)
     };
 
     db.prepare('INSERT INTO orders (id, data, status, created_at, customer_id) VALUES (?, ?, ?, ?, ?)').run(
@@ -455,12 +454,9 @@ export function createRoutes(io: Server): Router {
       cid
     );
 
-    const newPoints = addLoyaltyPoints(cid, order.loyaltyPointsEarned);
-
     io.emit('order:new', order);
-    io.emit('loyalty:updated', { customerId: cid, points: newPoints });
 
-    res.status(201).json({ order, loyaltyPoints: newPoints });
+    res.status(201).json({ order, loyaltyPoints: getLoyaltyPoints(cid) });
   });
 
   const getOrderOr404 = (id: string): { order: Order; raw: string } | null => {
@@ -510,6 +506,12 @@ export function createRoutes(io: Server): Router {
       order.status,
       order.id
     );
+
+    // Fidelidade: pedido ENTREGUE = +1 selo para o cliente (10 selos = 1 caldinho grátis)
+    if (newStatus === 'entregue' && order.customerId && order.customerId !== 'anon') {
+      const stamps = addLoyaltyPoints(order.customerId, 1);
+      io.emit('loyalty:updated', { customerId: order.customerId, points: stamps });
+    }
 
     io.emit('order:updated', order);
     res.json(order);

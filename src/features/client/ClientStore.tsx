@@ -361,7 +361,9 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // --- Fidelidade ---
   const redeemLoyaltyReward = async (productId: string): Promise<{ success: boolean; message: string }> => {
-    if (loyaltyPoints < 10) return { success: false, message: 'Você precisa de 10 selos para resgatar.' };
+    if (loyaltyPoints < 10) {
+      return { success: false, message: 'Complete 10 pedidos entregues para ganhar seu caldinho grátis.' };
+    }
     try {
       const res = await api.post<{ points: number; token: string }>('/loyalty/redeem', { customerId, productId });
       setLoyaltyPoints(res.points);

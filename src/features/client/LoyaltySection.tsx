@@ -40,7 +40,7 @@ export const LoyaltySection: React.FC = () => {
             </span>
           </div>
           <p className="text-[11px] text-[#78350F] mt-0.5">
-            Junte 10 selos e troque por 1 Caldinho de 500ml grátis!
+            Faça 10 pedidos entregues e ganhe 1 Caldinho grátis!
           </p>
 
           <div className="flex items-center gap-1 mt-2 justify-center">
@@ -77,7 +77,7 @@ export const LoyaltySection: React.FC = () => {
         {showPick && (
           <div className="bg-white/80 border border-[#FCD34D] rounded-2xl p-2 space-y-1.5">
             <p className="text-[10px] font-extrabold text-[#78350F] px-1">
-              Escolha seu caldinho grátis (500ml):
+              Escolha seu caldinho grátis:
             </p>
             {redeemOptions.length === 0 && (
               <p className="text-[10px] text-[#A8A29E] px-1">Nenhum caldinho disponível no momento.</p>
