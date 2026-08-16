@@ -486,19 +486,48 @@ const customers: CustomerSummary[] = (() => {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs">
-              <h3 className="text-sm font-extrabold text-[#1C1917] mb-3">Status do Cardápio</h3>
-              <div className="space-y-2">
-                {products.slice(0, 5).map((p) => (
-                  <div key={p.id} className="flex items-center gap-2 py-1.5 text-xs">
+            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-extrabold text-[#1C1917]">Status do Cardápio</h3>
+                <span className="text-[10px] text-[#57534E] font-bold bg-[#F5F5F4] border border-[#E7E5E4] px-2 py-0.5 rounded-full">
+                  {unavailProducts} pausado(s)
+                </span>
+              </div>
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1 flex-1">
+                {products.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded-xl text-xs border transition ${
+                      p.available ? 'border-transparent hover:bg-[#F5F5F4]' : 'bg-[#FEF2F2] border-[#FCA5A5]/50'
+                    }`}
+                  >
                     <span className={`w-2 h-2 rounded-full shrink-0 ${p.available ? 'bg-[#059669]' : 'bg-[#B91C1C]'}`} />
-                    <span className="flex-1 truncate font-semibold text-[#1C1917]">{p.name}</span>
-                    <span className={`text-[10px] font-bold ${p.available ? 'text-[#059669]' : 'text-[#B91C1C]'}`}>
-                      {p.available ? 'Disponível' : 'Pausado'}
+                    <span
+                      className={`flex-1 truncate font-semibold ${
+                        p.available ? 'text-[#1C1917]' : 'text-[#B91C1C] line-through'
+                      }`}
+                      title={p.name}
+                    >
+                      {p.name}
                     </span>
+                    <button
+                      onClick={() => toggleProductAvailability(p.id)}
+                      className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition active:scale-95 ${
+                        p.available
+                          ? 'bg-[#059669] text-white hover:bg-[#047857]'
+                          : 'bg-[#B91C1C] text-white hover:bg-[#991B1B]'
+                      }`}
+                      title={p.available ? 'Pausar (acabou)' : 'Reativar (volta ao cardápio)'}
+                    >
+                      <Power className="w-3 h-3" />
+                      {p.available ? 'Pausar' : 'Reativar'}
+                    </button>
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-[#A8A29E] mt-2.5">
+                Pause aqui quando o item acabar — o cliente para de ver na hora.
+              </p>
             </div>
           </div>
         </div>
