@@ -100,6 +100,7 @@
 /* Impressão térmica (80mm) */
 @media print {
   @page {
+    size: 80mm 297mm; /* 1 página única no rolo térmico */
     margin: 0;
   }
   body * {
@@ -114,12 +115,15 @@
     left: 0 !important;
     top: 0 !important;
     width: 80mm !important;
-    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .print-area .receipt-divider {
     border-color: #000 !important;
