@@ -101,6 +101,7 @@ export const KitchenView: React.FC<{
     trends,
     notificationToast,
     triggerToast,
+    newOrderFlashId,
   } = useKitchen();
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -573,7 +574,7 @@ const customers: CustomerSummary[] = (() => {
                           key={ord.id}
                           className={`bg-white border border-[#E7E5E4] rounded-2xl p-3 shadow-xs transition flex flex-col gap-2 ${
                             isExpanded ? 'hover:border-[#B91C1C]/40 hover:shadow-md' : 'hover:border-[#B91C1C]/40'
-                          }`}
+                          } ${ord.id === newOrderFlashId ? 'order-pop' : ''}`}
                         >
                           {/* Cabeçalho clicável (minimizado por padrão) */}
                           <div className="flex items-start gap-1">

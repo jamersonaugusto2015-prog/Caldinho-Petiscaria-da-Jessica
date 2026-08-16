@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import {
   Product,
   Order,
@@ -48,6 +48,7 @@ interface KitchenContextType {
   loadTrends: () => Promise<void>;
   soundEnabled: boolean;
   toggleSound: () => void;
+  newOrderFlashId: string | null;
 }
 
 const KitchenContext = createContext<KitchenContextType | undefined>(undefined);
@@ -73,6 +74,8 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return true;
     }
   });
+  const [newOrderFlashId, setNewOrderFlashId] = useState<string | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled((prev) => {
@@ -145,6 +148,10 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         announceNewOrder(order.id); // voz feminina: "Novo pedido CX-XXXX chegou!" (2x)
       }
     }
+    // Destaque do card (animação zoom) sincronizado com o alerta
+    setNewOrderFlashId(order.id);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setNewOrderFlashId(null), 3000);
     loadTrends();
     loadReport();
   });
@@ -390,6 +397,7 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         loadTrends,
         soundEnabled,
         toggleSound,
+        newOrderFlashId,
       }}
     >
       {children}
