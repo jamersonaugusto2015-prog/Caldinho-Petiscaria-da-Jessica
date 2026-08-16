@@ -189,6 +189,7 @@ export interface StoreSettings {
   pixMerchantName: string;
   pixMerchantCity: string;
   storeWhatsApp: string; // WhatsApp da loja p/ receber comprovantes (ex: 5581999990000)
+  orderSoundUrl: string; // áudio MP3 personalizado do alerta de novo pedido ('' = voz do sistema)
   openingHours: (OpeningHour | null)[]; // 7 dias: domingo=0 ... sábado=6
   sizeOptions: SizeOption[]; // tamanhos ofertados (ex: caldinhos em ml)
   orderEnabled: boolean; // chave geral aberta/fechada

@@ -34,6 +34,7 @@ import {
   Printer,
   LocateFixed,
   Sparkles,
+  Music,
 } from 'lucide-react';
 import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
@@ -140,6 +141,7 @@ export const KitchenView: React.FC<{
     pixMerchantName: settings.pixMerchantName,
     pixMerchantCity: settings.pixMerchantCity,
     storeWhatsApp: settings.storeWhatsApp,
+    orderSoundUrl: settings.orderSoundUrl,
     openingHours: settings.openingHours.map((h) => (h ? { ...h } : null)),
     orderEnabled: settings.orderEnabled,
     forceOpen: settings.forceOpen,
@@ -169,6 +171,7 @@ export const KitchenView: React.FC<{
       pixMerchantName: settings.pixMerchantName,
       pixMerchantCity: settings.pixMerchantCity,
       storeWhatsApp: settings.storeWhatsApp,
+      orderSoundUrl: settings.orderSoundUrl,
       openingHours: settings.openingHours.map((h) => (h ? { ...h } : null)),
       orderEnabled: settings.orderEnabled,
       forceOpen: settings.forceOpen,
@@ -1460,6 +1463,7 @@ const customers: CustomerSummary[] = (() => {
                   pixMerchantName: configDraft.pixMerchantName,
                   pixMerchantCity: configDraft.pixMerchantCity,
                   storeWhatsApp: configDraft.storeWhatsApp,
+                  orderSoundUrl: configDraft.orderSoundUrl,
                   openingHours: configDraft.openingHours,
                   orderEnabled: configDraft.orderEnabled,
                   forceOpen: configDraft.forceOpen,
@@ -1925,6 +1929,62 @@ const customers: CustomerSummary[] = (() => {
               <p className="text-[10px] text-[#A8A29E]">
                 Fora do horário, os clientes não conseguem enviar pedidos. Suporta turnos que viram à meia-noite
                 (ex: 22:00 às 02:00).
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+              <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
+                <Music className="w-4 h-4 text-[#B91C1C]" />
+                Alerta Sonoro do Pedido (áudio personalizado)
+              </h4>
+              <p className="text-[10px] text-[#A8A29E]">
+                Envie um MP3 com a gravação que quiser (ex: "Atenção, novo pedido!"). Ele toca 2 vezes ao
+                receber pedido, no lugar da voz do sistema. Sem áudio, a voz feminina padrão continua.
+              </p>
+
+              {configDraft.orderSoundUrl ? (
+                <div className="space-y-2">
+                  <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 flex items-center gap-3">
+                    <Music className="w-5 h-5 text-[#059669] shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-extrabold text-[#1C1917]">Áudio personalizado ativo</div>
+                      <audio src={configDraft.orderSoundUrl} controls className="w-full h-8 mt-1" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCfg('orderSoundUrl', '');
+                        triggerToast('Áudio removido — a voz do sistema volta a ser usada.');
+                      }}
+                      className="p-2 rounded-full border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] transition shrink-0"
+                      title="Remover áudio"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <SoundUploadButton
+                    onFile={async (dataUrl) => {
+                      const url = await uploadImage(dataUrl, 'alerta-pedido');
+                      if (url) {
+                        setCfg('orderSoundUrl', url);
+                        triggerToast('Áudio enviado! Salve as alterações para ativar.');
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <SoundUploadButton
+                  onFile={async (dataUrl) => {
+                    const url = await uploadImage(dataUrl, 'alerta-pedido');
+                    if (url) {
+                      setCfg('orderSoundUrl', url);
+                      triggerToast('Áudio enviado! Salve as alterações para ativar.');
+                    }
+                  }}
+                />
+              )}
+              <p className="text-[10px] text-[#A8A29E]">
+                Formatos: MP3, WAV, OGG ou WEBM (máx. 15 MB). Grave no celular e envie o arquivo.
               </p>
             </div>
 
@@ -2948,6 +3008,69 @@ const PriceInput: React.FC<{ product: Product }> = ({ product }) => {
         onChange={(e) => setValue(e.target.value)}
         className="w-16 bg-white border border-[#E7E5E4] rounded-lg p-1 text-xs text-[#1C1917] font-extrabold text-right focus:ring-1 focus:ring-[#B91C1C]"
       />
+    </div>
+  );
+};
+
+const SoundUploadButton: React.FC<{ onFile: (dataUrl: string) => Promise<void> }> = ({ onFile }) => {
+  const [reading, setReading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const ref = React.useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!/^audio\//.test(file.type)) {
+      setError('Formato inválido. Envie um arquivo de áudio (MP3, WAV, OGG ou WEBM).');
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setError('Arquivo muito grande (máx. 15 MB).');
+      return;
+    }
+    setError(null);
+    setReading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+      await onFile(dataUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao enviar o áudio.');
+    } finally {
+      setReading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={reading}
+        className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-2.5 rounded-full text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50"
+      >
+        {reading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+        {reading ? 'Enviando...' : 'Enviar áudio do pedido (MP3)'}
+      </button>
+      <input
+        ref={ref}
+        type="file"
+        accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/webm"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+          e.target.value = '';
+        }}
+      />
+      {error && (
+        <p className="text-[10px] text-[#B91C1C] font-bold bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl p-2">
+          {error}
+        </p>
+      )}
     </div>
   );
 };

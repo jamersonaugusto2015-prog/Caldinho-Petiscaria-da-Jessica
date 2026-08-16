@@ -68,6 +68,27 @@ function pickFemalePtVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice
   return female || pt[0];
 }
 
+/** Toca um MP3/áudio personalizado 2 vezes (alerta de novo pedido). */
+export function playOrderMp3(url: string): void {
+  try {
+    const audio = new Audio(url);
+    audio.volume = 1;
+    let plays = 0;
+    audio.addEventListener('ended', () => {
+      plays++;
+      if (plays < 2) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+    });
+    audio.play().catch(() => {
+      /* áudio bloqueado ou inválido — silencioso */
+    });
+  } catch {
+    /* ignora */
+  }
+}
+
 /** Anúncio por voz: "Novo pedido chegou!" repetido 2 vezes (voz feminina pt-BR). */
 export function announceNewOrder(orderId?: string): void {
   try {

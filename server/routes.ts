@@ -152,19 +152,36 @@ export function createRoutes(io: Server): Router {
     res.status(401).json({ error: 'PIN incorreto. Tente novamente.' });
   });
 
-  // ---------- Upload de imagem (base64) ----------
+  // ---------- Upload de imagem ou áudio (base64) ----------
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
   router.post('/upload', requireRole('kitchen'), (req, res) => {
     const { dataUrl, filename } = req.body ?? {};
-    if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpe?g|webp|gif);base64,/.test(dataUrl)) {
-      return res.status(400).json({ error: 'Imagem inválida. Envie um data URL de imagem (png/jpeg/webp/gif).' });
+    if (typeof dataUrl !== 'string') {
+      return res.status(400).json({ error: 'Arquivo inválido.' });
+    }
+    const isImage = /^data:image\/(png|jpe?g|webp|gif);base64,/.test(dataUrl);
+    const isAudio = /^data:audio\/(mpeg|mp3|wav|x-wav|ogg|webm);base64,/.test(dataUrl);
+    if (!isImage && !isAudio) {
+      return res.status(400).json({
+        error: 'Formato inválido. Imagens: png/jpeg/webp/gif. Áudio: mp3/wav/ogg/webm.',
+      });
     }
 
-    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!match) return res.status(400).json({ error: 'Imagem inválida.' });
+    const match = dataUrl.match(/^data:(image|audio)\/([\w.+-]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Arquivo inválido.' });
 
-    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const rawExt = match[2].toLowerCase().replace('x-', '').replace('mpeg', 'mp3');
+    const allowedExt = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'wav', 'ogg', 'webm'];
+    const ext = rawExt === 'jpeg' ? 'jpg' : allowedExt.includes(rawExt) ? rawExt : 'bin';
+    if (ext === 'bin') return res.status(400).json({ error: 'Extensão não permitida.' });
+
+    const buffer = Buffer.from(match[3], 'base64');
+    const maxBytes = 15 * 1024 * 1024;
+    if (buffer.length > maxBytes) {
+      return res.status(400).json({ error: 'Arquivo muito grande (máx. 15 MB).' });
+    }
+
     const safeName = (typeof filename === 'string' && filename.trim() ? filename.trim() : 'upload')
       .toLowerCase()
       .replace(/[^a-z0-9-_]/g, '-')
@@ -172,10 +189,10 @@ export function createRoutes(io: Server): Router {
     const name = `${Date.now()}-${safeName}.${ext}`;
 
     try {
-      fs.writeFileSync(path.join(UPLOADS_DIR, name), Buffer.from(match[2], 'base64'));
+      fs.writeFileSync(path.join(UPLOADS_DIR, name), buffer);
       res.status(201).json({ url: `/api/uploads/${name}` });
     } catch {
-      res.status(500).json({ error: 'Falha ao salvar a imagem.' });
+      res.status(500).json({ error: 'Falha ao salvar o arquivo.' });
     }
   });
 
@@ -827,6 +844,9 @@ export function createRoutes(io: Server): Router {
     if (typeof b.pixMerchantCity === 'string') upsert.run('pix_merchant_city', b.pixMerchantCity.trim());
     if (typeof b.storeWhatsApp === 'string') {
       upsert.run('store_whatsapp', b.storeWhatsApp.replace(/\D/g, '').slice(0, 15));
+    }
+    if (typeof b.orderSoundUrl === 'string') {
+      upsert.run('order_sound_url', b.orderSoundUrl.trim());
     }
     if (Array.isArray(b.openingHours)) upsert.run('opening_hours', JSON.stringify(b.openingHours));
     if (
