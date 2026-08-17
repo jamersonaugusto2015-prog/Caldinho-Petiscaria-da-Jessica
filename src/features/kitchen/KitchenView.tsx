@@ -1591,8 +1591,8 @@ const customers: CustomerSummary[] = (() => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917]">Loja</h4>
 
               <StoreLogoUpload
@@ -1715,7 +1715,7 @@ const customers: CustomerSummary[] = (() => {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[#B91C1C]" />
                 Horário de Funcionamento
@@ -1828,7 +1828,7 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-[#B91C1C]" />
                 Pagamento PIX
@@ -1944,13 +1944,13 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-[#B91C1C]" />
                 Entrega (frete por distância)
               </h4>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 2xl:grid-cols-3 gap-1.5">
                 <div>
                   <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Preço por km (R$)</label>
                   <input
@@ -2046,12 +2046,12 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Music className="w-4 h-4 text-[#B91C1C]" />
                 Alerta Sonoro do Pedido (áudio personalizado)
               </h4>
-              <p className="text-[10px] text-[#A8A29E]">
+              <p className="mt-auto pt-1 text-[10px] text-[#A8A29E]">
                 Envie um MP3 com a gravação que quiser (ex: "Atenção, novo pedido!"). Ele toca 2 vezes ao
                 receber pedido, no lugar da voz do sistema. Sem áudio, a voz feminina padrão continua.
               </p>
@@ -2102,7 +2102,7 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <CloudUpload className="w-4 h-4 text-[#B91C1C]" />
                 Backup Automático (Google Drive)
@@ -2214,7 +2214,7 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Lock className="w-4 h-4 text-[#B91C1C]" />
                 Acesso / Segurança
@@ -2399,18 +2399,18 @@ const customers: CustomerSummary[] = (() => {
       {/* ---------- MODAL NOVO PRODUTO ---------- */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-[#1C1917] w-full max-w-md rounded-2xl border border-[#E7E5E4] p-6 shadow-2xl relative">
+          <div className="bg-white text-[#1C1917] w-full max-w-md rounded-2xl border border-[#E7E5E4] shadow-2xl relative max-h-[92vh] flex flex-col">
             <button
               onClick={() => setShowAddModal(false)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E]"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E] z-10"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-lg font-extrabold text-[#1C1917] mb-4">
+            <h3 className="text-lg font-extrabold text-[#1C1917] mb-4 px-6 pt-5 shrink-0">
               Cadastrar Novo Item no Cardápio
             </h3>
-            <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateProduct} className="space-y-3 text-xs overflow-y-auto px-6 pb-6 flex-1 pr-3">
               <div>
                 <label className="block text-[#1C1917] font-bold mb-1">Nome do Produto</label>
                 <input
@@ -2437,7 +2437,28 @@ const customers: CustomerSummary[] = (() => {
                 <label className="block text-[#1C1917] font-bold mb-1">Categoria</label>
                 <select
                   value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value as CategoryId)}
+                  onChange={(e) => {
+                    const cat = e.target.value as CategoryId;
+                    setNewCategory(cat);
+                    // Combo: já abre com 2 escolhas de exemplo para ficar claro como definir os sabores
+                    if (cat === 'combos' && newComboSlots.length === 0) {
+                      const ts = Date.now();
+                      setNewComboSlots([
+                        {
+                          id: 'slot-' + ts + '-1',
+                          label: 'Escolha 1',
+                          required: true,
+                          options: [{ id: 'opt-' + ts + '-1', label: '', priceDelta: 0 }],
+                        },
+                        {
+                          id: 'slot-' + ts + '-2',
+                          label: 'Escolha 2',
+                          required: true,
+                          options: [{ id: 'opt-' + ts + '-2', label: '', priceDelta: 0 }],
+                        },
+                      ]);
+                    }
+                  }}
                   className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
                 >
                   {catList.map((c) => (
@@ -2737,7 +2758,7 @@ const CategoryEditorRow: React.FC<{
   const dirty = draft.label !== cat.label || draft.emoji !== cat.emoji || draft.color !== cat.color;
 
   return (
-    <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+    <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2 flex flex-col">
       <div className="flex items-center gap-2">
         <div className="flex flex-col shrink-0">
           <button
@@ -3274,6 +3295,18 @@ const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({
               </button>
             ))}
           </div>
+
+          {form.category === 'combos' && (
+            <div>
+              <label className="block text-[#1C1917] font-bold mb-1.5">
+                Sabores do Combo (o cliente escolhe 1 opção por item)
+              </label>
+              <ComboSlotsEditor
+                slots={form.comboSlots}
+                onChange={(comboSlots) => setForm((f) => ({ ...f, comboSlots }))}
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-[#1C1917] font-bold mb-1.5">
