@@ -97,8 +97,18 @@ const SplashBridge: React.FC<{ splashDone: boolean; setSplashDone: (v: boolean) 
   splashDone,
   setSplashDone,
 }) => {
-  const { storeLogo, storeName, city } = useClient();
+  const { storeLogo, storeName, city, ready } = useClient();
   if (splashDone) return null;
+
+  // Só anima quando a logo/nome reais chegaram (evita flash de imagem antiga/padrão)
+  if (!ready) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#B91C1C] flex items-center justify-center">
+        <span className="w-8 h-8 rounded-full border-4 border-white/30 border-t-white animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <SplashScreen
       storeLogo={storeLogo}

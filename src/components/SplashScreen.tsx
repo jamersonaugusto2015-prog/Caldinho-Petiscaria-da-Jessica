@@ -133,8 +133,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         </div>
         {storeLogo ? (
           <img
+            key={storeLogo}
             src={storeLogo}
             alt={storeName}
+            onError={(e) => {
+              // logo quebrada/antiga: esconde e usa o ícone padrão em vez de imagem quebrada
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
             className="w-28 h-28 object-contain drop-shadow-[0_8px_24px_rgba(253,230,138,0.45)]"
           />
         ) : (

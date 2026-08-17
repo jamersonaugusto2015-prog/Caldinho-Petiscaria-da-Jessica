@@ -79,6 +79,7 @@ interface ClientContextType {
   storeName: string;
   city: string;
   settings: PublicStoreSettings;
+  ready: boolean;
 
   sendChatMessage: (orderId: string, sender: 'client' | 'store' | 'driver', senderName: string, text: string) => Promise<void>;
 
@@ -146,6 +147,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isOpen: true,
   });
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   const prevStatusRef = useRef<Record<string, OrderStatus>>({});
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,24 +158,26 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     toastTimerRef.current = setTimeout(() => setNotificationToast(null), 4000);
   }, []);
 
-  // Load inicial
+  // Load inicial (ready = dados de identidade da loja carregados, usado pelo splash)
   useEffect(() => {
-    api.get<Product[]>('/products').then(setProducts).catch(() => {});
-    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
-    api
-      .get<Order[]>(`/orders?customerId=${encodeURIComponent(customerId)}`)
-      .then(setOrders)
-      .catch(() => {});
-    api
-      .get<{ points: number }>(`/loyalty?customerId=${encodeURIComponent(customerId)}`)
-      .then((r) => setLoyaltyPoints(r.points))
-      .catch(() => {});
-    api.get<{ logo: string }>('/store').then((r) => setStoreLogoState(r.logo)).catch(() => {});
-    api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {});
-    api
-      .get<PublicStoreSettings>('/settings')
-      .then(setSettings)
-      .catch(() => {});
+    Promise.all([
+      api.get<Product[]>('/products').then(setProducts).catch(() => {}),
+      api.get<Category[]>('/categories').then(setCategories).catch(() => {}),
+      api
+        .get<Order[]>(`/orders?customerId=${encodeURIComponent(customerId)}`)
+        .then(setOrders)
+        .catch(() => {}),
+      api
+        .get<{ points: number }>(`/loyalty?customerId=${encodeURIComponent(customerId)}`)
+        .then((r) => setLoyaltyPoints(r.points))
+        .catch(() => {}),
+      api.get<{ logo: string }>('/store').then((r) => setStoreLogoState(r.logo)).catch(() => {}),
+      api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {}),
+      api
+        .get<PublicStoreSettings>('/settings')
+        .then(setSettings)
+        .catch(() => {}),
+    ]).finally(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -460,6 +464,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         storeName: settings.storeName,
         city: settings.city,
         settings,
+        ready,
         sendChatMessage,
         notificationToast,
         triggerToast,
