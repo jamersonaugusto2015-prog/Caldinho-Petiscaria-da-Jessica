@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 import { createRoutes } from './routes';
 import { db } from './db';
 import { hashPassword } from './auth';
+import { runBackup } from './backup';
 import { Order } from '../src/types';
 import { UPLOADS_DIR } from './paths';
 
@@ -94,3 +95,22 @@ server.listen(PORT, () => {
   console.log(`🍲 Caldinho Express API rodando em http://localhost:${PORT}`);
   console.log('PIN da cozinha padrão: 1234 (alterável em Configurações)');
 });
+
+// ---------- Scheduler de backup automático (Google Drive) ----------
+const BACKUP_CHECK_MS = 30 * 60 * 1000; // verifica a cada 30 min
+setInterval(async () => {
+  const meta = (key: string, fallback = '') =>
+    (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined)?.value ?? fallback;
+
+  if (meta('backup_enabled', 'false') !== 'true') return;
+  const freqDays = Number(meta('backup_frequency_days', '1')) || 1;
+  const last = meta('backup_last_run');
+  if (last) {
+    const hoursSince = (Date.now() - new Date(last).getTime()) / 3600000;
+    if (hoursSince < freqDays * 24) return;
+  }
+  const result = await runBackup();
+  console.log(result.ok ? `[backup] ok: ${meta('backup_last_file')}` : `[backup] erro: ${result.error}`);
+}, BACKUP_CHECK_MS);

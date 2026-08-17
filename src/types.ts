@@ -209,6 +209,13 @@ export interface StoreSettings {
 export interface PublicStoreSettings extends StoreSettings {
   kitchenPinSet: boolean;
   isOpen: boolean;
+  backupEnabled: boolean;
+  backupFrequencyDays: number;
+  backupFolderId: string;
+  backupKeySet: boolean;
+  backupLastRun: string;
+  backupLastStatus: string;
+  backupLastFile: string;
 }
 
 export interface SalesReport {

@@ -37,6 +37,7 @@ import {
   Music,
   ChevronUp,
   MessageCircle,
+  CloudUpload,
 } from 'lucide-react';
 import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption, Category } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
@@ -157,6 +158,10 @@ export const KitchenView: React.FC<{
     orderEnabled: settings.orderEnabled,
     forceOpen: settings.forceOpen,
     kitchenPin: '',
+    backupEnabled: settings.backupEnabled,
+    backupFrequencyDays: settings.backupFrequencyDays,
+    backupFolderId: settings.backupFolderId,
+    backupServiceAccount: '',
   });
 
   const setCfg = <K extends keyof typeof configDraft>(key: K, value: (typeof configDraft)[K]) =>
@@ -186,6 +191,9 @@ export const KitchenView: React.FC<{
       openingHours: settings.openingHours.map((h) => (h ? { ...h } : null)),
       orderEnabled: settings.orderEnabled,
       forceOpen: settings.forceOpen,
+      backupEnabled: settings.backupEnabled,
+      backupFrequencyDays: settings.backupFrequencyDays,
+      backupFolderId: settings.backupFolderId,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
@@ -195,6 +203,20 @@ export const KitchenView: React.FC<{
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [financePeriod, setFinancePeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [backupRunning, setBackupRunning] = useState(false);
+
+  const handleRunBackup = async () => {
+    setBackupRunning(true);
+    try {
+      await api.post('/backup/run');
+      triggerToast('Backup concluído com sucesso! ☁️');
+      await saveSettings({});
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : 'Erro ao fazer backup.');
+    } finally {
+      setBackupRunning(false);
+    }
+  };
 
   const [storeCep, setStoreCep] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
@@ -1553,6 +1575,12 @@ const customers: CustomerSummary[] = (() => {
                   openingHours: configDraft.openingHours,
                   orderEnabled: configDraft.orderEnabled,
                   forceOpen: configDraft.forceOpen,
+                  backupEnabled: configDraft.backupEnabled,
+                  backupFrequencyDays: configDraft.backupFrequencyDays,
+                  backupFolderId: configDraft.backupFolderId,
+                  ...(configDraft.backupServiceAccount.trim()
+                    ? { backupServiceAccount: configDraft.backupServiceAccount.trim() }
+                    : {}),
                   ...(configDraft.kitchenPin ? { kitchenPin: configDraft.kitchenPin } : {}),
                 })
               }
@@ -2071,6 +2099,118 @@ const customers: CustomerSummary[] = (() => {
               )}
               <p className="text-[10px] text-[#A8A29E]">
                 Formatos: MP3, WAV, OGG ou WEBM (máx. 15 MB). Grave no celular e envie o arquivo.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+              <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
+                <CloudUpload className="w-4 h-4 text-[#B91C1C]" />
+                Backup Automático (Google Drive)
+              </h4>
+
+              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
+                <div>
+                  <div className="text-xs font-bold text-[#1C1917]">
+                    {configDraft.backupEnabled ? 'Backup automático ligado' : 'Backup automático desligado'}
+                  </div>
+                  <div className="text-[10px] text-[#57534E]">
+                    {settings.backupKeySet ? 'Chave do Google cadastrada ✓' : 'Cadastre a chave para ativar'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCfg('backupEnabled', !configDraft.backupEnabled)}
+                  className={`w-12 h-7 rounded-full transition relative shrink-0 ${
+                    configDraft.backupEnabled ? 'bg-[#059669]' : 'bg-[#D6D3D1]'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      configDraft.backupEnabled ? 'left-6' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Frequência</label>
+                <select
+                  value={configDraft.backupFrequencyDays}
+                  onChange={(e) => setCfg('backupFrequencyDays', Number(e.target.value))}
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917]"
+                >
+                  <option value={1}>Diário</option>
+                  <option value={2}>A cada 2 dias</option>
+                  <option value={7}>Semanal</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">
+                  Chave da conta de serviço (JSON) {settings.backupKeySet ? '— já cadastrada (cole só para trocar)' : ''}
+                </label>
+                <textarea
+                  value={configDraft.backupServiceAccount}
+                  onChange={(e) => setCfg('backupServiceAccount', e.target.value)}
+                  placeholder='{"type":"service_account","client_email":"...","private_key":"..."}'
+                  rows={3}
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-[10px] text-[#1C1917] font-mono resize-none focus:ring-1 focus:ring-[#B91C1C]"
+                />
+                <p className="text-[9px] text-[#A8A29E] mt-0.5">
+                  Segredo: nunca é exibido de volta. Crie em console.cloud.google.com → conta de serviço.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">
+                  ID da pasta do Drive (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={configDraft.backupFolderId}
+                  onChange={(e) => setCfg('backupFolderId', e.target.value)}
+                  placeholder="Deixe vazio para salvar na raiz do Drive"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleRunBackup}
+                  disabled={backupRunning || !settings.backupKeySet}
+                  className="flex-1 py-2 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition disabled:opacity-40"
+                >
+                  {backupRunning ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CloudUpload className="w-3.5 h-3.5" />
+                  )}
+                  {backupRunning ? 'Enviando...' : 'Fazer backup agora'}
+                </button>
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] font-bold text-[#1C1917]">
+                    {settings.backupLastRun
+                      ? new Date(settings.backupLastRun).toLocaleString('pt-BR')
+                      : 'Nenhum backup ainda'}
+                  </div>
+                  <div
+                    className={`text-[9px] font-bold ${
+                      settings.backupLastStatus === 'ok'
+                        ? 'text-[#059669]'
+                        : settings.backupLastStatus
+                        ? 'text-[#B91C1C]'
+                        : 'text-[#A8A29E]'
+                    }`}
+                  >
+                    {settings.backupLastStatus === 'ok'
+                      ? `✓ ${settings.backupLastFile}`
+                      : settings.backupLastStatus || 'aguardando'}
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[9px] text-[#A8A29E]">
+                O backup inclui o banco (pedidos, cardápio, clientes). Mantém os últimos 15 no Drive.
               </p>
             </div>
 

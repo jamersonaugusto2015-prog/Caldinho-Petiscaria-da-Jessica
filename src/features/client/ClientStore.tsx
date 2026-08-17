@@ -145,6 +145,13 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     ...DEFAULT_STORE_SETTINGS,
     kitchenPinSet: false,
     isOpen: true,
+    backupEnabled: false,
+    backupFrequencyDays: 1,
+    backupFolderId: '',
+    backupKeySet: false,
+    backupLastRun: '',
+    backupLastStatus: '',
+    backupLastFile: '',
   });
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [ready, setReady] = useState(false);

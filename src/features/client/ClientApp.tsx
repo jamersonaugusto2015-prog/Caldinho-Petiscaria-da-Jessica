@@ -4,7 +4,6 @@ import { ClientProvider, useClient } from './ClientStore';
 import { ClientHeader } from './ClientHeader';
 import { ClientView } from './ClientView';
 import { SplashScreen } from '../../components/SplashScreen';
-import { Heart } from 'lucide-react';
 
 const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -31,11 +30,6 @@ const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
           clearProps: 'transform,opacity',
         }
       );
-      gsap.fromTo(
-        '.client-footer',
-        { opacity: 0 },
-        { opacity: 1, duration: 0.7, delay: 0.45, clearProps: 'opacity' }
-      );
     }, contentRef);
 
     return () => ctx.revert();
@@ -55,39 +49,6 @@ const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
             <ClientView />
           </main>
         </div>
-
-        <footer className="client-footer bg-[#1C1917] text-[#E7E5E4] text-xs py-6 px-4 mt-10 border-t border-[#292524]">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#B91C1C] flex items-center justify-center text-white font-extrabold text-lg shadow-md">
-                🍲
-              </div>
-              <div>
-                <div className="font-extrabold text-white text-sm tracking-tight">
-                  Caldinho Express
-                </div>
-                <p className="text-[11px] text-[#A8A29E]">
-                  O melhor do sabor regional entregue quente em minutos.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] font-bold text-[#D6D3D1]">
-              <a href="/cozinha" className="hover:text-[#B91C1C] transition">
-                Painel do Restaurante
-              </a>
-              <span className="text-[#57534E]">•</span>
-              <a href="/entregador" className="hover:text-[#B91C1C] transition">
-                App do Entregador
-              </a>
-            </div>
-
-            <div className="flex items-center gap-1.5 text-[11px] text-[#A8A29E]">
-              <span>Feito com paixão em Recife</span>
-              <Heart className="w-3.5 h-3.5 fill-[#B91C1C] text-[#B91C1C]" />
-            </div>
-          </div>
-        </footer>
       </div>
     </div>
   );

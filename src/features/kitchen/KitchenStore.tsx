@@ -68,6 +68,13 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ...DEFAULT_STORE_SETTINGS,
     kitchenPinSet: false,
     isOpen: true,
+    backupEnabled: false,
+    backupFrequencyDays: 1,
+    backupFolderId: '',
+    backupKeySet: false,
+    backupLastRun: '',
+    backupLastStatus: '',
+    backupLastFile: '',
   });
   const [report, setReport] = useState<SalesReport | null>(null);
   const [trends, setTrends] = useState<RevenueTrends | null>(null);

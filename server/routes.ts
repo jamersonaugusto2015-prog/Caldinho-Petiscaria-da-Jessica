@@ -15,6 +15,7 @@ import {
 import { verifyPassword, hashPassword } from './auth';
 import { generatePixCopyPaste } from './pix';
 import { normalizePixKey } from '../src/shared/pix';
+import { runBackup } from './backup';
 import { UPLOADS_DIR } from './paths';
 import {
   Product,
@@ -872,6 +873,11 @@ export function createRoutes(io: Server): Router {
   });
 
   // ---------- Settings / Configurações ----------
+  const backupMeta = (key: string, fallback = '') =>
+    (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined)?.value ?? fallback;
+
   router.get('/settings', (_req, res) => {
     const settings = getSettings();
     const pinHash = (
@@ -879,10 +885,18 @@ export function createRoutes(io: Server): Router {
         | { value: string }
         | undefined
     )?.value;
+    // ⚠️ backup_service_account NUNCA é retornado (segredo)
     res.json({
       ...settings,
       kitchenPinSet: !!pinHash,
       isOpen: isStoreOpen(settings),
+      backupEnabled: backupMeta('backup_enabled') === 'true',
+      backupFrequencyDays: Number(backupMeta('backup_frequency_days', '1')) || 1,
+      backupFolderId: backupMeta('backup_folder_id'),
+      backupKeySet: !!backupMeta('backup_service_account'),
+      backupLastRun: backupMeta('backup_last_run'),
+      backupLastStatus: backupMeta('backup_last_status'),
+      backupLastFile: backupMeta('backup_last_file'),
     });
   });
 
@@ -942,7 +956,33 @@ export function createRoutes(io: Server): Router {
       upsert.run('kitchen_pin_hash', hashPassword(b.kitchenPin));
     }
 
-    io.emit('settings:updated', { ...getSettings(), kitchenPinSet: true });
+    // Backup automático (Google Drive)
+    if (typeof b.backupEnabled === 'boolean') upsert.run('backup_enabled', String(b.backupEnabled));
+    if (num(b.backupFrequencyDays) !== undefined)
+      upsert.run('backup_frequency_days', String(Math.max(1, num(b.backupFrequencyDays)!)));
+    if (typeof b.backupFolderId === 'string') upsert.run('backup_folder_id', b.backupFolderId.trim().slice(0, 200));
+    if (typeof b.backupServiceAccount === 'string' && b.backupServiceAccount.trim()) {
+      upsert.run('backup_service_account', b.backupServiceAccount.trim());
+    }
+
+    io.emit('settings:updated', {
+      ...getSettings(),
+      kitchenPinSet: true,
+      backupEnabled: backupMeta('backup_enabled') === 'true',
+      backupFrequencyDays: Number(backupMeta('backup_frequency_days', '1')) || 1,
+      backupFolderId: backupMeta('backup_folder_id'),
+      backupKeySet: !!backupMeta('backup_service_account'),
+      backupLastRun: backupMeta('backup_last_run'),
+      backupLastStatus: backupMeta('backup_last_status'),
+      backupLastFile: backupMeta('backup_last_file'),
+    });
+    res.json({ ok: true });
+  });
+
+  // ---------- Backup manual ----------
+  router.post('/backup/run', requireRole('kitchen'), async (_req, res) => {
+    const result = await runBackup();
+    if (!result.ok) return res.status(400).json({ error: result.error });
     res.json({ ok: true });
   });
 
