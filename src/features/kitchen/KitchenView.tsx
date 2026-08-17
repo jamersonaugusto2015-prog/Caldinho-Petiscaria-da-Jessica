@@ -511,6 +511,9 @@ const customers: CustomerSummary[] = (() => {
                       </div>
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#F5F5F4] text-[#57534E] shrink-0">
                         {o.status.replace('_', ' ')}
+                        {o.rating != null && o.rating > 0 && (
+                          <Star className="w-3 h-3 fill-[#D97706] text-[#D97706] inline-block ml-1" />
+                        )}
                       </span>
                       <span className="font-extrabold text-[#1C1917] shrink-0">R$ {o.total.toFixed(2)}</span>
                     </div>
@@ -790,6 +793,31 @@ const customers: CustomerSummary[] = (() => {
                               <span className="text-[11px] text-[#059669] font-extrabold block text-center w-full py-1">
                                 ✓ Pedido Entregue
                               </span>
+                            )}
+
+                            {ord.rating != null && ord.rating > 0 && (
+                              <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-xl p-2">
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <Star
+                                      key={n}
+                                      className={`w-3 h-3 ${
+                                        n <= (ord.rating || 0)
+                                          ? 'fill-[#D97706] text-[#D97706]'
+                                          : 'text-[#E7E5E4]'
+                                      }`}
+                                    />
+                                  ))}
+                                  <span className="ml-1 text-[10px] font-extrabold text-[#92400E]">
+                                    {ord.rating}
+                                  </span>
+                                </div>
+                                {ord.ratingComment && (
+                                  <p className="text-[10px] text-[#57534E] mt-1">
+                                    "{ord.ratingComment}"
+                                  </p>
+                                )}
+                              </div>
                             )}
 
                             {ord.status === 'cancelado' && (
@@ -1465,7 +1493,7 @@ const customers: CustomerSummary[] = (() => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-[#F5F5F4] p-4 rounded-2xl border border-[#E7E5E4] text-center">
               <span className="text-xs text-[#57534E] uppercase font-bold">Total Faturado</span>
               <div className="font-extrabold text-2xl text-[#1C1917] mt-1">
@@ -1484,6 +1512,14 @@ const customers: CustomerSummary[] = (() => {
               <span className="text-xs text-[#57534E] uppercase font-bold">Ticket Médio</span>
               <div className="font-extrabold text-2xl text-[#B91C1C] mt-1">
                 R$ {(report?.avgTicket ?? 0).toFixed(2)}
+              </div>
+            </div>
+
+            <div className="bg-[#F5F5F4] p-4 rounded-2xl border border-[#E7E5E4] text-center">
+              <span className="text-xs text-[#57534E] uppercase font-bold">Nota Média</span>
+              <div className="font-extrabold text-2xl text-[#D97706] mt-1 flex items-center justify-center gap-1">
+                <Star className="w-5 h-5 fill-[#D97706] text-[#D97706]" />
+                {(report?.avgRating ?? 0) > 0 ? report!.avgRating.toFixed(1) : '—'}
               </div>
             </div>
           </div>

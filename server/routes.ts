@@ -738,7 +738,20 @@ export function createRoutes(io: Server): Router {
       .sort((a, b) => a[0] - b[0])
       .map(([hour, ordersCount]) => ({ hour: `${hour}:00`, orders: ordersCount }));
 
-    const report: SalesReport = { totalRevenue, totalOrders, avgTicket, topSellingProducts, hourlyDistribution };
+    // Nota média das avaliações (pedidos entregues e avaliados)
+    const rated = active.filter((o) => o.rating != null && o.rating > 0);
+    const avgRating = rated.length
+      ? round2(rated.reduce((s, o) => s + (o.rating || 0), 0) / rated.length)
+      : 0;
+
+    const report: SalesReport = {
+      totalRevenue,
+      totalOrders,
+      avgTicket,
+      topSellingProducts,
+      hourlyDistribution,
+      avgRating,
+    };
     res.json(report);
   });
 

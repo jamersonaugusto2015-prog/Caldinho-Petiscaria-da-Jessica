@@ -224,6 +224,7 @@ export interface SalesReport {
   avgTicket: number;
   topSellingProducts: { name: string; count: number; total: number }[];
   hourlyDistribution: { hour: string; orders: number }[];
+  avgRating: number;
 }
 
 export interface RevenuePoint {
