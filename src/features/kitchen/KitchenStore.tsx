@@ -3,9 +3,9 @@ import {
   Product,
   Order,
   OrderStatus,
-  CategoryId,
   Coupon,
   Driver,
+  Category,
   PublicStoreSettings,
   SalesReport,
   RevenueTrends,
@@ -18,6 +18,7 @@ import { DEFAULT_STORE_SETTINGS } from '../../shared/defaults';
 interface KitchenContextType {
   orders: Order[];
   products: Product[];
+  categories: Category[];
   coupons: Coupon[];
   drivers: Driver[];
   notificationToast: string | null;
@@ -49,6 +50,9 @@ interface KitchenContextType {
   soundEnabled: boolean;
   toggleSound: () => void;
   newOrderFlashId: string | null;
+  saveCategory: (cat: Category) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  moveCategory: (id: string, dir: -1 | 1) => Promise<void>;
 }
 
 const KitchenContext = createContext<KitchenContextType | undefined>(undefined);
@@ -56,6 +60,7 @@ const KitchenContext = createContext<KitchenContextType | undefined>(undefined);
 export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [storeLogo, setStoreLogoState] = useState('');
@@ -100,6 +105,8 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     unlockAudio();
     api.get<Order[]>('/orders').then(setOrders).catch(() => {});
+    api.get<Product[]>('/products').then(setProducts).catch(() => {});
+    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api.get<Product[]>('/products').then(setProducts).catch(() => {});
     api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {});
     api.get<Driver[]>('/drivers').then(setDrivers).catch(() => {});
@@ -165,6 +172,10 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useSocketEvent('products:updated', () => {
     api.get<Product[]>('/products').then(setProducts).catch(() => {});
+  });
+
+  useSocketEvent('categories:updated', () => {
+    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
   });
 
   const loadReport = async (from?: string, to?: string) => {
@@ -362,11 +373,60 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  // ---------- Categorias ----------
+  const saveCategory = async (cat: Category) => {
+    try {
+      if (categories.some((c) => c.id === cat.id)) {
+        await api.patch(`/categories/${encodeURIComponent(cat.id)}`, cat);
+      } else {
+        await api.post('/categories', cat);
+      }
+      const list = await api.get<Category[]>('/categories');
+      setCategories(list);
+      triggerToast('Categoria salva!');
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : 'Erro ao salvar categoria.');
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    try {
+      await api.delete(`/categories/${encodeURIComponent(id)}`);
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+      triggerToast('Categoria removida.');
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : 'Erro ao remover categoria.');
+    }
+  };
+
+  const moveCategory = async (id: string, dir: -1 | 1) => {
+    const sorted = [...categories].sort((a, b) => a.sort - b.sort);
+    const idx = sorted.findIndex((c) => c.id === id);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[target];
+    const tmp = a.sort;
+    a.sort = b.sort;
+    b.sort = tmp;
+    try {
+      await Promise.all([
+        api.patch(`/categories/${encodeURIComponent(a.id)}`, { sort: a.sort }),
+        api.patch(`/categories/${encodeURIComponent(b.id)}`, { sort: b.sort }),
+      ]);
+      const list = await api.get<Category[]>('/categories');
+      setCategories(list);
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : 'Erro ao reordenar.');
+    }
+  };
+
   return (
     <KitchenContext.Provider
       value={{
         orders,
         products,
+        categories,
         coupons,
         drivers,
         notificationToast,
@@ -398,6 +458,9 @@ export const KitchenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         soundEnabled,
         toggleSound,
         newOrderFlashId,
+        saveCategory,
+        deleteCategory,
+        moveCategory,
       }}
     >
       {children}
@@ -410,6 +473,3 @@ export const useKitchen = () => {
   if (!context) throw new Error('useKitchen deve ser usado dentro de KitchenProvider');
   return context;
 };
-
-// Categorias usadas no formulário de novo produto
-export const KITCHEN_CATEGORIES: CategoryId[] = ['caldinhos', 'petiscos', 'bebidas', 'combos'];

@@ -36,9 +36,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash'>(
-    settings.pixKey ? 'pix' : 'card'
-  );
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash' | null>(null);
   const [changeForAmount, setChangeForAmount] = useState<string>('');
   const [pixCopied, setPixCopied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -93,6 +91,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     e.preventDefault();
     if (!dadosValid) {
       setStep('dados');
+      return;
+    }
+    if (!paymentMethod) {
+      setConfirmError('Escolha a forma de pagamento: PIX, Cartão ou Dinheiro.');
       return;
     }
     await placeAndHandle(paymentMethod);
@@ -470,14 +472,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                         Precisa de troco? Digite para quanto:
                       </label>
                       <div className="flex gap-2">
-                        {['Sem Troco', '50,00', '100,00'].map((amt) => (
+                        {[
+                          { label: 'Sem Troco', value: '' },
+                          { label: 'R$ 50,00', value: '50' },
+                          { label: 'R$ 100,00', value: '100' },
+                        ].map((opt) => (
                           <button
-                            key={amt}
+                            key={opt.label}
                             type="button"
-                            onClick={() => setChangeForAmount(amt === 'Sem Troco' ? '' : amt)}
-                            className="flex-1 py-2 rounded-xl bg-white border border-[#E7E5E4] text-xs font-bold text-[#1C1917] hover:bg-[#E7E5E4] transition"
+                            onClick={() => setChangeForAmount(opt.value)}
+                            className={`flex-1 py-2 rounded-xl border text-xs font-bold transition ${
+                              changeForAmount === opt.value
+                                ? 'bg-[#B91C1C] border-[#B91C1C] text-white shadow-xs'
+                                : 'bg-white border-[#E7E5E4] text-[#1C1917] hover:bg-[#E7E5E4]'
+                            }`}
                           >
-                            {amt}
+                            {opt.label}
                           </button>
                         ))}
                       </div>
@@ -541,7 +551,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                 <button
                   type="submit"
                   form="checkout-form"
-                  disabled={isProcessing}
+                  disabled={isProcessing || !paymentMethod}
                   className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-4 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm disabled:opacity-50"
                 >
                   {isProcessing ? (
@@ -550,7 +560,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       <span>Confirmando pedido...</span>
                     </div>
                   ) : (
-                    <span>Confirmar Pedido & Enviar para a Cozinha 🍲</span>
+                    <span>
+                      {paymentMethod
+                        ? `Confirmar Pedido (${paymentMethod.toUpperCase()}) 🍲`
+                        : 'Escolha a forma de pagamento'}
+                    </span>
                   )}
                 </button>
               )}

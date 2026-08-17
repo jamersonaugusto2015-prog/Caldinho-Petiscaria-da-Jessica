@@ -19,6 +19,11 @@ db.exec(`
     data TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS categories (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
@@ -74,6 +79,22 @@ function migrateOrdersCustomerId() {
 migrateOrdersCustomerId();
 
 // ---------- Seeds ----------
+function seedCategories() {
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM categories').get() as { c: number }).c;
+  if (count > 0) return;
+  const defaults = [
+    { id: 'caldinhos', label: 'Caldinhos', emoji: '🍲', color: '#C2410C', sort: 0 },
+    { id: 'petiscos', label: 'Petiscos', emoji: '🍤', color: '#7C3AED', sort: 1 },
+    { id: 'bebidas', label: 'Bebidas', emoji: '🥤', color: '#2563EB', sort: 2 },
+    { id: 'combos', label: 'Combos', emoji: '🍱', color: '#059669', sort: 3 },
+  ];
+  const insert = db.prepare('INSERT INTO categories (id, data) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const c of defaults) insert.run(c.id, JSON.stringify(c));
+  });
+  tx();
+}
+
 function seedProducts() {
   const count = (db.prepare('SELECT COUNT(*) AS c FROM products').get() as { c: number }).c;
   if (count > 0) return;
@@ -202,6 +223,7 @@ function seedSettings() {
   }
 }
 
+seedCategories();
 seedProducts();
 seedCoupons();
 seedDrivers();

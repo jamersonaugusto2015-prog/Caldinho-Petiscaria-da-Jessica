@@ -306,7 +306,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   <div className="text-xs font-bold text-[#1C1917]">
                     {order.driverName || (order.status === 'pronto' ? 'Aguardando motoboy' : 'A definir')}
                   </div>
-                  <div className="text-[10px] text-[#57534E]">Entregador Exclusivo Caldinho Express</div>
+                  <div className="text-[10px] text-[#57534E]">Moto Boy Exclusivo da Loja</div>
                 </div>
               </div>
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useClient } from './ClientStore';
@@ -110,6 +110,13 @@ export const ClientHeader: React.FC = () => {
       setIsLocating(false);
     }
   };
+
+  // CEP completo (8 dígitos): preenche os campos automaticamente, sem apertar botão
+  useEffect(() => {
+    if (newCep.replace(/\D/g, '').length !== 8 || isLocating) return;
+    void handleCepLookup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newCep]);
 
   const geocodeAddress = async (street?: string, neighborhood?: string, cityName?: string, number?: string) => {
     setIsLocating(true);
@@ -396,7 +403,7 @@ export const ClientHeader: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-[#1C1917] font-bold mb-1">CEP</label>
+                      <label className="block text-[#1C1917] font-bold mb-1">CEP (preenche sozinho)</label>
                       <div className="flex gap-1.5">
                         <input
                           type="text"
@@ -411,11 +418,14 @@ export const ClientHeader: React.FC = () => {
                           onClick={handleCepLookup}
                           disabled={isLocating}
                           className="bg-[#FEF2F2] text-[#B91C1C] px-2.5 rounded-xl border border-[#FCA5A5] font-bold hover:bg-[#FEE2E2] disabled:opacity-50 shrink-0"
-                          title="Buscar CEP"
+                          title="Buscar CEP novamente"
                         >
                           {isLocating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
                         </button>
                       </div>
+                      <p className="text-[9px] text-[#A8A29E] mt-1">
+                        Ao completar 8 dígitos, rua, bairro e cidade preenchem automaticamente.
+                      </p>
                     </div>
                   </div>
 

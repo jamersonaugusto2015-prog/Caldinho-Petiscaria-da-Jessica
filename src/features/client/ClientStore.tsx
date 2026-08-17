@@ -17,6 +17,7 @@ import {
   Coupon,
   ChatMessage,
   CategoryId,
+  Category,
   PublicStoreSettings,
 } from '../../types';
 import { api } from '../../lib/api';
@@ -27,6 +28,7 @@ import { DEFAULT_STORE_SETTINGS } from '../../shared/defaults';
 
 interface ClientContextType {
   products: Product[];
+  categories: Category[];
   selectedCategory: CategoryId | 'all';
   setSelectedCategory: (cat: CategoryId | 'all') => void;
   searchQuery: string;
@@ -112,6 +114,7 @@ function getOrCreateCustomerId(): string {
 
 export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -156,6 +159,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Load inicial
   useEffect(() => {
     api.get<Product[]>('/products').then(setProducts).catch(() => {});
+    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
     api
       .get<Order[]>(`/orders?customerId=${encodeURIComponent(customerId)}`)
       .then(setOrders)
@@ -214,6 +218,10 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useSocketEvent('products:updated', () => {
     api.get<Product[]>('/products').then(setProducts).catch(() => {});
+  });
+
+  useSocketEvent('categories:updated', () => {
+    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
   });
 
   useSocketEvent('coupons:updated', () => {
@@ -411,6 +419,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <ClientContext.Provider
       value={{
         products,
+        categories,
         selectedCategory,
         setSelectedCategory,
         searchQuery,

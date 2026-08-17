@@ -27,6 +27,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
 
   useSocketEvent<ChatMessage>('chat:message', (msg) => {
     if (msg.orderId !== orderId) return;
+    // Ignora o eco das próprias mensagens (elas já entraram de forma otimista)
+    if (msg.sender === 'client') return;
     setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
   });
 
@@ -34,8 +36,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
     e.preventDefault();
     const text = inputText.trim();
     if (!text) return;
+    const localId = 'msg-local-' + Date.now();
     const optimistic: ChatMessage = {
-      id: 'msg-local-' + Date.now(),
+      id: localId,
       orderId,
       sender: 'client',
       senderName: customerName?.trim() || 'Cliente',
@@ -44,7 +47,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
     };
     setMessages((prev) => [...prev, optimistic]);
     setInputText('');
-    sendChatMessage(orderId, 'client', optimistic.senderName, text).catch(() => {});
+    sendChatMessage(orderId, 'client', optimistic.senderName, text)
+      .catch(() => {
+        // falha ao enviar: remove a mensagem otimista
+        setMessages((prev) => prev.filter((m) => m.id !== localId));
+      });
   };
 
   return (

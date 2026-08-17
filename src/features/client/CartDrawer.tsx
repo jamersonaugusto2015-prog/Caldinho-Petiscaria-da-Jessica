@@ -220,7 +220,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               }}
               className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-3.5 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm"
             >
-              <span>Avançar para Pagamento</span>
+              <span>Continuar</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -31,6 +31,7 @@ import {
   ExtraOption,
   ComboSlot,
   ComboSlotOption,
+  Category,
   SalesReport,
 } from '../src/types';
 import { STATUS_ORDER } from '../src/shared/constants';
@@ -235,6 +236,79 @@ export function createRoutes(io: Server): Router {
     }
   });
 
+  // ---------- Categorias (editáveis no painel) ----------
+  router.get('/categories', (_req, res) => {
+    const rows = db.prepare('SELECT data FROM categories').all() as { data: string }[];
+    const cats = rows.map((r) => JSON.parse(r.data) as Category);
+    cats.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+    res.json(cats);
+  });
+
+  const categoryById = (id: string): Category | null => {
+    const row = db.prepare('SELECT data FROM categories WHERE id = ?').get(id) as
+      | { data: string }
+      | undefined;
+    return row ? (JSON.parse(row.data) as Category) : null;
+  };
+
+  const normalizeCategory = (b: Record<string, unknown>, existing?: Category): Category | null => {
+    const label = typeof b.label === 'string' ? b.label.trim() : existing?.label;
+    if (!label) return null;
+    const emoji = typeof b.emoji === 'string' && b.emoji ? b.emoji.slice(0, 8) : existing?.emoji || '🍽️';
+    const color =
+      typeof b.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(b.color)
+        ? b.color
+        : existing?.color || '#B91C1C';
+    const sort = typeof b.sort === 'number' ? b.sort : existing?.sort ?? 0;
+    return {
+      id: existing?.id || 'cat-' + Date.now(),
+      label: label.slice(0, 30),
+      emoji,
+      color,
+      sort,
+    };
+  };
+
+  router.post('/categories', requireRole('kitchen'), (req, res) => {
+    const cat = normalizeCategory(req.body ?? {});
+    if (!cat) return res.status(400).json({ error: 'Informe o nome da categoria.' });
+    const all = db.prepare('SELECT data FROM categories').all() as { data: string }[];
+    const maxSort = all.reduce(
+      (m, r) => Math.max(m, (JSON.parse(r.data) as Category).sort ?? 0),
+      -1
+    );
+    cat.sort = maxSort + 1;
+    db.prepare('INSERT INTO categories (id, data) VALUES (?, ?)').run(cat.id, JSON.stringify(cat));
+    io.emit('categories:updated');
+    res.status(201).json(cat);
+  });
+
+  router.patch('/categories/:id', requireRole('kitchen'), (req, res) => {
+    const existing = categoryById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Categoria não encontrada.' });
+    const cat = normalizeCategory(req.body ?? {}, existing);
+    if (!cat) return res.status(400).json({ error: 'Informe o nome da categoria.' });
+    db.prepare('UPDATE categories SET data = ? WHERE id = ?').run(JSON.stringify(cat), cat.id);
+    io.emit('categories:updated');
+    res.json(cat);
+  });
+
+  router.delete('/categories/:id', requireRole('kitchen'), (req, res) => {
+    const existing = categoryById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Categoria não encontrada.' });
+    const used = (db.prepare('SELECT COUNT(*) AS c FROM products WHERE data LIKE ?').get(
+      `%"category":"${req.params.id}"%`
+    ) as { c: number }).c;
+    if (used > 0) {
+      return res.status(400).json({
+        error: `Não é possível excluir: ${used} produto(s) usam esta categoria. Mova-os ou remova-os primeiro.`,
+      });
+    }
+    db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+    io.emit('categories:updated');
+    res.json({ ok: true });
+  });
+
   // ---------- Products ----------
   router.get('/products', (_req, res) => {
     const rows = db.prepare('SELECT data FROM products ORDER BY rowid').all() as { data: string }[];
@@ -265,11 +339,7 @@ export function createRoutes(io: Server): Router {
     if (typeof b.description === 'string' && b.description.trim())
       p.description = b.description.trim();
     if (typeof b.prepTimeMinutes === 'number') p.prepTimeMinutes = b.prepTimeMinutes;
-    if (
-      typeof b.category === 'string' &&
-      ['caldinhos', 'petiscos', 'bebidas', 'combos'].includes(b.category)
-    )
-      p.category = b.category as Product['category'];
+    if (typeof b.category === 'string' && b.category.trim()) p.category = b.category.trim();
     if (typeof b.originalPrice === 'number') p.originalPrice = b.originalPrice;
     if (b.originalPrice === null) p.originalPrice = undefined;
     if (typeof b.hasSizeOption === 'boolean') p.hasSizeOption = b.hasSizeOption;

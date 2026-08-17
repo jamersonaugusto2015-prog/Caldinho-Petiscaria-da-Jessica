@@ -7,8 +7,19 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import { createRoutes } from './routes';
 import { db } from './db';
+import { hashPassword } from './auth';
 import { Order } from '../src/types';
 import { UPLOADS_DIR } from './paths';
+
+// Redefinição de emergência do PIN da cozinha via variável de ambiente:
+// defina KITCHEN_PIN_RESET=<novo pin> no painel do Render, faça deploy,
+// entre com o novo PIN e depois REMOVA a variável (senão ela redefine a cada boot).
+if (process.env.KITCHEN_PIN_RESET && process.env.KITCHEN_PIN_RESET.length >= 4) {
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES ('kitchen_pin_hash', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(hashPassword(process.env.KITCHEN_PIN_RESET));
+  console.log('🔑 PIN da cozinha redefinido via KITCHEN_PIN_RESET');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

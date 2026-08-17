@@ -35,15 +35,18 @@ import {
   LocateFixed,
   Sparkles,
   Music,
+  ChevronUp,
+  MessageCircle,
 } from 'lucide-react';
-import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption } from '../../types';
+import { OrderStatus, CategoryId, Product, Coupon, Driver, OpeningHour, Order, ComboSlot, ExtraOption, Category } from '../../types';
 import { LiveMap } from '../../components/common/LiveMap';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { RevenueChart } from './RevenueChart';
 import { api } from '../../lib/api';
 import { generatePixCopyPaste, generateRandomPixKey, validatePixKey, normalizePixKey } from '../../shared/pix';
-import { formatHourRange } from '../../shared/geo';
 import { resizeImage, ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
+import { CATEGORY_EMOJIS } from '../../shared/categories';
+import { whatsAppLink } from '../../lib/whatsapp';
 
 const WEEKDAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -60,12 +63,12 @@ export type KitchenTab =
   | 'relatorios'
   | 'config';
 
-const CATEGORY_META: Record<CategoryId, { label: string; emoji: string; color: string }> = {
-  caldinhos: { label: 'Caldinhos', emoji: '🍲', color: 'bg-[#FFF7ED] text-[#C2410C] border-[#FED7AA]' },
-  petiscos: { label: 'Petiscos', emoji: '🍤', color: 'bg-[#F5F3FF] text-[#7C3AED] border-[#DDD6FE]' },
-  bebidas: { label: 'Bebidas', emoji: '🥤', color: 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]' },
-  combos: { label: 'Combos', emoji: '🍱', color: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]' },
-};
+const FALLBACK_CATEGORIES: Category[] = [
+  { id: 'caldinhos', label: 'Caldinhos', emoji: '🍲', color: '#C2410C', sort: 0 },
+  { id: 'petiscos', label: 'Petiscos', emoji: '🍤', color: '#7C3AED', sort: 1 },
+  { id: 'bebidas', label: 'Bebidas', emoji: '🥤', color: '#2563EB', sort: 2 },
+  { id: 'combos', label: 'Combos', emoji: '🍱', color: '#059669', sort: 3 },
+];
 
 export const KitchenView: React.FC<{
   activeTab: KitchenTab;
@@ -99,10 +102,17 @@ export const KitchenView: React.FC<{
     report,
     loadReport,
     trends,
+    categories,
+    saveCategory,
+    deleteCategory,
+    moveCategory,
     notificationToast,
     triggerToast,
     newOrderFlashId,
   } = useKitchen();
+
+  const catList: Category[] =
+    categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : FALLBACK_CATEGORIES;
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -658,10 +668,16 @@ const customers: CustomerSummary[] = (() => {
                             </div>
                             {ord.customerPhone && (
                               <a
-                                href={`tel:${ord.customerPhone.replace(/\D/g, '')}`}
-                                className="text-[10px] text-[#2563EB] font-bold flex items-center gap-1 hover:underline"
+                                href={whatsAppLink(
+                                  ord.customerPhone,
+                                  `Olá ${ord.customerName}! Aqui é da ${settings.storeName}. Sobre seu pedido ${ord.id}:`
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-[#059669] font-bold flex items-center gap-1 hover:underline"
+                                title="Falar com o cliente no WhatsApp"
                               >
-                                <Phone className="w-2.5 h-2.5" />
+                                <MessageCircle className="w-3 h-3" />
                                 {ord.customerPhone}
                               </a>
                             )}
@@ -921,33 +937,47 @@ const customers: CustomerSummary[] = (() => {
         </div>
       )}
 
-      {/* ---------- CATEGORIAS ---------- */}
+      {/* ---------- CATEGORIAS (editáveis) ---------- */}
       {activeTab === 'categorias' && (
         <div className="space-y-4">
-          <h3 className="text-lg font-extrabold text-[#1C1917]">Categorias do Cardápio</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {(Object.keys(CATEGORY_META) as CategoryId[]).map((catId) => {
-              const meta = CATEGORY_META[catId];
-              const catProducts = products.filter((p) => p.category === catId);
-              const available = catProducts.filter((p) => p.available).length;
-              return (
-                <div key={catId} className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center text-2xl ${meta.color}`}>
-                    {meta.emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-extrabold text-sm text-[#1C1917]">{meta.label}</h4>
-                    <p className="text-[11px] text-[#57534E]">
-                      {catProducts.length} itens • {available} disponíveis
-                    </p>
-                  </div>
-                  <div className="text-xs font-extrabold text-[#B91C1C]">
-                    {catProducts.length}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-extrabold text-[#1C1917]">Categorias do Cardápio</h3>
+            <button
+              onClick={() =>
+                saveCategory({
+                  id: 'cat-' + Date.now(),
+                  label: 'Nova Categoria',
+                  emoji: '🍽️',
+                  color: '#B91C1C',
+                  sort: catList.length,
+                })
+              }
+              className="bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold px-4 py-2.5 rounded-full text-xs flex items-center gap-1.5 shadow-sm transition"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Nova Categoria
+            </button>
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {catList.map((cat, i) => (
+              <CategoryEditorRow
+                key={cat.id}
+                cat={cat}
+                productCount={products.filter((p) => p.category === cat.id).length}
+                isFirst={i === 0}
+                isLast={i === catList.length - 1}
+                onSave={saveCategory}
+                onDelete={deleteCategory}
+                onMove={moveCategory}
+              />
+            ))}
+          </div>
+
+          <p className="text-xs text-[#57534E]">
+            Renomeie, troque o emoji e a cor, reordene e crie novas categorias. As mudanças aparecem na
+            hora no cardápio do cliente.
+          </p>
         </div>
       )}
 
@@ -1120,31 +1150,57 @@ const customers: CustomerSummary[] = (() => {
               products
                 .filter((p) => p.isPopular || p.isFlashPromo || p.isCaldinhoDoDia)
                 .map((p) => (
-                  <div key={p.id} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] shadow-xs flex items-center gap-3">
-                    <img src={p.image} alt={p.name} className="w-16 h-16 rounded-2xl object-cover shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-extrabold text-sm text-[#1C1917] line-clamp-1">{p.name}</h4>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        {p.isCaldinhoDoDia && (
-                          <span className="text-[9px] font-bold text-[#B91C1C] bg-[#FEF2F2] px-2 py-0.5 rounded-full">🔥 Destaque</span>
-                        )}
-                        {p.isFlashPromo && (
-                          <span className="text-[9px] font-bold text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Zap className="w-2.5 h-2.5" /> Flash
-                          </span>
-                        )}
-                        {p.isPopular && (
-                          <span className="text-[9px] font-bold text-[#7C3AED] bg-[#F5F3FF] px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Star className="w-2.5 h-2.5" /> Popular
-                          </span>
+                  <div key={p.id} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] shadow-xs flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <img src={p.image} alt={p.name} className="w-16 h-16 rounded-2xl object-cover shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-extrabold text-sm text-[#1C1917] line-clamp-1">{p.name}</h4>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {p.isCaldinhoDoDia && (
+                            <span className="text-[9px] font-bold text-[#B91C1C] bg-[#FEF2F2] px-2 py-0.5 rounded-full">🔥 Destaque</span>
+                          )}
+                          {p.isFlashPromo && (
+                            <span className="text-[9px] font-bold text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Zap className="w-2.5 h-2.5" /> Flash
+                            </span>
+                          )}
+                          {p.isPopular && (
+                            <span className="text-[9px] font-bold text-[#7C3AED] bg-[#F5F3FF] px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Star className="w-2.5 h-2.5" /> Popular
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-extrabold text-sm text-[#B91C1C]">R$ {p.basePrice.toFixed(2)}</div>
+                        {p.originalPrice && (
+                          <div className="text-[10px] text-[#A8A29E] line-through">R$ {p.originalPrice.toFixed(2)}</div>
                         )}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-extrabold text-sm text-[#B91C1C]">R$ {p.basePrice.toFixed(2)}</div>
-                      {p.originalPrice && (
-                        <div className="text-[10px] text-[#A8A29E] line-through">R$ {p.originalPrice.toFixed(2)}</div>
-                      )}
+                    <div className="flex gap-2 pt-2 border-t border-[#F5F5F4]">
+                      <button
+                        onClick={() => setEditingProduct(p)}
+                        className="flex-1 py-2 rounded-full border border-[#E7E5E4] bg-[#F5F5F4] text-[#1C1917] text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-[#E7E5E4] transition"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`Remover a promoção de "${p.name}"?`)) return;
+                          updateProduct(p.id, {
+                            isPopular: false,
+                            isFlashPromo: false,
+                            originalPrice: null,
+                            isCaldinhoDoDia: false,
+                          });
+                        }}
+                        className="flex-1 py-2 rounded-full border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-[#FEE2E2] transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Excluir promoção
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1507,8 +1563,8 @@ const customers: CustomerSummary[] = (() => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917]">Loja</h4>
 
               <StoreLogoUpload
@@ -1518,33 +1574,33 @@ const customers: CustomerSummary[] = (() => {
               />
 
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1">Nome da Loja</label>
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Nome da Loja</label>
                 <input
                   type="text"
                   value={configDraft.storeName}
                   onChange={(e) => setCfg('storeName', e.target.value)}
                   placeholder="Caldinho Express"
-                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1">Cidade de Entrega</label>
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Cidade de Entrega</label>
                 <input
                   type="text"
                   value={configDraft.city}
                   onChange={(e) => setCfg('city', e.target.value)}
                   placeholder="Recife - PE"
-                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1 flex items-center gap-1">
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-[#B91C1C]" />
                   Local da Loja (CEP, endereço ou pino no mapa)
                 </label>
 
-                <div className="space-y-2 mb-2">
+                <div className="space-y-1.5 mb-1.5">
                   <div className="flex gap-1.5">
                     <input
                       type="text"
@@ -1552,7 +1608,7 @@ const customers: CustomerSummary[] = (() => {
                       value={storeCep}
                       onChange={(e) => setStoreCep(e.target.value.replace(/\D/g, '').slice(0, 8))}
                       placeholder="CEP da loja (ex: 51011040)"
-                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                     />
                     <button
                       type="button"
@@ -1574,7 +1630,7 @@ const customers: CustomerSummary[] = (() => {
                       value={storeAddress}
                       onChange={(e) => setStoreAddress(e.target.value)}
                       placeholder="Ou digite o endereço: Av. Conselheiro Aguiar, 500 - Pina"
-                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                      className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                     />
                     <button
                       type="button"
@@ -1605,7 +1661,7 @@ const customers: CustomerSummary[] = (() => {
                     setCfg('storeLng', lng);
                     setStoreLocateLabel('');
                   }}
-                  heightClass="h-44"
+                  heightClass="h-28"
                 />
                 <div className="flex gap-2 mt-2">
                   <input
@@ -1631,115 +1687,126 @@ const customers: CustomerSummary[] = (() => {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-[#B91C1C]" />
-                Entrega (frete por distância)
+                <Clock className="w-4 h-4 text-[#B91C1C]" />
+                Horário de Funcionamento
               </h4>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Preço por km (R$)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.deliveryPricePerKm}
-                    onChange={(e) => setCfg('deliveryPricePerKm', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
+                  <div className="text-xs font-bold text-[#1C1917]">
+                    {configDraft.orderEnabled ? 'Loja aberta para pedidos' : 'Loja fechada para pedidos'}
+                  </div>
+                  <div className="text-[10px] text-[#57534E]">Chave geral (desliga os pedidos imediatamente)</div>
                 </div>
+                <button
+                  onClick={() => {
+                    const opening = !configDraft.orderEnabled;
+                    setCfg('orderEnabled', opening);
+                    if (opening) setCfg('forceOpen', true);
+                  }}
+                  className={`w-12 h-7 rounded-full transition relative shrink-0 ${
+                    configDraft.orderEnabled ? 'bg-[#059669]' : 'bg-[#D6D3D1]'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      configDraft.orderEnabled ? 'left-6' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Taxa base (R$)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.deliveryBaseFee}
-                    onChange={(e) => setCfg('deliveryBaseFee', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
+                  <div className="text-xs font-bold text-[#1C1917]">
+                    {configDraft.forceOpen ? 'Aberta agora (ignorando horário)' : 'Seguindo horário de funcionamento'}
+                  </div>
+                  <div className="text-[10px] text-[#57534E]">
+                    Abrir manualmente tem prioridade sobre os horários cadastrados
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Taxa mínima (R$)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.deliveryMinFee}
-                    onChange={(e) => setCfg('deliveryMinFee', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                <button
+                  onClick={() => setCfg('forceOpen', !configDraft.forceOpen)}
+                  className={`w-12 h-7 rounded-full transition relative shrink-0 ${
+                    configDraft.forceOpen ? 'bg-[#B91C1C]' : 'bg-[#D6D3D1]'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      configDraft.forceOpen ? 'left-6' : 'left-1'
+                    }`}
                   />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Frete grátis acima de (R$)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.freeDeliveryAbove}
-                    onChange={(e) => setCfg('freeDeliveryAbove', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Raio máximo (km, 0 = ilimitado)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.maxDeliveryKm}
-                    onChange={(e) => setCfg('maxDeliveryKm', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Pedido mínimo (R$, 0 = sem)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.minOrderValue}
-                    onChange={(e) => setCfg('minOrderValue', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Fator de rota (ex: 1.35)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="1"
-                    value={configDraft.routeFactor}
-                    onChange={(e) => setCfg('routeFactor', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Valor por entrega do motoboy (R$, 0 = taxa do pedido)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={configDraft.driverFeePerDelivery}
-                    onChange={(e) => setCfg('driverFeePerDelivery', Number(e.target.value))}
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
-                  />
-                </div>
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                {WEEKDAY_NAMES.map((dayName, day) => {
+                  const hours = configDraft.openingHours[day];
+                  return (
+                    <div key={day} className="flex items-center gap-2">
+                      <button
+                        onClick={() => setCfg(
+                          'openingHours',
+                          configDraft.openingHours.map((h, i) =>
+                            i === day ? (h ? null : { open: '18:00', close: '23:00' }) : h
+                          )
+                        )}
+                        className={`w-16 shrink-0 text-left text-[10px] font-bold px-1.5 py-1 rounded-lg border transition ${
+                          hours
+                            ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
+                            : 'bg-[#F5F5F4] text-[#A8A29E] border-[#E7E5E4]'
+                        }`}
+                      >
+                        {dayName}
+                      </button>
+                      {hours ? (
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <input
+                            type="time"
+                            value={hours.open}
+                            onChange={(e) => {
+                              const next = configDraft.openingHours.map((h, i) =>
+                                i === day ? { ...h!, open: e.target.value } : h
+                              );
+                              setCfg('openingHours', next);
+                            }}
+                            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-lg px-1.5 py-1 text-[10px] text-[#1C1917]"
+                          />
+                          <span className="text-[10px] text-[#57534E] font-bold">às</span>
+                          <input
+                            type="time"
+                            value={hours.close}
+                            onChange={(e) => {
+                              const next = configDraft.openingHours.map((h, i) =>
+                                i === day ? { ...h!, close: e.target.value } : h
+                              );
+                              setCfg('openingHours', next);
+                            }}
+                            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-lg px-1.5 py-1 text-[10px] text-[#1C1917]"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-[#A8A29E] italic flex-1">Fechado — toque para abrir</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <p className="text-[10px] text-[#A8A29E]">
-                Fórmula: <strong>taxa = máx(taxa mínima, taxa base + preço/km × km)</strong>. O cliente vê o
-                valor exato antes de confirmar o pedido.
+                Fora do horário, os clientes não conseguem enviar pedidos. Suporta turnos que viram à meia-noite
+                (ex: 22:00 às 02:00).
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-[#B91C1C]" />
                 Pagamento PIX
               </h4>
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1">
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">
                   Chave PIX (CPF, e-mail, telefone ou aleatória)
                 </label>
                 <div className="flex gap-1.5">
@@ -1748,7 +1815,7 @@ const customers: CustomerSummary[] = (() => {
                     value={configDraft.pixKey}
                     onChange={(e) => setCfg('pixKey', e.target.value)}
                     placeholder="Ex: contato@caldinhoexpress.com.br"
-                    className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
+                    className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
                   />
                   <button
                     type="button"
@@ -1806,28 +1873,28 @@ const customers: CustomerSummary[] = (() => {
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Nome do recebedor</label>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Nome do recebedor</label>
                   <input
                     type="text"
                     value={configDraft.pixMerchantName}
                     onChange={(e) => setCfg('pixMerchantName', e.target.value)}
                     placeholder="Caldinho Express"
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#57534E] mb-1">Cidade do recebedor</label>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Cidade do recebedor</label>
                   <input
                     type="text"
                     value={configDraft.pixMerchantCity}
                     onChange={(e) => setCfg('pixMerchantCity', e.target.value)}
                     placeholder="Recife"
-                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-[#57534E] mb-1">
+                <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">
                   WhatsApp para receber comprovantes (com DDI)
                 </label>
                 <input
@@ -1836,7 +1903,7 @@ const customers: CustomerSummary[] = (() => {
                   value={configDraft.storeWhatsApp}
                   onChange={(e) => setCfg('storeWhatsApp', e.target.value.replace(/\D/g, '').slice(0, 15))}
                   placeholder="Ex: 5581999990000"
-                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] font-mono focus:ring-1 focus:ring-[#B91C1C]"
                 />
                 <p className="text-[10px] text-[#A8A29E] mt-1">
                   O cliente verá o botão "Enviar comprovante no WhatsApp" após o pagamento PIX. Você
@@ -1849,120 +1916,109 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#B91C1C]" />
-                Horário de Funcionamento
+                <Wallet className="w-4 h-4 text-[#B91C1C]" />
+                Entrega (frete por distância)
               </h4>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="text-xs font-bold text-[#1C1917]">
-                    {configDraft.orderEnabled ? 'Loja aberta para pedidos' : 'Loja fechada para pedidos'}
-                  </div>
-                  <div className="text-[10px] text-[#57534E]">Chave geral (desliga os pedidos imediatamente)</div>
-                </div>
-                <button
-                  onClick={() => {
-                    const opening = !configDraft.orderEnabled;
-                    setCfg('orderEnabled', opening);
-                    if (opening) setCfg('forceOpen', true);
-                  }}
-                  className={`w-12 h-7 rounded-full transition relative shrink-0 ${
-                    configDraft.orderEnabled ? 'bg-[#059669]' : 'bg-[#D6D3D1]'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${
-                      configDraft.orderEnabled ? 'left-6' : 'left-1'
-                    }`}
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Preço por km (R$)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.deliveryPricePerKm}
+                    onChange={(e) => setCfg('deliveryPricePerKm', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                   />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
+                </div>
                 <div>
-                  <div className="text-xs font-bold text-[#1C1917]">
-                    {configDraft.forceOpen ? 'Aberta agora (ignorando horário)' : 'Seguindo horário de funcionamento'}
-                  </div>
-                  <div className="text-[10px] text-[#57534E]">
-                    Abrir manualmente tem prioridade sobre os horários cadastrados
-                  </div>
-                </div>
-                <button
-                  onClick={() => setCfg('forceOpen', !configDraft.forceOpen)}
-                  className={`w-12 h-7 rounded-full transition relative shrink-0 ${
-                    configDraft.forceOpen ? 'bg-[#B91C1C]' : 'bg-[#D6D3D1]'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${
-                      configDraft.forceOpen ? 'left-6' : 'left-1'
-                    }`}
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Taxa base (R$)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.deliveryBaseFee}
+                    onChange={(e) => setCfg('deliveryBaseFee', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
                   />
-                </button>
-              </div>
-
-              <div className="space-y-1.5">
-                {WEEKDAY_NAMES.map((dayName, day) => {
-                  const hours = configDraft.openingHours[day];
-                  return (
-                    <div key={day} className="flex items-center gap-2">
-                      <button
-                        onClick={() => setCfg(
-                          'openingHours',
-                          configDraft.openingHours.map((h, i) =>
-                            i === day ? (h ? null : { open: '18:00', close: '23:00' }) : h
-                          )
-                        )}
-                        className={`w-20 shrink-0 text-left text-[10px] font-bold px-2 py-1.5 rounded-lg border transition ${
-                          hours
-                            ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
-                            : 'bg-[#F5F5F4] text-[#A8A29E] border-[#E7E5E4]'
-                        }`}
-                      >
-                        {dayName}
-                      </button>
-                      {hours ? (
-                        <div className="flex items-center gap-1.5 flex-1">
-                          <input
-                            type="time"
-                            value={hours.open}
-                            onChange={(e) => {
-                              const next = configDraft.openingHours.map((h, i) =>
-                                i === day ? { ...h!, open: e.target.value } : h
-                              );
-                              setCfg('openingHours', next);
-                            }}
-                            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-lg px-2 py-1.5 text-[11px] text-[#1C1917]"
-                          />
-                          <span className="text-[10px] text-[#57534E] font-bold">às</span>
-                          <input
-                            type="time"
-                            value={hours.close}
-                            onChange={(e) => {
-                              const next = configDraft.openingHours.map((h, i) =>
-                                i === day ? { ...h!, close: e.target.value } : h
-                              );
-                              setCfg('openingHours', next);
-                            }}
-                            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-lg px-2 py-1.5 text-[11px] text-[#1C1917]"
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-[#A8A29E] italic flex-1">Fechado — toque para abrir</span>
-                      )}
-                    </div>
-                  );
-                })}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Taxa mínima (R$)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.deliveryMinFee}
+                    onChange={(e) => setCfg('deliveryMinFee', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Frete grátis acima de (R$)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.freeDeliveryAbove}
+                    onChange={(e) => setCfg('freeDeliveryAbove', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Raio máximo (km, 0 = ilimitado)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.maxDeliveryKm}
+                    onChange={(e) => setCfg('maxDeliveryKm', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Pedido mínimo (R$, 0 = sem)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.minOrderValue}
+                    onChange={(e) => setCfg('minOrderValue', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Fator de rota (ex: 1.35)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="1"
+                    value={configDraft.routeFactor}
+                    onChange={(e) => setCfg('routeFactor', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#57534E] mb-0.5">Valor por entrega do motoboy (R$, 0 = taxa do pedido)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={configDraft.driverFeePerDelivery}
+                    onChange={(e) => setCfg('driverFeePerDelivery', Number(e.target.value))}
+                    className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+                  />
+                </div>
               </div>
               <p className="text-[10px] text-[#A8A29E]">
-                Fora do horário, os clientes não conseguem enviar pedidos. Suporta turnos que viram à meia-noite
-                (ex: 22:00 às 02:00).
+                Fórmula: <strong>taxa = máx(taxa mínima, taxa base + preço/km × km)</strong>. O cliente vê o
+                valor exato antes de confirmar o pedido.
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Music className="w-4 h-4 text-[#B91C1C]" />
                 Alerta Sonoro do Pedido (áudio personalizado)
@@ -2018,13 +2074,13 @@ const customers: CustomerSummary[] = (() => {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] shadow-xs space-y-3">
+            <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center gap-2">
                 <Lock className="w-4 h-4 text-[#B91C1C]" />
                 Acesso / Segurança
               </h4>
               <div>
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
+                <div className="flex items-center justify-between p-2 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4]">
                   <div>
                     <div className="text-xs font-bold text-[#1C1917]">PIN da Cozinha</div>
                     <div className="text-[10px] text-[#57534E]">
@@ -2040,7 +2096,7 @@ const customers: CustomerSummary[] = (() => {
                   value={configDraft.kitchenPin}
                   onChange={(e) => setCfg('kitchenPin', e.target.value)}
                   placeholder="Novo PIN (mínimo 4 dígitos) — vazio mantém o atual"
-                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C] mt-2"
+                  className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-1.5 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C] mt-2"
                 />
               </div>
               <p className="text-[10px] text-[#A8A29E]">
@@ -2244,10 +2300,11 @@ const customers: CustomerSummary[] = (() => {
                   onChange={(e) => setNewCategory(e.target.value as CategoryId)}
                   className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
                 >
-                  <option value="caldinhos">Caldinhos</option>
-                  <option value="petiscos">Petiscos</option>
-                  <option value="bebidas">Bebidas</option>
-                  <option value="combos">Combos</option>
+                  {catList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji} {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -2526,6 +2583,117 @@ const CouponForm: React.FC<{ saveCoupon: (c: Coupon) => Promise<void> }> = ({ sa
   );
 };
 
+const CategoryEditorRow: React.FC<{
+  cat: Category;
+  productCount: number;
+  isFirst: boolean;
+  isLast: boolean;
+  onSave: (cat: Category) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onMove: (id: string, dir: -1 | 1) => Promise<void>;
+}> = ({ cat, productCount, isFirst, isLast, onSave, onDelete, onMove }) => {
+  const [draft, setDraft] = useState({ label: cat.label, emoji: cat.emoji, color: cat.color });
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const dirty = draft.label !== cat.label || draft.emoji !== cat.emoji || draft.color !== cat.color;
+
+  return (
+    <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] shadow-xs space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="flex flex-col shrink-0">
+          <button
+            onClick={() => onMove(cat.id, -1)}
+            disabled={isFirst}
+            className="p-0.5 text-[#A8A29E] hover:text-[#1C1917] disabled:opacity-25 transition"
+            title="Subir"
+          >
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onMove(cat.id, 1)}
+            disabled={isLast}
+            className="p-0.5 text-[#A8A29E] hover:text-[#1C1917] disabled:opacity-25 transition"
+            title="Descer"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Ícone: mostra só o atual; abre todos ao clicar (estilo WhatsApp) */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setEmojiOpen((v) => !v)}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl border border-[#E7E5E4] hover:border-[#B91C1C]/40 transition"
+            style={{ backgroundColor: `${draft.color}1A` }}
+            title="Escolher ícone"
+          >
+            {draft.emoji}
+          </button>
+          {emojiOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
+              <div className="absolute z-20 mt-1.5 left-0 bg-white border border-[#E7E5E4] rounded-xl shadow-xl p-2 w-52 grid grid-cols-6 gap-1">
+                {CATEGORY_EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => {
+                      setDraft((d) => ({ ...d, emoji: e }));
+                      setEmojiOpen(false);
+                    }}
+                    className={`w-7 h-7 rounded-lg text-base flex items-center justify-center transition ${
+                      draft.emoji === e ? 'bg-[#FEF2F2] ring-2 ring-[#B91C1C]' : 'hover:bg-[#F5F5F4]'
+                    }`}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <input
+          type="text"
+          value={draft.label}
+          onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
+          placeholder="Nome da categoria"
+          className="flex-1 min-w-0 bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2 text-xs text-[#1C1917] focus:ring-1 focus:ring-[#B91C1C]"
+        />
+
+        <button
+          onClick={() => onSave({ ...cat, ...draft })}
+          disabled={!dirty || !draft.label.trim()}
+          className="p-2 rounded-full bg-[#B91C1C] text-white hover:bg-[#991B1B] transition disabled:opacity-30 shrink-0"
+          title="Salvar alterações"
+        >
+          <Check className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm(`Excluir a categoria "${cat.label}"?`)) onDelete(cat.id);
+          }}
+          disabled={productCount > 0}
+          className="p-2 rounded-full border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] transition disabled:opacity-30 shrink-0"
+          title={
+            productCount > 0
+              ? `Tem ${productCount} produto(s) — mova-os antes de excluir`
+              : 'Excluir categoria'
+          }
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {productCount > 0 && (
+        <p className="text-[10px] text-[#A8A29E]">
+          {productCount} produto(s) nesta categoria — exclusão bloqueada até esvaziar.
+        </p>
+      )}
+    </div>
+  );
+};
+
 const ExtrasEditor: React.FC<{
   extras: ExtraOption[];
   onChange: (extras: ExtraOption[]) => void;
@@ -2704,7 +2872,9 @@ const ComboSlotsEditor: React.FC<{
 };
 
 const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({ product, onClose }) => {
-  const { updateProduct, uploadImage } = useKitchen();
+  const { updateProduct, uploadImage, categories } = useKitchen();
+  const editCatList: Category[] =
+    categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : FALLBACK_CATEGORIES;
   const [form, setForm] = useState({
     name: product.name,
     description: product.description,
@@ -2879,10 +3049,11 @@ const ProductEditModal: React.FC<{ product: Product; onClose: () => void }> = ({
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as CategoryId }))}
                   className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
                 >
-                  <option value="caldinhos">Caldinhos</option>
-                  <option value="petiscos">Petiscos</option>
-                  <option value="bebidas">Bebidas</option>
-                  <option value="combos">Combos</option>
+                  {editCatList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji} {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -3344,27 +3515,27 @@ const StoreLogoUpload: React.FC<{
   };
 
   return (
-    <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-4 space-y-3">
-      <label className="block text-[11px] font-bold text-[#57534E]">Logo da Loja</label>
+    <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 space-y-2">
+      <label className="block text-[10px] font-bold text-[#57534E]">Logo da Loja</label>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div
           onClick={() => fileInputRef.current?.click()}
-          className={`relative w-20 h-20 shrink-0 rounded-2xl overflow-hidden border-2 border-dashed transition cursor-pointer group ${
+          className={`relative w-16 h-16 shrink-0 rounded-xl overflow-hidden border-2 border-dashed transition cursor-pointer group ${
             logo ? 'border-[#B91C1C]/40 bg-white' : 'border-[#E7E5E4] bg-white'
           }`}
         >
           {logo ? (
-            <img src={logo} alt="Logo da loja" className="w-full h-full object-contain p-1.5" />
+            <img src={logo} alt="Logo da loja" className="w-full h-full object-contain p-1" />
           ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-[#A8A29E]">
-              <ImagePlus className="w-6 h-6" />
-              <span className="text-[9px] font-bold">Sem logo</span>
+            <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 text-[#A8A29E]">
+              <ImagePlus className="w-5 h-5" />
+              <span className="text-[8px] font-bold">Sem logo</span>
             </div>
           )}
           {uploading && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <span className="w-6 h-6 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              <span className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
             </div>
           )}
         </div>

@@ -1,6 +1,16 @@
 export type Role = 'client' | 'store' | 'driver';
 
-export type CategoryId = 'caldinhos' | 'petiscos' | 'bebidas' | 'combos';
+// Categoria de produto (id estável; rótulo/emoji/cor são editáveis no painel)
+export type CategoryId = string;
+
+// Categoria editável no painel da cozinha
+export interface Category {
+  id: string;
+  label: string;
+  emoji: string;
+  color: string;
+  sort: number;
+}
 
 export interface ExtraOption {
   id: string;

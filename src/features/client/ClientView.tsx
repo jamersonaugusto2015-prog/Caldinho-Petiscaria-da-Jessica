@@ -9,8 +9,8 @@ import { OrderTrackingModal } from './OrderTrackingModal';
 import { ChatModal } from './ChatModal';
 import { LoyaltySection } from './LoyaltySection';
 import { ClosedStoreModal } from './ClosedStoreModal';
-import { CategoryId, Product, OpeningHour } from '../../types';
-import { Flame, Soup, Utensils, GlassWater, Package, Sparkles, History, ShoppingBag, Home, ClipboardList, Search, ChevronRight, Clock, Store } from 'lucide-react';
+import { CategoryId, Category, Product, OpeningHour } from '../../types';
+import { Flame, Sparkles, History, ShoppingBag, Home, ClipboardList, Search, ChevronRight, Clock, Store } from 'lucide-react';
 
 function formatTodayHours(hours: OpeningHour | null): string {
   if (!hours) return 'Fechado hoje';
@@ -18,7 +18,7 @@ function formatTodayHours(hours: OpeningHour | null): string {
 }
 
 export const ClientView: React.FC = () => {
-  const { products, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, orders, trackingOrderId, setTrackingOrderId, cart, isCartOpen, setIsCartOpen, addToCart, isClosedModalOpen, setClosedModalOpen, settings } =
+  const { products, categories, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, orders, trackingOrderId, setTrackingOrderId, cart, isCartOpen, setIsCartOpen, addToCart, isClosedModalOpen, setClosedModalOpen, settings } =
     useClient();
   const { total } = useCartTotals();
 
@@ -30,18 +30,29 @@ export const ClientView: React.FC = () => {
   const caldinhoDoDia =
     products.find((p) => p.isCaldinhoDoDia) || products.find((p) => p.category === 'caldinhos' && p.available) || null;
 
-  const categories: {
-    id: CategoryId | 'all';
-    label: string;
-    icon: React.FC<{ className?: string }>;
-    color: string;
-  }[] = [
-    { id: 'all', label: 'Todos os Itens', icon: Sparkles, color: 'text-[#B91C1C]' },
-    { id: 'caldinhos', label: 'Caldinhos', icon: Soup, color: 'text-[#C2410C]' },
-    { id: 'petiscos', label: 'Petiscos', icon: Utensils, color: 'text-[#7C3AED]' },
-    { id: 'bebidas', label: 'Bebidas', icon: GlassWater, color: 'text-[#2563EB]' },
-    { id: 'combos', label: 'Combos', icon: Package, color: 'text-[#059669]' },
-  ];
+  // Categorias dinâmicas (do painel da cozinha), com fallback derivado dos produtos
+  const categoryList: Category[] = categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : [];
+  if (categoryList.length === 0) {
+    const known: Record<string, { label: string; emoji: string; color: string }> = {
+      caldinhos: { label: 'Caldinhos', emoji: '🍲', color: '#C2410C' },
+      petiscos: { label: 'Petiscos', emoji: '🍤', color: '#7C3AED' },
+      bebidas: { label: 'Bebidas', emoji: '🥤', color: '#2563EB' },
+      combos: { label: 'Combos', emoji: '🍱', color: '#059669' },
+    };
+    const seen = new Set<string>();
+    for (const p of products) {
+      const id = String(p.category);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      categoryList.push({
+        id,
+        label: known[id]?.label || id,
+        emoji: known[id]?.emoji || '🍽️',
+        color: known[id]?.color || '#B91C1C',
+        sort: categoryList.length,
+      });
+    }
+  }
 
   const filteredProducts = products.filter((p) => {
     const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
@@ -104,23 +115,35 @@ export const ClientView: React.FC = () => {
           )}
 
       <div className="grid grid-cols-5 gap-1.5 px-0.5">
-        {categories.map((cat) => {
-          const Icon = cat.icon;
+        <button
+          key="all"
+          onClick={() => setSelectedCategory('all')}
+          aria-pressed={selectedCategory === 'all'}
+          className="flex flex-col items-center gap-1.5 py-2 transition-all active:scale-95"
+        >
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl text-xl transition-all ${
+              selectedCategory === 'all' ? 'ring-2 ring-[#B91C1C] shadow-md shadow-[#B91C1C]/15' : ''
+            }`}
+            style={{ backgroundColor: selectedCategory === 'all' ? '#FEE2E2' : '#FEF2F2' }}
+          >
+            <Sparkles
+              className="h-7 w-7"
+              style={{ color: selectedCategory === 'all' ? '#B91C1C' : '#DC2626' }}
+              strokeWidth={2}
+            />
+          </div>
+          <span
+            className={`text-center text-[10px] font-semibold leading-tight ${
+              selectedCategory === 'all' ? 'text-[#B91C1C]' : 'text-[#44403C]'
+            }`}
+          >
+            Todos
+          </span>
+        </button>
+
+        {categoryList.map((cat) => {
           const isSelected = selectedCategory === cat.id;
-          const bgMap: Record<string, string> = {
-            all: '#FEF2F2',
-            caldinhos: '#FFF7ED',
-            petiscos: '#F5F3FF',
-            bebidas: '#EFF6FF',
-            combos: '#ECFDF5',
-          };
-          const iconColorMap: Record<string, string> = {
-            all: '#DC2626',
-            caldinhos: '#EA580C',
-            petiscos: '#7C3AED',
-            bebidas: '#2563EB',
-            combos: '#059669',
-          };
           return (
             <button
               key={cat.id}
@@ -129,18 +152,12 @@ export const ClientView: React.FC = () => {
               className="flex flex-col items-center gap-1.5 py-2 transition-all active:scale-95"
             >
               <div
-                className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all ${
-                  isSelected
-                    ? 'ring-2 ring-[#B91C1C] shadow-md shadow-[#B91C1C]/15'
-                    : ''
+                className={`flex h-14 w-14 items-center justify-center rounded-2xl text-2xl transition-all ${
+                  isSelected ? 'ring-2 ring-[#B91C1C] shadow-md shadow-[#B91C1C]/15' : ''
                 }`}
-                style={{ backgroundColor: isSelected ? '#FEE2E2' : bgMap[cat.id] }}
+                style={{ backgroundColor: isSelected ? '#FEE2E2' : `${cat.color}1A` }}
               >
-                <Icon
-                  className="h-7 w-7"
-                  style={{ color: isSelected ? '#B91C1C' : iconColorMap[cat.id] }}
-                  strokeWidth={2}
-                />
+                <span>{cat.emoji}</span>
               </div>
               <span
                 className={`text-center text-[10px] font-semibold leading-tight ${
@@ -160,7 +177,7 @@ export const ClientView: React.FC = () => {
             <span>
               {selectedCategory === 'all'
                 ? '⭐ Mais Vendidos & Destaques'
-                : categories.find((c) => c.id === selectedCategory)?.label}
+                : categoryList.find((c) => c.id === selectedCategory)?.label}
             </span>
             <span className="text-[11px] text-[#B91C1C] font-bold">({filteredProducts.length})</span>
           </h3>
