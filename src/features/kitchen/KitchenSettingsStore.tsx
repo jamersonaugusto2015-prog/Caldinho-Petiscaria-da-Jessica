@@ -8,7 +8,7 @@ import { useKitchenToast } from './KitchenNotificationsStore';
 interface KitchenSettingsContextType {
   settings: PublicStoreSettings;
   storeLogo: string;
-  saveSettings: (s: Partial<PublicStoreSettings> & { kitchenPin?: string; backupServiceAccount?: string }) => Promise<void>;
+  saveSettings: (s: Partial<PublicStoreSettings> & { kitchenPin?: string; backupServiceAccount?: string }) => Promise<boolean>;
   setStoreLogo: (logo: string) => Promise<void>;
 }
 
@@ -63,12 +63,21 @@ export const KitchenSettingsProvider: React.FC<{ children: React.ReactNode }> = 
 
   const saveSettings = useCallback(
     async (s: Partial<PublicStoreSettings> & { kitchenPin?: string; backupServiceAccount?: string }) => {
+      // Segredos (PIN, service account) não entram no estado público das configurações.
+      const { kitchenPin, backupServiceAccount, ...publicPatch } = s;
       try {
         await api.post('/settings', s);
-        setSettings((prev) => ({ ...prev, ...s }));
+        setSettings((prev) => ({
+          ...prev,
+          ...publicPatch,
+          ...(kitchenPin ? { kitchenPinSet: true } : {}),
+          ...(backupServiceAccount ? { backupKeySet: true } : {}),
+        }));
         triggerToast('⚙️ Configurações salvas!');
+        return true;
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao salvar configurações.');
+        return false;
       }
     },
     [triggerToast]

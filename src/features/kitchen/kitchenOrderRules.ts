@@ -8,11 +8,7 @@ const MINUTE_MS = 60000;
 
 export const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
-export const PAYMENT_METHOD_LABEL: Record<Order['payment']['method'], string> = {
-  pix: 'PIX',
-  card: 'Cartão',
-  cash: 'Dinheiro na entrega',
-};
+export { PAYMENT_METHOD_LABEL } from '../../shared/payment';
 
 export const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });

@@ -1,4 +1,4 @@
-import { CartItem, Coupon, DeliveryAddress, SizeOption, StoreSettings } from '../types';
+import { CartItem, Coupon, DeliveryAddress, Fulfillment, SizeOption, StoreSettings } from '../types';
 import { computeDeliveryFee } from './geo';
 import { DEFAULT_SIZE_OPTIONS } from './defaults';
 
@@ -35,7 +35,8 @@ export function computeCartTotals(
   cart: CartItem[],
   coupon: Coupon | null,
   address: DeliveryAddress,
-  settings: StoreSettings
+  settings: StoreSettings,
+  fulfillment: Fulfillment = 'delivery'
 ): { subtotal: number; discount: number; deliveryFee: number; total: number } {
   const subtotal =
     Math.round(
@@ -46,6 +47,11 @@ export function computeCartTotals(
     if (coupon.discountPercent) discount = Math.round((subtotal * coupon.discountPercent) / 100 * 100) / 100;
     else if (coupon.discountFixed) discount = coupon.discountFixed;
     discount = Math.min(discount, subtotal);
+  }
+  // Retirada não tem rota: nada de frete e nada de área de entrega.
+  if (fulfillment === 'pickup') {
+    const pickupTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+    return { subtotal, discount, deliveryFee: 0, total: pickupTotal };
   }
   const rawFee = computeDeliveryFee(address, settings);
   if (rawFee < 0) {

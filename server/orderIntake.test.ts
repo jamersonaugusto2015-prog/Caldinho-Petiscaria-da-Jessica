@@ -26,6 +26,9 @@ const settings: StoreSettings = {
   city: 'Recife',
   storeLat: -8.05,
   storeLng: -34.9,
+  storeAddress: 'Rua da Aurora, 100',
+  pickupEnabled: true,
+  pickupReadyMinutes: 20,
   deliveryPricePerKm: 2,
   deliveryBaseFee: 5,
   deliveryMinFee: 5,
@@ -37,6 +40,7 @@ const settings: StoreSettings = {
   pixKey: '',
   pixMerchantName: 'Teste',
   pixMerchantCity: 'Recife',
+  cardOnDeliveryEnabled: true,
   storeWhatsApp: '',
   orderSoundUrl: '',
   openingHours: Array(7).fill({ open: '00:00', close: '23:59' }),
@@ -282,4 +286,207 @@ test('a failed charge releases the reserved order row and the loyalty token', as
   assert.equal(state.saved.length, 0);
   assert.equal(state.releasedOrderIds.length, 1);
   assert.equal(state.released.length, 1);
+});
+
+test('retirada na loja dispensa endereço, zera o frete e grava o endereço da loja', async () => {
+  const state = deps();
+  const result = await placeOrder(
+    {
+      items: [item()],
+      fulfillment: 'pickup',
+      paymentMethod: 'cash',
+      customerId: 'customer-pickup',
+      customerName: 'Bruno',
+    },
+    state.base
+  );
+
+  assert.equal(result.order.fulfillment, 'pickup');
+  assert.equal(result.order.deliveryFee, 0);
+  assert.equal(result.order.distanceKm, 0);
+  assert.equal(result.order.total, product.basePrice);
+  assert.equal(result.order.address.label, 'Retirada na loja');
+  assert.equal(result.order.address.street, settings.storeAddress);
+  assert.equal(result.order.estimatedDeliveryMinutes, settings.pickupReadyMinutes);
+  assert.equal(state.saved.length, 1);
+});
+
+test('retirada é recusada enquanto a loja não aceitar retirada', async () => {
+  const state = deps({ settings: { ...settings, pickupEnabled: false } });
+  await assert.rejects(
+    () =>
+      placeOrder(
+        { items: [item()], fulfillment: 'pickup', paymentMethod: 'cash', customerId: 'c' },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.equal(state.saved.length, 0);
+});
+
+test('retirada ignora o raio máximo de entrega', async () => {
+  const state = deps({ settings: { ...settings, maxDeliveryKm: 1 } });
+  const result = await placeOrder(
+    { items: [item()], fulfillment: 'pickup', paymentMethod: 'cash', customerId: 'c' },
+    state.base
+  );
+  assert.equal(result.order.fulfillment, 'pickup');
+});
+
+test('pedido sem fulfillment continua sendo entrega e exige endereço', async () => {
+  const state = deps();
+  await assert.rejects(
+    () => placeOrder({ items: [item()], paymentMethod: 'cash', customerId: 'c' }, state.base),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+});
+
+// ---------- Momento do pagamento: online x na entrega ----------
+
+test('dinheiro nunca é cobrado na criação e nasce como pagamento na entrega', async () => {
+  let charged = false;
+  const state = deps({
+    payment: {
+      collectPix: async () => {
+        charged = true;
+        return {};
+      },
+      isCardAvailable: () => true,
+      collectCard: async () => {
+        charged = true;
+        return { isPaid: true };
+      },
+    },
+  });
+  const result = await placeOrder(
+    { items: [item()], address: address(), paymentMethod: 'cash', customerId: 'c' },
+    state.base
+  );
+  assert.equal(charged, false);
+  assert.equal(result.order.payment.timing, 'delivery');
+  assert.equal(result.order.payment.isPaid, false);
+});
+
+test('cartão na entrega não passa pelo Mercado Pago e fica a receber', async () => {
+  let charged = false;
+  const state = deps({
+    payment: {
+      collectPix: async () => ({}),
+      // A loja não conectou o Mercado Pago: a maquininha tem que funcionar assim mesmo.
+      isCardAvailable: () => false,
+      collectCard: async () => {
+        charged = true;
+        return { isPaid: true };
+      },
+    },
+  });
+  const result = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'card',
+      paymentTiming: 'delivery',
+      customerId: 'c',
+    },
+    state.base
+  );
+  assert.equal(charged, false);
+  assert.equal(result.order.payment.method, 'card');
+  assert.equal(result.order.payment.timing, 'delivery');
+  assert.equal(result.order.payment.isPaid, false);
+  assert.deepEqual(state.saved, [result.order]);
+});
+
+test('cartão online continua exigindo o Mercado Pago', async () => {
+  const state = deps();
+  state.base.payment.isCardAvailable = () => false;
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [item()],
+          address: address(),
+          paymentMethod: 'card',
+          paymentTiming: 'online',
+          customerId: 'c',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('cartão na entrega é recusado quando a loja não leva maquininha', async () => {
+  const state = deps({ settings: { ...settings, cardOnDeliveryEnabled: false } });
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [item()],
+          address: address(),
+          paymentMethod: 'card',
+          paymentTiming: 'delivery',
+          customerId: 'c',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('PIX ignora um momento "na entrega" e continua online', async () => {
+  let charged = false;
+  const state = deps({
+    payment: {
+      collectPix: async () => {
+        charged = true;
+        return { pixCopyPaste: '000201...' };
+      },
+      isCardAvailable: () => true,
+      collectCard: async () => ({ isPaid: true }),
+    },
+  });
+  const result = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'pix',
+      paymentTiming: 'delivery',
+      customerId: 'c',
+    },
+    state.base
+  );
+  assert.equal(charged, true);
+  assert.equal(result.order.payment.timing, 'online');
+});
+
+test('troco só é guardado em pedidos de dinheiro', async () => {
+  const state = deps();
+  const result = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'card',
+      paymentTiming: 'delivery',
+      changeForAmount: 50,
+      customerId: 'c',
+    },
+    state.base
+  );
+  assert.equal(result.order.payment.changeForAmount, undefined);
+
+  const cash = deps();
+  const cashResult = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'cash',
+      changeForAmount: 50,
+      customerId: 'c',
+    },
+    cash.base
+  );
+  assert.equal(cashResult.order.payment.changeForAmount, 50);
 });

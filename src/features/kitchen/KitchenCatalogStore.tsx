@@ -133,6 +133,8 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         await api.post(`/products/${id}/caldinho-do-dia`);
         const list = await api.get<Product[]>('/products');
         setProducts(list);
+        const chosen = list.find((product) => product.id === id);
+        triggerToast(`🔥 ${chosen?.name || 'Produto'} agora é o Caldinho do Dia.`);
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao definir Caldinho do Dia.');
       }

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { Order, PublicStoreSettings } from '../../types';
+import { Driver, Order, PublicStoreSettings } from '../../types';
 import { driverApi as api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
-import { getDriverProfile, getStoredRoleToken } from '../../lib/auth';
+import { getDriverProfile, getStoredRoleToken, saveDriverProfile } from '../../lib/auth';
 import { useDriverLocation, DriverLocationStatus } from './useDriverLocation';
 
 function localDateKey(iso: string): string {
@@ -39,7 +39,9 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [orders, setOrders] = useState<Order[]>([]);
   const [profile, setProfile] = useState(getDriverProfile());
   const [settings, setSettings] = useState<PublicStoreSettings | null>(null);
-  const [isOnline, setIsOnline] = useState(false);
+  // A presença mora no servidor. Começamos pelo perfil salvo para não piscar
+  // "OFFLINE" a cada recarga e confirmamos logo em seguida com o servidor.
+  const [isOnline, setIsOnline] = useState(() => Boolean(getDriverProfile()?.online));
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [dismissedCancellations, setDismissedCancellations] = useState<Set<string>>(new Set());
 
@@ -57,10 +59,24 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     api.get<Order[]>(`/orders${qs}`).then(setOrders).catch(() => {});
   }, [profile?.id]);
 
+  const driverId = profile?.id;
+
   useEffect(() => {
     refetchOrders();
     api.get<PublicStoreSettings>('/settings').then(setSettings).catch(() => {});
   }, [refetchOrders]);
+
+  useEffect(() => {
+    if (!driverId) return;
+    api
+      .get<Driver>(`/drivers/${encodeURIComponent(driverId)}/presence`)
+      .then((driver) => {
+        setIsOnline(Boolean(driver.online));
+        saveDriverProfile(driver);
+        setProfile(driver);
+      })
+      .catch(() => {});
+  }, [driverId]);
 
   useLiveSession({
     role: 'driver',
@@ -140,14 +156,19 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [startLocationWatch, stopLocationWatch]);
 
   const setOnlinePresence = useCallback(
-    async (next: boolean) => {
+    async (next: boolean): Promise<boolean> => {
       setIsOnline(next);
-      if (profile?.id) {
-        try {
-          await api.post(`/drivers/${profile.id}/presence`, { online: next });
-        } catch {
-          triggerToast('Não foi possível atualizar sua presença.');
-        }
+      if (!profile?.id) return true;
+      try {
+        const updated = await api.post<Driver>(`/drivers/${profile.id}/presence`, { online: next });
+        saveDriverProfile(updated);
+        setProfile(updated);
+        return true;
+      } catch {
+        // Sem gravar no servidor a presença não vale: volta ao estado anterior.
+        setIsOnline(!next);
+        triggerToast('Não foi possível atualizar sua presença.');
+        return false;
       }
     },
     [profile, triggerToast]
@@ -155,7 +176,8 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const toggleOnline = async () => {
     const next = !isOnline;
-    await setOnlinePresence(next);
+    const ok = await setOnlinePresence(next);
+    if (!ok) return;
     triggerToast(next ? '🛵 Você está ONLINE e disponível para corridas!' : 'Você está offline.');
   };
 

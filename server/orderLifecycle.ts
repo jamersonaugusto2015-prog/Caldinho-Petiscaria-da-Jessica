@@ -1,5 +1,6 @@
 import { COMPLAINT_WINDOW_HOURS, Order, OrderStatus, StoreSettings } from '../src/types';
 import { STATUS_ORDER } from '../src/shared/constants';
+import { isPickup } from '../src/shared/fulfillment';
 import { DomainError } from './errors';
 
 /** Textos escritos pelo cliente aparecem inteiros na tela da cozinha e vice-versa. */
@@ -60,6 +61,10 @@ export function applyOrderEvent(
     if (event.status === 'cancelado') {
       throw new DomainError(400, 'Use a rota de cancelamento para cancelar o pedido.');
     }
+    // Retirada não passa por motoboy: de `pronto` o pedido vai direto para `entregue`.
+    if (event.status === 'saiu_entrega' && isPickup(order)) {
+      throw new DomainError(400, 'Pedido de retirada na loja não sai para entrega.');
+    }
     if (event.actor === 'driver') {
       if (event.status !== 'entregue' || order.status !== 'saiu_entrega') {
         throw new DomainError(400, 'Ação não permitida para o entregador.');
@@ -89,6 +94,9 @@ export function applyOrderEvent(
   }
 
   if (event.type === 'assign') {
+    if (isPickup(order)) {
+      throw new DomainError(400, 'Pedido de retirada na loja não tem corrida.');
+    }
     const driver = deps.getDriver(event.driverId);
     if (!driver || !driver.active) {
       throw new DomainError(403, 'Motoboy não encontrado.');

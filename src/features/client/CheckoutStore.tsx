@@ -1,9 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import type { ChatMessage, Order, OrderStatus, Product, PublicStoreSettings } from '../../types';
+import type {
+  ChatMessage,
+  Order,
+  OrderStatus,
+  PaymentMethod,
+  PaymentTiming,
+  Product,
+  PublicStoreSettings,
+} from '../../types';
 import { api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
-import { LOYALTY_STAMP_COST, STATUS_MESSAGES } from '../../shared/constants';
+import { LOYALTY_STAMP_COST, statusMessageFor } from '../../shared/constants';
 import { useCart } from './CartStore';
 
 export interface CheckoutContextValue {
@@ -14,7 +22,8 @@ export interface CheckoutContextValue {
   /** Aplica uma versão mais nova de um pedido (poll de PIX, etc.) ao histórico local. */
   applyOrderUpdate: (order: Order) => void;
   placeOrder: (
-    paymentMethod: 'pix' | 'card' | 'cash',
+    paymentMethod: PaymentMethod,
+    paymentTiming: PaymentTiming,
     changeFor?: number,
     customer?: { name: string; phone: string },
     card?: {
@@ -68,7 +77,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
   triggerToast,
   children,
 }) => {
-  const { cart, appliedCoupon, selectedAddress, clearCart, addToCart, setClosedModalOpen } = useCart();
+  const { cart, appliedCoupon, selectedAddress, fulfillment, clearCart, addToCart, setClosedModalOpen } = useCart();
   const [orders, setOrders] = useState<Order[]>([]);
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(initialTrackingOrder);
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -89,7 +98,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
       const before = previousStatus.current[order.id];
       previousStatus.current[order.id] = order.status;
       if (before && before !== order.status) {
-        triggerToast(`${order.id}: ${STATUS_MESSAGES[order.status]}`);
+        triggerToast(`${order.id}: ${statusMessageFor(order.status, order.fulfillment)}`);
         if (order.status === 'entregue') confetti({ particleCount: 100, spread: 90, origin: { y: 0.5 } });
       }
     },
@@ -97,13 +106,21 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
     onLoyaltyUpdated: ({ points }) => setLoyaltyPoints(points),
   });
 
-  const placeOrder: CheckoutContextValue['placeOrder'] = async (paymentMethod, changeFor, customer, card) => {
+  const placeOrder: CheckoutContextValue['placeOrder'] = async (
+    paymentMethod,
+    paymentTiming,
+    changeFor,
+    customer,
+    card
+  ) => {
     try {
       const result = await api.post<{ order: Order; loyaltyPoints: number }>('/orders', {
         items: cart,
         couponCode: appliedCoupon?.code,
-        address: selectedAddress,
+        address: fulfillment === 'pickup' ? undefined : selectedAddress,
+        fulfillment,
         paymentMethod,
+        paymentTiming,
         changeForAmount: changeFor,
         customerName: customer?.name,
         customerPhone: customer?.phone,

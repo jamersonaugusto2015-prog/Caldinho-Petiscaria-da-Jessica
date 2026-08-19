@@ -1,4 +1,4 @@
-import { OrderStatus } from '../types';
+import { Fulfillment, OrderStatus } from '../types';
 
 export const STATUS_MESSAGES: Record<OrderStatus, string> = {
   recebido: 'Pedido Recebido pela Cozinha!',
@@ -8,6 +8,19 @@ export const STATUS_MESSAGES: Record<OrderStatus, string> = {
   entregue: 'Pedido Entregue! Bom apetite! ⭐',
   cancelado: 'Pedido Cancelado.',
 };
+
+/** Na retirada não existe motoboy: os avisos falam do balcão, não da porta de casa. */
+const PICKUP_STATUS_MESSAGES: Partial<Record<OrderStatus, string>> = {
+  pronto: 'Pedido Pronto para Retirar na loja! 🏪',
+  entregue: 'Pedido Retirado! Bom apetite! ⭐',
+};
+
+export function statusMessageFor(status: OrderStatus, fulfillment?: Fulfillment): string {
+  if (fulfillment === 'pickup' && PICKUP_STATUS_MESSAGES[status]) {
+    return PICKUP_STATUS_MESSAGES[status] as string;
+  }
+  return STATUS_MESSAGES[status];
+}
 
 export const STATUS_ORDER: OrderStatus[] = [
   'recebido',

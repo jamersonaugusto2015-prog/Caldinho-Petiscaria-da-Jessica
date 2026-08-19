@@ -371,7 +371,7 @@ export function createRoutes(io: Server): Router {
       const orders = listAllOrders()
         .filter(
           (o) =>
-            (o.status === 'pronto' && !o.driverId) ||
+            (o.status === 'pronto' && !o.driverId && o.fulfillment !== 'pickup') ||
             (driverId !== '' && o.driverId === driverId)
         )
         .map(stripPaymentSecrets);
@@ -814,8 +814,24 @@ export function createRoutes(io: Server): Router {
       return Number.isFinite(n) ? n : fallback;
     };
 
+    // Toda validação acontece ANTES do primeiro upsert: se um campo for recusado
+    // no meio da gravação, o resto já teria sido salvo e o painel mostraria erro
+    // com metade das configurações alteradas.
+    const newPin = typeof b.kitchenPin === 'string' ? b.kitchenPin.trim() : '';
+    if (newPin && newPin.length < 4) {
+      return res.status(400).json({ error: 'O PIN da cozinha precisa ter pelo menos 4 caracteres.' });
+    }
+    if (typeof b.pixKey === 'string' && b.pixKey.trim()) {
+      const pixErr = validatePixKey(b.pixKey);
+      if (pixErr) return res.status(400).json({ error: pixErr });
+    }
+
     if (typeof b.storeName === 'string') upsert.run('store_name', b.storeName.trim());
     if (typeof b.city === 'string') upsert.run('store_city', b.city.trim());
+    if (typeof b.storeAddress === 'string') upsert.run('store_address', b.storeAddress.trim().slice(0, 160));
+    if (typeof b.pickupEnabled === 'boolean') upsert.run('pickup_enabled', String(b.pickupEnabled));
+    if (num(b.pickupReadyMinutes) !== undefined)
+      upsert.run('pickup_ready_minutes', String(Math.max(5, Math.round(num(b.pickupReadyMinutes)!))));
     if (num(b.storeLat) !== undefined) upsert.run('store_lat', String(num(b.storeLat)));
     if (num(b.storeLng) !== undefined) upsert.run('store_lng', String(num(b.storeLng)));
     if (num(b.deliveryPricePerKm) !== undefined) upsert.run('delivery_price_per_km', String(num(b.deliveryPricePerKm)));
@@ -827,13 +843,11 @@ export function createRoutes(io: Server): Router {
     if (num(b.routeFactor) !== undefined) upsert.run('route_factor', String(num(b.routeFactor)));
     if (num(b.driverFeePerDelivery) !== undefined)
       upsert.run('driver_fee_per_delivery', String(num(b.driverFeePerDelivery)));
-    if (typeof b.pixKey === 'string') {
-      const pixErr = b.pixKey.trim() ? validatePixKey(b.pixKey) : null;
-      if (pixErr) return res.status(400).json({ error: pixErr });
-      upsert.run('pix_key', normalizePixKey(b.pixKey));
-    }
+    if (typeof b.pixKey === 'string') upsert.run('pix_key', normalizePixKey(b.pixKey));
     if (typeof b.pixMerchantName === 'string') upsert.run('pix_merchant_name', b.pixMerchantName.trim());
     if (typeof b.pixMerchantCity === 'string') upsert.run('pix_merchant_city', b.pixMerchantCity.trim());
+    if (typeof b.cardOnDeliveryEnabled === 'boolean')
+      upsert.run('card_on_delivery_enabled', String(b.cardOnDeliveryEnabled));
     if (typeof b.storeWhatsApp === 'string') {
       upsert.run('store_whatsapp', b.storeWhatsApp.replace(/\D/g, '').slice(0, 15));
     }
@@ -860,8 +874,8 @@ export function createRoutes(io: Server): Router {
     }
     if (typeof b.orderEnabled === 'boolean') upsert.run('order_enabled', String(b.orderEnabled));
     if (typeof b.forceOpen === 'boolean') upsert.run('force_open', String(b.forceOpen));
-    if (typeof b.kitchenPin === 'string' && b.kitchenPin.length >= 4) {
-      upsert.run('kitchen_pin_hash', await hashPassword(b.kitchenPin));
+    if (newPin) {
+      upsert.run('kitchen_pin_hash', await hashPassword(newPin));
     }
 
     // Backup automático (Google Drive)
@@ -1081,6 +1095,17 @@ export function createRoutes(io: Server): Router {
   });
 
   // Presença do entregador (online/offline + última posição)
+  // O app do motoboy recarrega sem estado: sem esta leitura ele voltaria sempre
+  // como OFFLINE mesmo tendo ficado online no servidor.
+  router.get('/drivers/:id/presence', requireRole('driver'), (req, res) => {
+    const row = db.prepare('SELECT data FROM drivers WHERE id = ?').get(req.params.id) as
+      | { data: string }
+      | undefined;
+    if (!row) return res.status(404).json({ error: 'Motoboy não encontrado.' });
+    const driver: Driver = JSON.parse(row.data);
+    res.json({ ...driver, password: undefined });
+  });
+
   router.post('/drivers/:id/presence', requireRole('driver'), (req, res) => {
     const row = db.prepare('SELECT data FROM drivers WHERE id = ?').get(req.params.id) as
       | { data: string }

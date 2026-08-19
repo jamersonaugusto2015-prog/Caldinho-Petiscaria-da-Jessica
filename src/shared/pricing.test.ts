@@ -130,3 +130,12 @@ test('findCoupon matches case-insensitively and trims whitespace', () => {
   assert.equal(findCoupon(' promo10 ', coupons)?.code, 'PROMO10');
   assert.equal(findCoupon('nope', coupons), undefined);
 });
+
+test('retirada na loja não cobra frete nem sai da área de entrega', () => {
+  const cart = [cartItem({ quantity: 2 })];
+  const farAway = { ...address, lat: -9.5, lng: -36.5 };
+  const totals = computeCartTotals(cart, null, farAway, DEFAULT_STORE_SETTINGS, 'pickup');
+
+  assert.equal(totals.deliveryFee, 0);
+  assert.equal(totals.total, totals.subtotal);
+});

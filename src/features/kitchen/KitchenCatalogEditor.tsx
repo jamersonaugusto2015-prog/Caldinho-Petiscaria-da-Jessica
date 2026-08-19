@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Check, ImagePlus, Megaphone, Pencil, PlusCircle, Tags, Ticket, Trash2, Upload, UtensilsCrossed, X } from 'lucide-react';
-import type { Category, ComboSlot, Coupon, ExtraOption, Product } from '../../types';
+import { Check, Flame, ImagePlus, Megaphone, Pause, Pencil, Play, PlusCircle, Search, Tags, Ticket, Trash2, Upload, UtensilsCrossed } from 'lucide-react';
+import type { Category, Coupon, Product } from '../../types';
 import { ACCEPTED_IMAGE_TYPES, resizeImage, validateImageFile } from '../../lib/image';
 import { useKitchenCatalog } from './KitchenCatalogStore';
 import { useKitchenUpload } from './useKitchenUpload';
+import { KitchenProductEditor, PRODUCT_IMAGE_FALLBACK } from './KitchenProductEditor';
 import type { KitchenTab } from './kitchenTabs';
 
 const FALLBACK_CATEGORIES: Category[] = [
@@ -40,7 +41,7 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
     [categories]
   );
   const editorModal = editor ? (
-    <ProductEditor
+    <KitchenProductEditor
       value={editor}
       categories={sortedCategories}
       onClose={() => setEditor(null)}
@@ -71,12 +72,233 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
   return editorModal;
 };
 
-const ProductCatalog: React.FC<{ products: Product[]; categories: Category[]; onNew: () => void; onEdit: (product: Product) => void; onDelete: (product: Product) => void; onToggle: (product: Product) => Promise<void>; onPrice: (id: string, price: number) => Promise<void>; onDay: (id: string) => Promise<void>; onUpload: (product: Product, file: File) => Promise<void> }> = ({ products, categories, onNew, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => <div className="space-y-4"><Header icon={<UtensilsCrossed />} title="Cardápio e estoque" action={<button className="btn-primary" onClick={onNew}><PlusCircle className="w-4 h-4" />Novo produto</button>} /><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{products.map((product) => <div key={product.id} className={`bg-white rounded-2xl p-4 border shadow-xs ${product.available ? 'border-[#E7E5E4]' : 'border-red-200 opacity-70'}`}><div className="flex gap-3"><img src={product.image} alt={product.name} className="w-14 h-14 rounded-xl object-cover bg-[#F5F5F4]" /><div className="min-w-0 flex-1"><h3 className="font-extrabold text-sm truncate">{product.name}</h3><span className="text-[10px] uppercase text-[#57534E]">{categories.find((category) => category.id === product.category)?.label || product.category}</span>{product.isCaldinhoDoDia && <span className="block text-[10px] text-[#B91C1C] font-bold">🔥 Caldinho do dia</span>}</div></div><div className="flex items-center justify-between bg-[#F5F5F4] rounded-xl p-2 mt-3 text-xs"><span>Preço base</span><PriceInput product={product} onSave={onPrice} /></div><div className="flex gap-1.5 mt-3"><button className="btn-secondary flex-1" onClick={() => void onToggle(product)}>{product.available ? 'Pausar' : 'Reativar'}</button>{product.category === 'caldinhos' && <button className={`btn-secondary ${product.isCaldinhoDoDia ? 'text-[#B91C1C]' : ''}`} onClick={() => void onDay(product.id)}>🔥</button>}<label className="btn-secondary cursor-pointer"><Upload className="w-3.5 h-3.5" /><input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onUpload(product, file); }} /></label><button className="btn-secondary" onClick={() => onEdit(product)}><Pencil className="w-3.5 h-3.5" /></button><button className="btn-danger" onClick={() => onDelete(product)}><Trash2 className="w-3.5 h-3.5" /></button></div></div>)}</div></div>;
+const ProductCatalog: React.FC<{
+  products: Product[];
+  categories: Category[];
+  onNew: () => void;
+  onEdit: (product: Product) => void;
+  onDelete: (product: Product) => void;
+  onToggle: (product: Product) => Promise<void>;
+  onPrice: (id: string, price: number) => Promise<void>;
+  onDay: (id: string) => Promise<void>;
+  onUpload: (product: Product, file: File) => Promise<void>;
+}> = ({ products, categories, onNew, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => {
+  const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('todas');
+
+  const visible = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return products.filter((product) => {
+      if (categoryFilter !== 'todas' && product.category !== categoryFilter) return false;
+      if (!term) return true;
+      return (
+        product.name.toLowerCase().includes(term) || product.description.toLowerCase().includes(term)
+      );
+    });
+  }, [products, query, categoryFilter]);
+
+  const pausedCount = products.filter((product) => !product.available).length;
+  const countFor = (id: string) => products.filter((product) => product.category === id).length;
+
+  return (
+    <div className="space-y-4">
+      <Header
+        icon={<UtensilsCrossed />}
+        title="Cardápio e estoque"
+        subtitle={`${products.length} produto(s)${pausedCount ? ` · ${pausedCount} pausado(s)` : ''}`}
+        action={
+          <button className="btn-primary shrink-0" onClick={onNew}>
+            <PlusCircle className="w-4 h-4" />
+            Novo produto
+          </button>
+        }
+      />
+
+      <div className="bg-white rounded-2xl border border-[#E7E5E4] p-3 space-y-3">
+        <div className="relative">
+          <Search className="w-4 h-4 text-[#A8A29E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            className="input pl-9 py-2.5"
+            placeholder="Buscar produto pelo nome ou descrição..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+          <FilterChip
+            active={categoryFilter === 'todas'}
+            label={`Todas (${products.length})`}
+            onClick={() => setCategoryFilter('todas')}
+          />
+          {categories.map((category) => (
+            <FilterChip
+              key={category.id}
+              active={categoryFilter === category.id}
+              label={`${category.emoji} ${category.label} (${countFor(category.id)})`}
+              onClick={() => setCategoryFilter(category.id)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {visible.length === 0 ? (
+        <Empty text={query.trim() ? `Nenhum produto para "${query.trim()}".` : 'Nenhum produto nesta categoria.'} />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+          {visible.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              categoryLabel={
+                categories.find((category) => category.id === product.category)?.label || product.category
+              }
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onToggle={onToggle}
+              onPrice={onPrice}
+              onDay={onDay}
+              onUpload={onUpload}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const FilterChip: React.FC<{ active: boolean; label: string; onClick: () => void }> = ({
+  active,
+  label,
+  onClick,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold border transition ${
+      active
+        ? 'bg-[#B91C1C] text-white border-[#B91C1C]'
+        : 'bg-[#F5F5F4] text-[#57534E] border-[#E7E5E4] hover:bg-[#E7E5E4]'
+    }`}
+  >
+    {label}
+  </button>
+);
+
+const ProductCard: React.FC<{
+  product: Product;
+  categoryLabel: string;
+  onEdit: (product: Product) => void;
+  onDelete: (product: Product) => void;
+  onToggle: (product: Product) => Promise<void>;
+  onPrice: (id: string, price: number) => Promise<void>;
+  onDay: (id: string) => Promise<void>;
+  onUpload: (product: Product, file: File) => Promise<void>;
+}> = ({ product, categoryLabel, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => (
+  <article
+    className={`bg-white rounded-2xl border flex flex-col overflow-hidden transition hover:shadow-md ${
+      product.available ? 'border-[#E7E5E4]' : 'border-[#FCA5A5]'
+    }`}
+  >
+    <div className="relative aspect-[16/9] bg-[#F5F5F4] shrink-0">
+      <img
+        src={product.image || PRODUCT_IMAGE_FALLBACK}
+        alt=""
+        loading="lazy"
+        className={`absolute inset-0 w-full h-full object-cover ${product.available ? '' : 'grayscale opacity-60'}`}
+        onError={(event) => {
+          (event.currentTarget as HTMLImageElement).src = PRODUCT_IMAGE_FALLBACK;
+        }}
+      />
+      <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+        {!product.available && <CardBadge className="bg-[#B91C1C] text-white">Pausado</CardBadge>}
+        {product.isCaldinhoDoDia && <CardBadge className="bg-[#FEF3C7] text-[#B45309]">🔥 Do dia</CardBadge>}
+        {product.isPopular && <CardBadge className="bg-white text-[#1C1917]">⭐ Popular</CardBadge>}
+        {product.isFlashPromo && <CardBadge className="bg-[#7C3AED] text-white">⚡ Flash</CardBadge>}
+      </div>
+    </div>
+
+    <div className="p-4 flex flex-col flex-1 gap-3">
+      <div>
+        <span className="text-[10px] uppercase tracking-wide font-bold text-[#57534E]">{categoryLabel}</span>
+        <h3 className="font-extrabold text-sm text-[#1C1917] leading-snug line-clamp-2" title={product.name}>
+          {product.name}
+        </h3>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 bg-[#F5F5F4] rounded-xl px-3 py-2 text-xs mt-auto">
+        <span className="text-[#57534E] font-bold">Preço base</span>
+        <PriceInput product={product} onSave={onPrice} />
+      </div>
+
+      <div className="flex gap-1.5">
+        <button
+          className={`flex-1 ${product.available ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => void onToggle(product)}
+        >
+          {product.available ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          {product.available ? 'Pausar' : 'Reativar'}
+        </button>
+        {product.category === 'caldinhos' && (
+          <button
+            className={product.isCaldinhoDoDia ? 'btn-primary p-2' : 'btn-secondary p-2'}
+            title={product.isCaldinhoDoDia ? 'Este é o caldinho do dia' : 'Marcar como caldinho do dia'}
+            aria-pressed={product.isCaldinhoDoDia}
+            aria-label="Marcar como caldinho do dia"
+            onClick={() => void onDay(product.id)}
+          >
+            <Flame className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <label className="btn-secondary p-2 cursor-pointer" title="Trocar a foto">
+          <Upload className="w-3.5 h-3.5" />
+          <span className="sr-only">Trocar a foto</span>
+          <input
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES}
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) void onUpload(product, file);
+            }}
+          />
+        </label>
+        <button className="btn-secondary p-2" title="Editar" aria-label="Editar" onClick={() => onEdit(product)}>
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button className="btn-danger p-2" title="Excluir" aria-label="Excluir" onClick={() => onDelete(product)}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  </article>
+);
+
+const CardBadge: React.FC<{ className: string; children: React.ReactNode }> = ({ className, children }) => (
+  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm ${className}`}>{children}</span>
+);
 
 const PriceInput: React.FC<{ product: Product; onSave: (id: string, price: number) => Promise<void> }> = ({ product, onSave }) => {
   const [value, setValue] = useState(String(product.basePrice));
-  return <div className="flex items-center gap-1"><span>R$</span><input className="w-20 bg-white border border-[#E7E5E4] rounded-lg px-1.5 py-1 text-xs" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => { const parsed = Number(value); if (Number.isFinite(parsed) && parsed >= 0 && parsed !== product.basePrice) void onSave(product.id, parsed); }} /></div>;
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[#57534E]">R$</span>
+      <input
+        aria-label={`Preço base de ${product.name}`}
+        className="w-20 bg-white border border-[#E7E5E4] rounded-lg px-1.5 py-1 text-xs font-bold text-right outline-none focus:border-[#B91C1C]"
+        inputMode="decimal"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          const parsed = Number(value);
+          if (Number.isFinite(parsed) && parsed >= 0 && parsed !== product.basePrice) void onSave(product.id, parsed);
+          else setValue(String(product.basePrice));
+        }}
+      />
+    </div>
+  );
 };
+
 
 const CategoryCatalog: React.FC<{ categories: Category[]; products: Product[]; onSave: (category: Category) => Promise<void>; onDelete: (id: string) => Promise<void>; onMove: (id: string, direction: -1 | 1) => Promise<void> }> = ({ categories, products, onSave, onDelete, onMove }) => <div className="space-y-4"><Header icon={<Tags />} title="Categorias" action={<button className="btn-primary" onClick={() => void onSave({ id: `cat-${Date.now()}`, label: 'Nova categoria', emoji: '🍽️', color: '#B91C1C', sort: categories.length })}><PlusCircle className="w-4 h-4" />Nova categoria</button>} /><div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{categories.map((category, index) => <CategoryRow key={category.id} category={category} count={products.filter((product) => product.category === category.id).length} first={index === 0} last={index === categories.length - 1} onSave={onSave} onDelete={onDelete} onMove={onMove} />)}</div></div>;
 
@@ -95,16 +317,5 @@ const CouponCatalog: React.FC<{ coupons: Coupon[]; onSave: (coupon: Coupon) => P
   return <div className="space-y-4"><Header icon={<Ticket />} title="Cupons de desconto" subtitle={`${coupons.length} ativo(s).`} /><form onSubmit={submit} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2"><input className="input" placeholder="Código" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required /><input className="input" type="number" placeholder="% desconto" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} /><input className="input" type="number" placeholder="R$ fixo" value={form.fixed} onChange={(event) => setForm({ ...form, fixed: event.target.value })} /><input className="input" type="number" placeholder="Pedido mínimo" value={form.min} onChange={(event) => setForm({ ...form, min: event.target.value })} /><input className="input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><button className="btn-primary"><PlusCircle className="w-4 h-4" />Salvar</button></form><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{coupons.map((coupon) => <div key={coupon.code} className="bg-white rounded-2xl p-4 border border-dashed border-[#B91C1C]/40"><div className="flex justify-between gap-2"><strong className="bg-[#B91C1C] text-white rounded px-2 py-1 text-xs">{coupon.code}</strong><button className="btn-danger p-1" onClick={() => { if (window.confirm(`Excluir ${coupon.code}?`)) void onDelete(coupon.code); }}><Trash2 className="w-3.5 h-3.5" /></button></div><p className="text-xs mt-2">{coupon.description}</p><span className="text-[10px] text-[#57534E]">{coupon.discountPercent ? `${coupon.discountPercent}% OFF` : coupon.discountFixed ? `-${money(coupon.discountFixed)}` : 'Sem desconto'} · mínimo {money(coupon.minOrderValue)}</span></div>)}</div></div>;
 };
 
-const ProductEditor: React.FC<{ value: Product | 'new'; categories: Category[]; onClose: () => void; onSave: (product: Product) => Promise<void> }> = ({ value, categories, onClose, onSave }) => {
-  const original = value === 'new' ? null : value;
-  const [form, setForm] = useState({ id: original?.id || `prod-${Date.now()}`, name: original?.name || '', description: original?.description || '', category: original?.category || categories[0]?.id || 'caldinhos', basePrice: String(original?.basePrice || ''), image: original?.image || '', prepTimeMinutes: String(original?.prepTimeMinutes || 15), available: original?.available ?? true, isPopular: original?.isPopular ?? false, isFlashPromo: original?.isFlashPromo ?? false, originalPrice: original?.originalPrice ? String(original.originalPrice) : '' });
-  const [extras, setExtras] = useState<ExtraOption[]>(() => original?.allowedExtras ? original.allowedExtras.map((extra) => ({ ...extra })) : []);
-  const [comboSlots, setComboSlots] = useState<ComboSlot[]>(() => original?.comboSlots ? original.comboSlots.map((slot) => ({ ...slot, options: slot.options.map((option) => ({ ...option })) })) : []);
-  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.basePrice) return; void onSave({ ...(original || { rating: 0, reviewsCount: 0 }), ...form, basePrice: Number(form.basePrice), prepTimeMinutes: Number(form.prepTimeMinutes) || 15, originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, image: form.image || 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&q=80&w=800', allowedExtras: extras.filter((extra) => extra.name.trim()).map((extra) => ({ ...extra, name: extra.name.trim() })), comboSlots: comboSlots.filter((slot) => slot.label.trim()).map((slot) => ({ ...slot, label: slot.label.trim(), options: slot.options.filter((option) => option.label.trim()).map((option) => ({ ...option, label: option.label.trim() })) })) }); };
-  const addExtra = () => setExtras((current) => [...current, { id: `extra-${Date.now()}`, name: '', price: 0 }]);
-  const addSlot = () => setComboSlots((current) => [...current, { id: `slot-${Date.now()}`, label: `Escolha ${current.length + 1}`, required: true, options: [] }]);
-  return <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><form onSubmit={submit} className="bg-white rounded-2xl p-5 w-full max-w-lg max-h-[92vh] overflow-y-auto space-y-3"><div className="flex justify-between"><h3 className="text-lg font-extrabold">{original ? 'Editar produto' : 'Novo produto'}</h3><button type="button" onClick={onClose}>✕</button></div><input className="input" placeholder="Nome" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /><textarea className="input min-h-20" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><div className="grid grid-cols-2 gap-2"><select className="input" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.emoji} {category.label}</option>)}</select><input className="input" type="number" step="any" placeholder="Preço" value={form.basePrice} onChange={(event) => setForm({ ...form, basePrice: event.target.value })} required /></div><div className="grid grid-cols-2 gap-2"><input className="input" type="number" min="1" placeholder="Preparo (min)" value={form.prepTimeMinutes} onChange={(event) => setForm({ ...form, prepTimeMinutes: event.target.value })} /><input className="input" type="text" placeholder="URL da imagem" value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /></div><div className="grid grid-cols-2 gap-2 text-xs"><label><input type="checkbox" checked={form.available} onChange={(event) => setForm({ ...form, available: event.target.checked })} /> Disponível</label><label><input type="checkbox" checked={form.isPopular} onChange={(event) => setForm({ ...form, isPopular: event.target.checked })} /> Popular</label><label><input type="checkbox" checked={form.isFlashPromo} onChange={(event) => setForm({ ...form, isFlashPromo: event.target.checked })} /> Flash</label><input className="input" type="number" placeholder="Preço original" value={form.originalPrice} onChange={(event) => setForm({ ...form, originalPrice: event.target.value })} /></div><fieldset className="border border-[#E7E5E4] rounded-xl p-3 space-y-2"><legend className="text-xs font-extrabold px-1">Adicionais</legend>{extras.map((extra, index) => <div key={extra.id} className="flex gap-2"><input className="input flex-1" placeholder="Nome do adicional" value={extra.name} onChange={(event) => setExtras((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} /><input className="input w-24" type="number" step="any" value={extra.price} onChange={(event) => setExtras((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: Number(event.target.value) || 0 } : item))} /><button type="button" className="btn-danger p-2" onClick={() => setExtras((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X className="w-3.5 h-3.5" /></button></div>)}<button type="button" className="btn-secondary" onClick={addExtra}><PlusCircle className="w-3.5 h-3.5" />Adicionar adicional</button></fieldset><fieldset className="border border-[#E7E5E4] rounded-xl p-3 space-y-2"><legend className="text-xs font-extrabold px-1">Escolhas do combo</legend>{comboSlots.map((slot, slotIndex) => <div key={slot.id} className="bg-[#F5F5F4] rounded-xl p-2 space-y-2"><div className="flex gap-2"><input className="input flex-1" value={slot.label} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex === slotIndex ? { ...item, label: event.target.value } : item))} /><button type="button" className="btn-danger p-2" onClick={() => setComboSlots((current) => current.filter((_, itemIndex) => itemIndex !== slotIndex))}><X className="w-3.5 h-3.5" /></button></div>{slot.options.map((option, optionIndex) => <div key={option.id} className="flex gap-2 pl-2"><input className="input flex-1" placeholder="Opção" value={option.label} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex !== slotIndex ? item : { ...item, options: item.options.map((choice, choiceIndex) => choiceIndex === optionIndex ? { ...choice, label: event.target.value } : choice) }))} /><input className="input w-20" type="number" step="any" value={option.priceDelta || 0} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex !== slotIndex ? item : { ...item, options: item.options.map((choice, choiceIndex) => choiceIndex === optionIndex ? { ...choice, priceDelta: Number(event.target.value) || 0 } : choice) }))} /></div>)}<button type="button" className="btn-secondary" onClick={() => setComboSlots((current) => current.map((item, itemIndex) => itemIndex === slotIndex ? { ...item, options: [...item.options, { id: `option-${Date.now()}`, label: '', priceDelta: 0 }] } : item))}>Adicionar opção</button></div>)}<button type="button" className="btn-secondary" onClick={addSlot}><PlusCircle className="w-3.5 h-3.5" />Adicionar escolha</button></fieldset><div className="flex gap-2"><button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-primary flex-1"><Check className="w-4 h-4" />Salvar</button></div></form></div>;
-};
-
-const Header: React.FC<{ title: string; subtitle?: string; icon: React.ReactNode; action?: React.ReactNode }> = ({ title, subtitle, icon, action }) => <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl bg-[#B91C1C] text-white flex items-center justify-center">{icon}</div><div><h2 className="text-lg font-extrabold">{title}</h2>{subtitle && <p className="text-xs text-[#57534E]">{subtitle}</p>}</div></div>{action}</div>;
+const Header: React.FC<{ title: string; subtitle?: string; icon: React.ReactNode; action?: React.ReactNode }> = ({ title, subtitle, icon, action }) => <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="w-10 h-10 rounded-2xl bg-[#B91C1C] text-white flex items-center justify-center shrink-0">{icon}</div><div className="min-w-0"><h2 className="text-lg font-extrabold text-[#1C1917] truncate">{title}</h2>{subtitle && <p className="text-xs text-[#57534E]">{subtitle}</p>}</div></div>{action}</div>;
 const Empty: React.FC<{ text: string }> = ({ text }) => <p className="text-xs text-[#A8A29E] italic py-8 text-center">{text}</p>;

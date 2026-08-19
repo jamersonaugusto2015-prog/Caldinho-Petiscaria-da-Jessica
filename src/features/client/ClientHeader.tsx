@@ -20,9 +20,11 @@ import {
   Flame,
   Loader2,
   LocateFixed,
+  Store,
   Trash2,
 } from 'lucide-react';
 import { formatAddressLine, isUsableAddress } from '../../shared/address';
+import { storeAddressLine } from '../../shared/fulfillment';
 import { LOYALTY_STAMP_COST } from '../../shared/constants';
 
 interface CepResult {
@@ -45,9 +47,12 @@ export const ClientHeader: React.FC = () => {
     isAddressFormOpen,
     setAddressModalOpen,
     setAddressFormOpen,
+    fulfillment,
   } = useCart();
   const { loyaltyPoints, orders, setTrackingOrderId } = useCheckout();
   const { searchQuery, setSearchQuery, storeLogo, storeName, city, settings, notificationToast } = useClientShell();
+
+  const isPickupMode = fulfillment === 'pickup';
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -243,26 +248,42 @@ export const ClientHeader: React.FC = () => {
       <div className="bg-white shadow-sm">
         <div className="px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setAddressFormOpen(false);
-                setAddressModalOpen(true);
-              }}
-              className="flex items-center gap-2 flex-1 min-w-0 bg-[#F5F5F4] hover:bg-[#E7E5E4] rounded-xl px-3 py-2 transition-colors group"
-            >
-              <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0 group-hover:scale-110 transition-transform" />
-              <div className="flex-1 min-w-0 text-left">
-                <span className="text-[9px] text-[#A8A29E] font-bold uppercase tracking-wider block">
-                  Entregar em
-                </span>
-                <span className="text-[12px] font-bold text-[#1C1917] truncate block">
-                  {isUsableAddress(selectedAddress)
-                    ? formatAddressLine(selectedAddress)
-                    : 'Selecione seu endereço'}
-                </span>
+            {/* Na retirada não existe endereço do cliente: a barra mostra a loja e
+                não abre nada, senão o cliente acha que ainda precisa cadastrar. */}
+            {isPickupMode ? (
+              <div className="flex items-center gap-2 flex-1 min-w-0 bg-[#ECFDF5] rounded-xl px-3 py-2">
+                <Store className="w-4 h-4 text-[#059669] shrink-0" />
+                <div className="flex-1 min-w-0 text-left">
+                  <span className="text-[9px] text-[#059669] font-bold uppercase tracking-wider block">
+                    Retirar na loja
+                  </span>
+                  <span className="text-[12px] font-bold text-[#065F46] truncate block">
+                    {storeAddressLine(settings)}
+                  </span>
+                </div>
               </div>
-              <ChevronDown className="w-4 h-4 text-[#78716C] shrink-0" />
-            </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setAddressFormOpen(false);
+                  setAddressModalOpen(true);
+                }}
+                className="flex items-center gap-2 flex-1 min-w-0 bg-[#F5F5F4] hover:bg-[#E7E5E4] rounded-xl px-3 py-2 transition-colors group"
+              >
+                <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0 group-hover:scale-110 transition-transform" />
+                <div className="flex-1 min-w-0 text-left">
+                  <span className="text-[9px] text-[#A8A29E] font-bold uppercase tracking-wider block">
+                    Entregar em
+                  </span>
+                  <span className="text-[12px] font-bold text-[#1C1917] truncate block">
+                    {isUsableAddress(selectedAddress)
+                      ? formatAddressLine(selectedAddress)
+                      : 'Selecione seu endereço'}
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-[#78716C] shrink-0" />
+              </button>
+            )}
 
             <div className="relative flex-1 max-w-xs">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#A8A29E]" />

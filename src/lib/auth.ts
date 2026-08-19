@@ -32,6 +32,10 @@ export async function login(
   }
 }
 
+export function saveDriverProfile(driver: Driver): void {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(driver));
+}
+
 export function getDriverProfile(): Driver | null {
   try {
     return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') as Driver | null;

@@ -22,7 +22,9 @@ Delivery app for a Recife soup shop. Client `/`, kitchen `/cozinha`, driver `/en
 
 **Loyalty stamps** — One stamp per delivered Order. `LOYALTY_STAMP_COST` stamps = one free caldinho token. Token dies at intake.
 
-**Freight** — Haversine km × route factor, then fee settings. Shared `geo.ts` + `pricing.ts`.
+**Fulfillment** — How the Order reaches the customer: `delivery` or `pickup`. Set at intake and never changed. A pickup Order has no customer address (it stores the shop's own), no freight, no radius check and no driver: it goes `pronto` → `entregue` in the kitchen's hands. Missing on Orders written before pickup existed, which means delivery.
+
+**Freight** — Haversine km × route factor, then fee settings. Shared `geo.ts` + `pricing.ts`. Skipped entirely on a pickup Order.
 
 **Catalog** — Categories, products and coupons. Owns their rules and their tables.
 

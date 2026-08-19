@@ -3,13 +3,17 @@ import {
   CartItem,
   Coupon,
   DeliveryAddress,
+  Fulfillment,
   Order,
   PaymentDetails,
+  PaymentMethod,
   Product,
   StoreSettings,
 } from '../src/types';
 import { computeCartItemTotal, computeCartTotals, findCoupon } from '../src/shared/pricing';
 import { effectiveDistanceKm, isStoreOpen } from '../src/shared/geo';
+import { normalizeFulfillment, pickupAddress } from '../src/shared/fulfillment';
+import { normalizePaymentTiming, requiresOnlineCharge } from '../src/shared/payment';
 import { DomainError } from './errors';
 import { deleteOrder, orderIdExists, saveOrder } from './orderStore';
 import { releaseFreeItems } from './loyalty';
@@ -18,7 +22,9 @@ export interface OrderIntakeInput {
   items?: unknown;
   couponCode?: unknown;
   address?: unknown;
+  fulfillment?: unknown;
   paymentMethod?: unknown;
+  paymentTiming?: unknown;
   changeForAmount?: unknown;
   customerName?: unknown;
   customerPhone?: unknown;
@@ -208,7 +214,13 @@ export async function placeOrder(
   input: OrderIntakeInput,
   deps: OrderIntakeDependencies
 ): Promise<OrderIntakeResult> {
-  if (!Array.isArray(input.items) || input.items.length === 0 || !input.address) {
+  const fulfillment: Fulfillment = normalizeFulfillment(input.fulfillment);
+  const isPickupOrder = fulfillment === 'pickup';
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new DomainError(400, 'Carrinho inválido.');
+  }
+  if (!isPickupOrder && !input.address) {
     throw new DomainError(400, 'Carrinho ou endereço inválidos.');
   }
 
@@ -216,15 +228,24 @@ export async function placeOrder(
   if (!isStoreOpen(settings)) {
     throw new DomainError(400, 'A loja está fechada no momento. Volte no horário de funcionamento!');
   }
+  if (isPickupOrder && !settings.pickupEnabled) {
+    throw new DomainError(400, 'A retirada na loja está desativada no momento. Escolha entrega.');
+  }
 
-  const address = input.address as DeliveryAddress;
+  // Na retirada o endereço do cliente não existe: o pedido guarda o endereço da própria loja.
+  const address = isPickupOrder ? pickupAddress(settings) : (input.address as DeliveryAddress);
   if (
     typeof address.lat !== 'number' ||
     typeof address.lng !== 'number' ||
     !Number.isFinite(address.lat) ||
     !Number.isFinite(address.lng)
   ) {
-    throw new DomainError(400, 'Endereço sem localização. Informe o CEP ou ajuste o pino no mapa.');
+    throw new DomainError(
+      400,
+      isPickupOrder
+        ? 'A loja está sem localização cadastrada. Fale com a loja.'
+        : 'Endereço sem localização. Informe o CEP ou ajuste o pino no mapa.'
+    );
   }
 
   const cartItems = (input.items as CartItem[]).map((raw) =>
@@ -238,9 +259,9 @@ export async function placeOrder(
   }
 
   const coupon = findCoupon(String(input.couponCode ?? ''), deps.listCoupons());
-  const totals = computeCartTotals(cartItems, coupon ?? null, address, settings);
-  const distanceKm = effectiveDistanceKm(address, settings);
-  if (settings.maxDeliveryKm > 0 && distanceKm > settings.maxDeliveryKm) {
+  const totals = computeCartTotals(cartItems, coupon ?? null, address, settings, fulfillment);
+  const distanceKm = isPickupOrder ? 0 : effectiveDistanceKm(address, settings);
+  if (!isPickupOrder && settings.maxDeliveryKm > 0 && distanceKm > settings.maxDeliveryKm) {
     throw new DomainError(
       400,
       `O endereço está fora da área de entrega (máx. ${settings.maxDeliveryKm} km da loja).`
@@ -272,19 +293,28 @@ export async function placeOrder(
   if (input.paymentMethod !== 'cash' && input.paymentMethod !== 'card' && input.paymentMethod !== 'pix') {
     throw new DomainError(400, 'Forma de pagamento inválida.');
   }
-  const method: PaymentDetails['method'] = input.paymentMethod;
+  const method: PaymentMethod = input.paymentMethod;
+  const timing = normalizePaymentTiming(method, input.paymentTiming);
   // Sem adaptador de cartão o pedido seria gravado como não pago e em silêncio:
-  // a cozinha entregaria achando que o cliente já pagou.
-  if (method === 'card' && !deps.payment.isCardAvailable()) {
+  // a cozinha entregaria achando que o cliente já pagou. Na maquininha isso não
+  // vale: ninguém cobra nada agora, o motoboy passa o cartão na porta.
+  if (method === 'card' && timing === 'online' && !deps.payment.isCardAvailable()) {
     throw new DomainError(
       400,
-      'Pagamento com cartão indisponível. Conecte o Mercado Pago na cozinha ou escolha PIX ou dinheiro na entrega.'
+      'Cartão online indisponível. Conecte o Mercado Pago na cozinha, pague na maquininha da entrega ou escolha PIX ou dinheiro.'
     );
+  }
+  if (method === 'card' && timing === 'delivery' && !settings.cardOnDeliveryEnabled) {
+    throw new DomainError(400, 'A loja não leva maquininha na entrega. Escolha outra forma de pagamento.');
   }
   const payment: PaymentDetails = {
     method,
+    timing,
     isPaid: false,
-    changeForAmount: typeof input.changeForAmount === 'number' ? input.changeForAmount : undefined,
+    // Troco só existe em dinheiro: guardá-lo no cartão faria o motoboy levar
+    // dinheiro à toa e a cozinha ler um valor que ninguém pediu.
+    changeForAmount:
+      method === 'cash' && typeof input.changeForAmount === 'number' ? input.changeForAmount : undefined,
   };
 
   const customerId = String(input.customerId || 'anon').slice(0, 80);
@@ -295,6 +325,7 @@ export async function placeOrder(
     customerName: String(input.customerName || '').trim() || 'Cliente',
     customerPhone: String(input.customerPhone || '').trim() || '',
     address: { ...address, distanceKm },
+    fulfillment,
     items: cartItems,
     subtotal: totals.subtotal,
     discount: totals.discount,
@@ -304,11 +335,13 @@ export async function placeOrder(
     status: 'recebido',
     payment,
     createdAt,
-    estimatedDeliveryMinutes: Math.max(15, Math.round(12 + distanceKm * 2 + 3)),
+    estimatedDeliveryMinutes: isPickupOrder
+      ? Math.max(5, Math.round(settings.pickupReadyMinutes))
+      : Math.max(15, Math.round(12 + distanceKm * 2 + 3)),
     loyaltyPointsEarned: 0,
   };
 
-  const willCharge = method !== 'cash';
+  const willCharge = requiresOnlineCharge(method, timing);
 
   if (!willCharge) {
     deps.persistOrder(order, () => deps.consumeFreeItems(freeItems));

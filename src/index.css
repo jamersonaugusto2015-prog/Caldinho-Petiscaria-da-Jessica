@@ -2,7 +2,7 @@
 
 @layer components {
   .input {
-    @apply rounded-xl border border-[#E7E5E4] bg-[#F5F5F4] px-2.5 py-2 text-xs text-[#1C1917] outline-none focus:ring-1 focus:ring-[#B91C1C];
+    @apply block w-full rounded-xl border border-[#E7E5E4] bg-[#F5F5F4] px-2.5 py-2 text-xs text-[#1C1917] outline-none focus:ring-2 focus:ring-[#B91C1C]/40 focus:border-[#B91C1C];
   }
   .btn-primary,
   .btn-secondary,
@@ -198,37 +198,114 @@
   z-index: 5;
 }
 
-/* Impressão térmica (80mm) */
+/* ---------- Cupom térmico ----------
+   A regra @page (largura do rolo) é injetada pelo próprio modal, porque
+   @page não enxerga variáveis CSS. Aqui fica só o que é fixo.
+
+   Legibilidade em impressora térmica: a cabeça queima pontos, então texto
+   fino/cinza sai apagado. Tudo é preto puro, em negrito, sem antialiasing —
+   a hierarquia vem do TAMANHO e das molduras, nunca do peso da fonte. */
+.receipt {
+  --receipt-w: 80mm;
+  font-family: 'Roboto Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.32;
+  color: #000;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: none;
+  text-rendering: geometricPrecision;
+}
+.receipt-xl { font-size: 21px; line-height: 1.15; }
+.receipt-lg { font-size: 16px; line-height: 1.2; }
+.receipt-sm { font-size: 11px; line-height: 1.3; }
+
+/* Rolo de 58mm: mesma escala tipográfica, um passo menor, senão nome de
+   produto longo quebra no meio da palavra. */
+.receipt-narrow .receipt { font-size: 11.5px; }
+.receipt-narrow .receipt-xl { font-size: 17px; }
+.receipt-narrow .receipt-lg { font-size: 13.5px; }
+.receipt-narrow .receipt-sm { font-size: 9.5px; }
+
+/* Nome do item quebrado em 2 linhas alinha sob o nome, não sob o "2x". */
+.receipt-hang { padding-left: 1.9em; text-indent: -1.9em; }
+
+/* Separador: tracejado vira pontinhos que somem no papel térmico. */
+.receipt-rule { border-top: 1px solid #000; margin: 5px 0; }
+.receipt-rule-strong { border-top: 2px solid #000; margin: 6px 0; }
+
+/* Faixa invertida (cancelado, estorno): borda grossa em vez de fundo preto
+   sólido, que borra e gasta o rolo. */
+.receipt-box { border: 2px solid #000; padding: 4px 6px; margin: 5px 0; }
+
 @media print {
-  @page {
-    size: 80mm 297mm; /* 1 página única no rolo térmico */
-    margin: 0;
-  }
-  body * {
-    visibility: hidden;
-  }
-  .print-area,
-  .print-area * {
-    visibility: visible;
-  }
-  .print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 80mm !important;
+  html,
+  body {
     margin: 0 !important;
     padding: 0 !important;
+    background: #fff !important;
+  }
+  /* display:none, não visibility:hidden — o antigo mantinha as caixas do app
+     ocupando altura e o rolo cuspia uma segunda página em branco. */
+  body > *:not(.receipt-print-root) {
+    display: none !important;
+  }
+  .receipt-print-root {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    display: block !important;
+    padding: 0 !important;
+    background: none !important;
+    backdrop-filter: none !important;
+  }
+  .receipt-print-root .receipt-modal {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .receipt-print-root .receipt-no-print {
+    display: none !important;
+  }
+  .receipt-print-root .receipt-scroll {
+    display: block !important;
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  .print-area {
+    width: var(--receipt-w) !important;
+    margin: 0 !important;
+    /* 3mm de folga: quase todo cabeçote térmico tem área morta nas bordas. */
+    padding: 4mm 3mm 8mm !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+  .print-area,
+  .print-area * {
+    color: #000 !important;
+    background: transparent !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .print-area .receipt-divider {
-    border-color: #000 !important;
-  }
+  /* Em pt, não px: px depende do DPI da impressora e sai miúdo em 203dpi. */
+  .receipt { font-size: 10.5pt; }
+  .receipt-xl { font-size: 17pt; }
+  .receipt-lg { font-size: 12.5pt; }
+  .receipt-sm { font-size: 8.5pt; }
+  .receipt-narrow .receipt { font-size: 8.5pt; }
+  .receipt-narrow .receipt-xl { font-size: 13.5pt; }
+  .receipt-narrow .receipt-lg { font-size: 10pt; }
+  .receipt-narrow .receipt-sm { font-size: 7pt; }
+  .receipt-narrow.print-area { padding: 4mm 2mm 8mm !important; }
 }
 
 /* ---------- Tela 404 animada ---------- */

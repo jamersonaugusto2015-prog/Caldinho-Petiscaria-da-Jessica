@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { CartItem, Coupon, DeliveryAddress, PublicStoreSettings } from '../../types';
+import type { CartItem, Coupon, DeliveryAddress, Fulfillment, PublicStoreSettings } from '../../types';
 import { computeCartItemTotal, findCoupon } from '../../shared/pricing';
 import { isUsableAddress } from '../../shared/address';
+import { normalizeFulfillment } from '../../shared/fulfillment';
 
 export interface CartContextValue {
   cart: CartItem[];
@@ -14,6 +15,9 @@ export interface CartContextValue {
   setIsCartOpen: (open: boolean) => void;
   isClosedModalOpen: boolean;
   setClosedModalOpen: (open: boolean) => void;
+  /** 'pickup' = o cliente busca no balcão; não usa endereço nem frete. */
+  fulfillment: Fulfillment;
+  setFulfillment: (value: Fulfillment) => void;
   addresses: DeliveryAddress[];
   selectedAddress: DeliveryAddress | null;
   setSelectedAddress: (addr: DeliveryAddress) => void;
@@ -59,10 +63,21 @@ export const CartProvider: React.FC<CartProviderProps> = ({ settings, coupons, t
     const stored = loadFromStorage<DeliveryAddress[]>('ce_addresses', []).filter(isUsableAddress);
     return stored[0] || null;
   });
+  // O carrinho sobrevive à recarga; a escolha de retirada também precisa, senão
+  // o cliente volta para "entrega" e a tela pede o endereço de novo.
+  const [fulfillment, setFulfillment] = useState<Fulfillment>(() =>
+    normalizeFulfillment(loadFromStorage<Fulfillment>('ce_fulfillment', 'delivery'))
+  );
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
+  // A loja pode desligar a retirada com o carrinho já montado: volta para entrega sozinho.
+  useEffect(() => {
+    if (!settings.pickupEnabled) setFulfillment('delivery');
+  }, [settings.pickupEnabled]);
+
+  useEffect(() => localStorage.setItem('ce_fulfillment', JSON.stringify(fulfillment)), [fulfillment]);
   useEffect(() => localStorage.setItem('ce_cart', JSON.stringify(cart)), [cart]);
   useEffect(() => localStorage.setItem('ce_addresses', JSON.stringify(addresses)), [addresses]);
 
@@ -146,6 +161,8 @@ export const CartProvider: React.FC<CartProviderProps> = ({ settings, coupons, t
     setIsCartOpen,
     isClosedModalOpen,
     setClosedModalOpen,
+    fulfillment,
+    setFulfillment,
     addresses,
     selectedAddress,
     setSelectedAddress,

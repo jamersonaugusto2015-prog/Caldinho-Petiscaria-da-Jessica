@@ -107,6 +107,12 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     void loadInitialData();
   }, [loadInitialData]);
 
+  // O título da aba acompanha o nome da loja (index.html só tem o valor padrão).
+  useEffect(() => {
+    const name = settings.storeName?.trim();
+    if (name) document.title = `${name} - Sabor Regional & Rapidez`;
+  }, [settings.storeName]);
+
   useSocketEvent<{ logo: string }>('store:updated', ({ logo }) => setStoreLogo(logo));
   useSocketEvent('products:updated', () => void api.get<Product[]>('/products').then(setProducts).catch(() => {}));
   useSocketEvent('categories:updated', () => void api.get<Category[]>('/categories').then(setCategories).catch(() => {}));
@@ -151,8 +157,8 @@ export const useClientShell = (): ClientShellValue => {
 
 export const useCartTotals = () => {
   const { settings } = useClientShell();
-  const { cart, appliedCoupon, selectedAddress } = useCart();
-  return computeCartTotals(cart, appliedCoupon, selectedAddress ?? EMPTY_ADDRESS, settings);
+  const { cart, appliedCoupon, selectedAddress, fulfillment } = useCart();
+  return computeCartTotals(cart, appliedCoupon, selectedAddress ?? EMPTY_ADDRESS, settings, fulfillment);
 };
 
 export { useCart } from './CartStore';

@@ -2,6 +2,7 @@ import React from 'react';
 import { useDriver } from './DriverStore';
 import { LiveMap } from '../../components/common/LiveMap';
 import { formatKm } from '../../shared/geo';
+import { needsCardMachine, paymentLabel } from '../../shared/payment';
 import {
   Bike,
   Power,
@@ -293,13 +294,22 @@ export const DriverView: React.FC = () => {
                       </span>
                     </div>
                   ))}
-                  <div className="pt-1.5 text-xs text-[#059669] font-extrabold border-t border-[#E7E5E4]">
-                    Pagamento: {ord.payment.method.toUpperCase()}{' '}
-                    {ord.payment.isPaid ? '• PAGO' : '• PENDENTE'}
+                  <div
+                    className={`pt-1.5 text-xs font-extrabold border-t border-[#E7E5E4] ${
+                      ord.payment.isPaid ? 'text-[#059669]' : 'text-[#B45309]'
+                    }`}
+                  >
+                    Pagamento: {paymentLabel(ord.payment, ord.fulfillment).toUpperCase()}{' '}
+                    {ord.payment.isPaid ? '• PAGO' : `• RECEBER R$ ${ord.total.toFixed(2)}`}
                     {ord.payment.changeForAmount
-                      ? `(Trazer troco p/ R$ ${ord.payment.changeForAmount})`
+                      ? ` (trazer troco p/ R$ ${ord.payment.changeForAmount.toFixed(2)})`
                       : ''}
                   </div>
+                  {needsCardMachine(ord.payment) && (
+                    <div className="mt-1.5 rounded-xl bg-[#F5F3FF] border border-[#DDD6FE] px-2.5 py-1.5 text-[11px] font-black text-[#7C3AED]">
+                      💳 LEVE A MAQUININHA — o cliente paga no cartão na entrega.
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2">

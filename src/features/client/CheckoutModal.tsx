@@ -4,6 +4,9 @@ import { useCheckout } from './CheckoutStore';
 import { useClientShell, useCartTotals } from './ClientStore';
 import { formatKm } from '../../shared/geo';
 import { formatAddressLine, isUsableAddress } from '../../shared/address';
+import { storeAddressLine } from '../../shared/fulfillment';
+import { normalizePaymentTiming, requiresOnlineCharge, timingLabel } from '../../shared/payment';
+import { FulfillmentPicker } from './FulfillmentPicker';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
@@ -22,8 +25,9 @@ import {
   Clock,
   AlertCircle,
   MessageCircle,
+  Store,
 } from 'lucide-react';
-import { Order } from '../../types';
+import { Order, PaymentMethod, PaymentTiming } from '../../types';
 import { CardPaymentForm, CardPaymentHandle } from './CardPaymentForm';
 import { usePixPaymentPoll } from './usePixPoll';
 import { copyToClipboard, selectElementText } from './clipboard';
@@ -34,18 +38,20 @@ interface CheckoutModalProps {
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPlaced }) => {
-  const { cart, addresses, selectedAddress, setSelectedAddress, openAddressForm } = useCart();
+  const { cart, addresses, selectedAddress, setSelectedAddress, openAddressForm, fulfillment } = useCart();
   const { placeOrder, customerId, applyOrderUpdate } = useCheckout();
   const { settings } = useClientShell();
   const pixOk = !!(settings.pixEnabled || settings.pixKey || settings.mercadoPagoConnected);
   const { subtotal, discount, deliveryFee, total } = useCartTotals();
-  const outOfRange = deliveryFee < 0;
+  const isPickupMode = fulfillment === 'pickup';
+  const outOfRange = !isPickupMode && deliveryFee < 0;
 
   const [step, setStep] = useState<'dados' | 'pagamento'>('dados');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [paymentTiming, setPaymentTiming] = useState<PaymentTiming>('online');
   const [changeForAmount, setChangeForAmount] = useState<string>('');
   const [pixCopied, setPixCopied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -56,16 +62,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const cardRef = React.useRef<CardPaymentHandle>(null);
   const pixCodeRef = useRef<HTMLDivElement>(null);
   const cardOnline = !!(settings.mercadoPagoConnected && settings.mercadoPagoPublicKey);
+  const cardOnDelivery = settings.cardOnDeliveryEnabled !== false;
+  const cardOk = cardOnline || cardOnDelivery;
+  // Cartão é o único método com escolha de momento. Se só um dos dois existe,
+  // não mostramos a escolha: o cliente não decide nada e ainda assim acerta.
+  const cardTimingChoice = paymentMethod === 'card' && cardOnline && cardOnDelivery;
+  const payNow = paymentMethod !== null && requiresOnlineCharge(paymentMethod, paymentTiming);
+
+  // Cada método tem seus momentos possíveis: dinheiro só na entrega, PIX só
+  // online, cartão os dois (respeitando o que a loja realmente aceita).
+  useEffect(() => {
+    if (!paymentMethod) return;
+    if (paymentMethod === 'card') {
+      setPaymentTiming(cardOnline ? 'online' : 'delivery');
+      return;
+    }
+    setPaymentTiming(normalizePaymentTiming(paymentMethod, undefined));
+  }, [paymentMethod, cardOnline]);
 
   const nameValid = customerName.trim().length >= 3;
   const phoneValid = customerPhone.replace(/\D/g, '').length >= 10;
   const dadosValid = nameValid && phoneValid;
 
-  // Sem endereço cadastrado: abre o formulário de cadastro automaticamente
+  // Sem endereço cadastrado: abre o formulário de cadastro automaticamente.
+  // Na retirada não há endereço a pedir, então a tela não abre nada.
   useEffect(() => {
-    if (addresses.length === 0) openAddressForm();
+    if (!isPickupMode && addresses.length === 0) openAddressForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isPickupMode]);
 
   const { failed: pixPollFailed, retry: retryPixPoll } = usePixPaymentPoll({
     orderId: pendingPix?.id,
@@ -94,20 +118,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     setTimeout(() => setPixCopyFailed(false), 5000);
   };
 
-  const placeAndHandle = async (method: 'pix' | 'card' | 'cash') => {
+  /** Retirada não usa endereço: só a entrega precisa de um endereço válido e no raio. */
+  const deliveryBlocked = (): boolean => {
+    if (isPickupMode) return false;
     if (!isUsableAddress(selectedAddress)) {
       setConfirmError('Informe um endereço com localização no mapa.');
       openAddressForm();
-      return;
+      return true;
     }
     if (outOfRange) {
       setConfirmError('Este endereço está fora da área de entrega.');
-      return;
+      return true;
     }
+    return false;
+  };
+
+  const placeAndHandle = async (method: PaymentMethod, timing: PaymentTiming) => {
+    if (deliveryBlocked()) return;
     setConfirmError('');
     setIsProcessing(true);
     let card;
-    if (method === 'card' && settings.mercadoPagoConnected) {
+    // Só o cartão online passa pelo Mercado Pago. Na maquininha ninguém digita
+    // o cartão aqui: o motoboy cobra na porta.
+    if (method === 'card' && timing === 'online') {
       if (!settings.mercadoPagoPublicKey) {
         setIsProcessing(false);
         setConfirmError('Falta a chave pública do Mercado Pago na cozinha.');
@@ -124,6 +157,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     }
     const res = await placeOrder(
       method,
+      timing,
       method === 'cash' && changeForAmount ? Number(changeForAmount) : undefined,
       { name: customerName.trim(), phone: customerPhone.trim() },
       card
@@ -144,15 +178,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isUsableAddress(selectedAddress)) {
-      setConfirmError('Informe um endereço com localização no mapa.');
-      openAddressForm();
-      return;
-    }
-    if (outOfRange) {
-      setConfirmError('Este endereço está fora da área de entrega.');
-      return;
-    }
+    if (deliveryBlocked()) return;
     if (!dadosValid) {
       setStep('dados');
       return;
@@ -161,7 +187,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
       setConfirmError('Escolha a forma de pagamento: PIX, Cartão ou Dinheiro.');
       return;
     }
-    await placeAndHandle(paymentMethod);
+    await placeAndHandle(paymentMethod, paymentTiming);
   };
 
   // "Continuar para Pagamento": abre a escolha da forma (PIX padrão, cartão e dinheiro disponíveis)
@@ -170,10 +196,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     setStep('pagamento');
   };
 
-  const deliveryLabel =
-    selectedAddress && selectedAddress.distanceKm > 0
-      ? `Entrega (${formatKm(selectedAddress.distanceKm)})`
-      : 'Entrega';
+  const deliveryLabel = isPickupMode
+    ? 'Retirada na loja'
+    : selectedAddress && selectedAddress.distanceKm > 0
+    ? `Entrega (${formatKm(selectedAddress.distanceKm)})`
+    : 'Entrega';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
@@ -377,6 +404,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     )}
                   </div>
 
+                  {settings.pickupEnabled && (
+                    <div>
+                      <label className="block text-xs font-black text-[#1C1917] uppercase tracking-wider mb-2">
+                        Como você quer receber *
+                      </label>
+                      <FulfillmentPicker />
+                    </div>
+                  )}
+
+                  {isPickupMode ? (
+                    <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-3.5 space-y-1">
+                      <div className="flex items-center gap-2 text-[#059669] font-bold text-xs">
+                        <Store className="w-4 h-4" />
+                        <span>Retirar em {settings.storeName}</span>
+                      </div>
+                      <p className="text-[11px] text-[#065F46]">{storeAddressLine(settings)}</p>
+                      <p className="text-[11px] text-[#065F46]">
+                        Sem taxa de entrega. Avisamos aqui quando o pedido estiver pronto para retirar.
+                      </p>
+                    </div>
+                  ) : (
                   <div>
                     <label className="block text-xs font-black text-[#1C1917] uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <MapPin className="w-4 h-4 text-[#B91C1C]" />
@@ -452,6 +500,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       </div>
                     )}
                   </div>
+                  )}
 
                   <div className="bg-[#F5F5F4] p-3.5 rounded-2xl border border-[#E7E5E4] space-y-1.5 text-xs">
                     <div className="flex justify-between text-[#57534E]">
@@ -480,13 +529,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                 <>
                   <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-3.5 space-y-1">
                     <div className="flex items-center gap-2 text-[#B91C1C] font-bold text-xs">
-                      <MapPin className="w-4 h-4" />
-                      <span>Entrega para</span>
+                      {isPickupMode ? <Store className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+                      <span>{isPickupMode ? 'Retirada na loja por' : 'Entrega para'}</span>
                     </div>
                     <p className="text-xs font-extrabold text-[#1C1917]">{customerName}</p>
                     <p className="text-xs text-[#57534E]">{customerPhone}</p>
                     <p className="text-xs text-[#57534E] border-t border-[#E7E5E4] pt-1.5 mt-1.5">
-                      {isUsableAddress(selectedAddress)
+                      {isPickupMode
+                        ? storeAddressLine(settings)
+                        : isUsableAddress(selectedAddress)
                         ? formatAddressLine(selectedAddress)
                         : 'Endereço não informado'}
                     </p>
@@ -499,7 +550,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     <div className="grid grid-cols-3 gap-2.5">
                       {[
                         { id: 'pix' as const, label: 'PIX', icon: QrCode, enabled: pixOk },
-                        { id: 'card' as const, label: 'Cartão', icon: CreditCard, enabled: cardOnline },
+                        { id: 'card' as const, label: 'Cartão', icon: CreditCard, enabled: cardOk },
                         { id: 'cash' as const, label: 'Dinheiro', icon: Banknote, enabled: true },
                       ].map((method) => {
                         const Icon = method.icon;
@@ -527,12 +578,70 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                         PIX indisponível: a loja ainda não conectou o Mercado Pago nem cadastrou a chave.
                       </p>
                     )}
-                    {!cardOnline && (
+                    {!cardOk && (
                       <p className="text-[10px] text-[#57534E] mt-2">
-                        Cartão pela internet indisponível. Pague no PIX ou em dinheiro na entrega.
+                        Cartão indisponível. Pague no PIX ou em dinheiro
+                        {isPickupMode ? ' na retirada.' : ' na entrega.'}
                       </p>
                     )}
                   </div>
+
+                  {paymentMethod === 'card' && cardOk && (
+                    <div>
+                      <label className="block text-xs font-black text-[#1C1917] uppercase tracking-wider mb-2">
+                        Quando pagar
+                      </label>
+                      {cardTimingChoice ? (
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {[
+                            {
+                              id: 'online' as const,
+                              title: 'Pagar agora',
+                              hint: 'Cartão pelo site',
+                            },
+                            {
+                              id: 'delivery' as const,
+                              title: isPickupMode ? 'Na retirada' : 'Na entrega',
+                              hint: isPickupMode ? 'Maquininha no balcão' : 'Maquininha com o motoboy',
+                            },
+                          ].map((option) => {
+                            const isSelected = paymentTiming === option.id;
+                            return (
+                              <button
+                                key={option.id}
+                                type="button"
+                                onClick={() => setPaymentTiming(option.id)}
+                                className={`p-3 rounded-2xl border text-left transition ${
+                                  isSelected
+                                    ? 'bg-[#FEF2F2] border-[#B91C1C] ring-2 ring-[#B91C1C]/20 shadow-xs'
+                                    : 'bg-[#F5F5F4]/60 border-[#E7E5E4] hover:bg-[#F5F5F4]'
+                                }`}
+                              >
+                                <span
+                                  className={`block text-xs font-extrabold ${
+                                    isSelected ? 'text-[#B91C1C]' : 'text-[#1C1917]'
+                                  }`}
+                                >
+                                  {option.title}
+                                </span>
+                                <span className="block text-[10px] text-[#57534E] leading-tight">
+                                  {option.hint}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-[#57534E] bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-3">
+                          {cardOnline
+                            ? 'Só dá para pagar o cartão agora, pelo site — a loja não leva maquininha.'
+                            : `A loja ainda não cobra cartão pelo site. Você paga na maquininha ${
+                                isPickupMode ? 'do balcão.' : 'do motoboy.'
+                              }`}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {paymentMethod === 'pix' && pixOk && (
                     <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 text-center space-y-2">
@@ -548,7 +657,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     </div>
                   )}
 
-                  {paymentMethod === 'card' && settings.mercadoPagoConnected && settings.mercadoPagoPublicKey && (
+                  {paymentMethod === 'card' && paymentTiming === 'online' && settings.mercadoPagoPublicKey && (
                     <CardPaymentForm
                       ref={cardRef}
                       publicKey={settings.mercadoPagoPublicKey}
@@ -556,19 +665,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     />
                   )}
 
-                  {paymentMethod === 'card' && settings.mercadoPagoConnected && !settings.mercadoPagoPublicKey && (
+                  {paymentMethod === 'card' &&
+                    paymentTiming === 'online' &&
+                    settings.mercadoPagoConnected &&
+                    !settings.mercadoPagoPublicKey && (
                     <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3 text-[11px] text-[#92400E] font-bold">
                       Falta a chave pública na cozinha. Sem ela o cartão não abre nesta tela.
                     </div>
                   )}
 
-                  {paymentMethod === 'card' && !settings.mercadoPagoConnected && (
-                    <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-4 space-y-3">
+                  {paymentMethod === 'card' && paymentTiming === 'delivery' && cardOnDelivery && (
+                    <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-4">
                       <div className="flex items-start gap-2.5 text-xs text-[#57534E]">
                         <CreditCard className="w-4 h-4 text-[#B91C1C] shrink-0 mt-0.5" />
                         <p>
-                          <strong className="text-[#1C1917]">Cartão na entrega.</strong> Sem Mercado Pago
-                          conectado, o motoboy leva a maquininha.
+                          <strong className="text-[#1C1917]">
+                            {isPickupMode ? 'Cartão na retirada.' : 'Cartão na entrega.'}
+                          </strong>{' '}
+                          A maquininha
+                          {isPickupMode ? ' fica no balcão da loja.' : ' vai com o motoboy.'} Você paga
+                          R$ {total.toFixed(2)} na hora, em débito ou crédito.
                         </p>
                       </div>
                     </div>
@@ -669,9 +785,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     </div>
                   ) : (
                     <span>
-                      {paymentMethod
-                        ? `Confirmar Pedido (${paymentMethod.toUpperCase()}) 🍲`
-                        : 'Escolha a forma de pagamento'}
+                      {!paymentMethod
+                        ? 'Escolha a forma de pagamento'
+                        : payNow
+                        ? `Pagar R$ ${total.toFixed(2)} agora 🍲`
+                        : `Confirmar e pagar ${timingLabel(
+                            { method: paymentMethod, timing: paymentTiming },
+                            fulfillment
+                          )} 🍲`}
                     </span>
                   )}
                 </button>

@@ -4,6 +4,8 @@ import { useCart } from './CartStore';
 import { useClientShell, useCartTotals } from './ClientStore';
 import { formatKm, effectiveDistanceKm } from '../../shared/geo';
 import { formatAddressLine, isUsableAddress } from '../../shared/address';
+import { storeAddressLine } from '../../shared/fulfillment';
+import { FulfillmentPicker } from './FulfillmentPicker';
 import { computeCartItemTotal } from '../../shared/pricing';
 import { X, Trash2, Plus, Minus, Ticket, ArrowRight, ShoppingBag, MapPin } from 'lucide-react';
 
@@ -21,14 +23,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
     applyCoupon,
     removeCoupon,
     selectedAddress,
+    fulfillment,
     openAddressForm,
     setAddressModalOpen,
   } = useCart();
   const { settings } = useClientShell();
   const { subtotal, discount, deliveryFee, total } = useCartTotals();
-  const hasAddress = isUsableAddress(selectedAddress);
-  const outOfRange = hasAddress && deliveryFee < 0;
-  const liveKm = selectedAddress && hasAddress ? effectiveDistanceKm(selectedAddress, settings) : 0;
+  const isPickupMode = fulfillment === 'pickup';
+  const hasAddress = isPickupMode || isUsableAddress(selectedAddress);
+  const outOfRange = !isPickupMode && isUsableAddress(selectedAddress) && deliveryFee < 0;
+  const liveKm =
+    !isPickupMode && selectedAddress && isUsableAddress(selectedAddress)
+      ? effectiveDistanceKm(selectedAddress, settings)
+      : 0;
 
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState<string | null>(null);
@@ -168,20 +175,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
         {cart.length > 0 && (
           <div className="p-4 bg-white border-t border-[#E7E5E4] space-y-3 shrink-0">
-            <button
-              type="button"
-              onClick={() => (hasAddress ? setAddressModalOpen(true) : openAddressForm())}
-              className="w-full bg-[#F5F5F4] p-2.5 rounded-2xl border border-[#E7E5E4] flex items-center gap-2 text-xs text-[#57534E] text-left hover:bg-[#E7E5E4]"
-            >
-              <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0" />
-              <div className="truncate flex-1">
-                {hasAddress ? (
-                  <span className="font-bold text-[#1C1917]">{formatAddressLine(selectedAddress)}</span>
-                ) : (
-                  <span className="font-bold text-[#B91C1C]">Toque para adicionar o endereço</span>
-                )}
-              </div>
-            </button>
+            {settings.pickupEnabled && <FulfillmentPicker />}
+
+            {!isPickupMode && (
+              <button
+                type="button"
+                onClick={() => (hasAddress ? setAddressModalOpen(true) : openAddressForm())}
+                className="w-full bg-[#F5F5F4] p-2.5 rounded-2xl border border-[#E7E5E4] flex items-center gap-2 text-xs text-[#57534E] text-left hover:bg-[#E7E5E4]"
+              >
+                <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0" />
+                <div className="truncate flex-1">
+                  {hasAddress ? (
+                    <span className="font-bold text-[#1C1917]">{formatAddressLine(selectedAddress)}</span>
+                  ) : (
+                    <span className="font-bold text-[#B91C1C]">Toque para adicionar o endereço</span>
+                  )}
+                </div>
+              </button>
+            )}
 
             <div>
               {!appliedCoupon ? (
@@ -214,6 +225,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               {couponError && <p className="text-[11px] text-[#B91C1C] font-semibold mt-1">{couponError}</p>}
             </div>
 
+            {isPickupMode && (
+              <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-3 text-[11px] text-[#065F46]">
+                <strong className="block text-xs font-extrabold">Retirada na loja — sem taxa</strong>
+                <span className="block mt-0.5">{storeAddressLine(settings)}</span>
+              </div>
+            )}
+
             <div className="space-y-1.5 text-xs text-[#57534E]">
               <div className="flex justify-between">
                 <span>Subtotal</span>
@@ -228,9 +246,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               )}
 
               <div className="flex justify-between">
-                <span>Taxa de entrega ({liveKm > 0 ? formatKm(liveKm) : '—'})</span>
+                <span>
+                  {isPickupMode
+                    ? 'Retirada na loja'
+                    : `Taxa de entrega (${liveKm > 0 ? formatKm(liveKm) : '—'})`}
+                </span>
                 <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
-                  {outOfRange ? 'Fora da área' : `R$ ${deliveryFee.toFixed(2)}`}
+                  {isPickupMode ? 'Grátis' : outOfRange ? 'Fora da área' : `R$ ${deliveryFee.toFixed(2)}`}
                 </span>
               </div>
 

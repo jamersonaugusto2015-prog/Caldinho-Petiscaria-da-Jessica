@@ -210,3 +210,44 @@ test('the kitchen closes a complaint, and only an open one', () => {
   assert.throws(() => applyOrderEvent(resolved.order, { type: 'resolve-complaint' }, deps(saved, earned)));
   assert.throws(() => applyOrderEvent(baseOrder(), { type: 'resolve-complaint' }, deps(saved, earned)));
 });
+
+const pickupOrder = (): Order => ({
+  ...baseOrder(),
+  fulfillment: 'pickup',
+  status: 'pronto',
+  deliveryFee: 0,
+  distanceKm: 0,
+  driverId: undefined,
+});
+
+test('retirada vai de pronto direto para entregue e ganha o selo', () => {
+  const saved: Order[] = [];
+  const earned = { count: 0 };
+  const result = applyOrderEvent(
+    pickupOrder(),
+    { type: 'advance', status: 'entregue', actor: 'kitchen' },
+    deps(saved, earned)
+  );
+
+  assert.equal(result.order.status, 'entregue');
+  assert.equal(earned.count, 1);
+});
+
+test('retirada nunca sai para entrega', () => {
+  assert.throws(
+    () =>
+      applyOrderEvent(
+        pickupOrder(),
+        { type: 'advance', status: 'saiu_entrega', actor: 'kitchen' },
+        deps([], { count: 0 })
+      ),
+    /não sai para entrega/
+  );
+});
+
+test('retirada não pode ser aceita por um motoboy', () => {
+  assert.throws(
+    () => applyOrderEvent(pickupOrder(), { type: 'assign', driverId: 'driver-1' }, deps([], { count: 0 })),
+    /não tem corrida/
+  );
+});

@@ -14,6 +14,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { Order, OrderStatus } from '../../types';
+import { isPickup } from '../../shared/fulfillment';
+import { needsCardMachine, paymentLabel } from '../../shared/payment';
 import { whatsAppLink } from '../../lib/whatsapp';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenCatalog } from './KitchenCatalogStore';
@@ -44,9 +46,9 @@ const ACTIVE_STATUSES: OrderStatus[] = ['recebido', 'em_preparo', 'pronto', 'sai
 const COLUMNS: { id: OrderStatus; title: string; color: string }[] = [
   { id: 'recebido', title: 'Aguardando aceite', color: 'border-blue-500' },
   { id: 'em_preparo', title: 'Em preparo', color: 'border-amber-500' },
-  { id: 'pronto', title: 'Pronto para entrega', color: 'border-violet-500' },
+  { id: 'pronto', title: 'Pronto (entrega ou retirada)', color: 'border-violet-500' },
   { id: 'saiu_entrega', title: 'Saiu para entrega', color: 'border-purple-500' },
-  { id: 'entregue', title: 'Entregue', color: 'border-emerald-500' },
+  { id: 'entregue', title: 'Entregue / retirado', color: 'border-emerald-500' },
   { id: 'cancelado', title: 'Cancelados', color: 'border-red-500' },
 ];
 
@@ -242,21 +244,41 @@ const Flag: React.FC<{ tone: 'alert' | 'warn'; children: React.ReactNode }> = ({
 
 /** O dinheiro cobrado de um pedido cancelado só some da tela depois de devolvido. */
 const PaymentLine: React.FC<{ order: Order; onConfirmPayment: () => void }> = ({ order, onConfirmPayment }) => {
-  const { refundStatus, refundedAt, refundError, isPaid } = order.payment;
-  if (refundStatus === 'pendente') return <span className="block font-bold text-[#B91C1C]"><AlertTriangle className="inline w-3 h-3 mr-1" />Devolução pendente de {money(order.total)}</span>;
-  if (refundStatus === 'falhou') return <span className="block font-bold text-[#B91C1C]"><AlertTriangle className="inline w-3 h-3 mr-1" />Devolução falhou{refundError ? `: ${refundError}` : ''}</span>;
-  if (refundStatus === 'devolvido') return <span className="block font-bold text-[#059669]">Valor devolvido{refundedAt ? ` em ${shortDate(refundedAt)}` : ''}</span>;
-  if (order.status === 'cancelado') return <span className="block font-bold text-[#57534E]">{isPaid ? 'Pago · devolução não registrada' : 'Não chegou a ser pago'}</span>;
-  if (isPaid) return <span className="text-emerald-700 font-bold">Pagamento confirmado</span>;
-  return <button onClick={onConfirmPayment} className="w-full py-1.5 rounded-full bg-amber-100 text-amber-800 font-bold">Confirmar pagamento</button>;
+  const { refundStatus, refundedAt, refundError, isPaid, changeForAmount } = order.payment;
+  const how = (
+    <span className="block text-[#57534E]">
+      {paymentLabel(order.payment, order.fulfillment)}
+      {needsCardMachine(order.payment) && <strong className="text-[#7C3AED]"> · levar maquininha</strong>}
+      {changeForAmount ? <strong className="text-[#B45309]"> · troco p/ {money(changeForAmount)}</strong> : null}
+    </span>
+  );
+  const wrap = (node: React.ReactNode) => (
+    <div className="space-y-1">
+      {how}
+      {node}
+    </div>
+  );
+  if (refundStatus === 'pendente') return wrap(<span className="block font-bold text-[#B91C1C]"><AlertTriangle className="inline w-3 h-3 mr-1" />Devolução pendente de {money(order.total)}</span>);
+  if (refundStatus === 'falhou') return wrap(<span className="block font-bold text-[#B91C1C]"><AlertTriangle className="inline w-3 h-3 mr-1" />Devolução falhou{refundError ? `: ${refundError}` : ''}</span>);
+  if (refundStatus === 'devolvido') return wrap(<span className="block font-bold text-[#059669]">Valor devolvido{refundedAt ? ` em ${shortDate(refundedAt)}` : ''}</span>);
+  if (order.status === 'cancelado') return wrap(<span className="block font-bold text-[#57534E]">{isPaid ? 'Pago · devolução não registrada' : 'Não chegou a ser pago'}</span>);
+  if (isPaid) return wrap(<span className="text-emerald-700 font-bold">Pagamento confirmado</span>);
+  return wrap(<button onClick={onConfirmPayment} className="w-full py-1.5 rounded-full bg-amber-100 text-amber-800 font-bold">Confirmar pagamento</button>);
 };
 
 const OrderCard: React.FC<{ order: Order; now: number; busy: boolean; unreadCount: number; expanded: boolean; onToggle: () => void; onPrint: () => void; onChat: () => void; onAdvance: (status: OrderStatus) => void; onConfirmPayment: () => void; onCancel: () => void; onCancelAbandoned: () => void }> = ({ order, now, busy, unreadCount, expanded, onToggle, onPrint, onChat, onAdvance, onConfirmPayment, onCancel, onCancelAbandoned }) => {
-  const next: Partial<Record<OrderStatus, OrderStatus>> = { recebido: 'em_preparo', em_preparo: 'pronto', pronto: 'saiu_entrega', saiu_entrega: 'entregue' };
+  const pickup = isPickup(order);
+  // Retirada não passa pelo motoboy: de `pronto` a cozinha marca `entregue` na mão do cliente.
+  const next: Partial<Record<OrderStatus, OrderStatus>> = pickup
+    ? { recebido: 'em_preparo', em_preparo: 'pronto', pronto: 'entregue' }
+    : { recebido: 'em_preparo', em_preparo: 'pronto', pronto: 'saiu_entrega', saiu_entrega: 'entregue' };
+  const nextLabel: Partial<Record<OrderStatus, string>> = pickup
+    ? { recebido: 'em preparo', em_preparo: 'pronto para retirar', pronto: 'retirado pelo cliente' }
+    : { recebido: 'em preparo', em_preparo: 'pronto', pronto: 'saiu para entrega', saiu_entrega: 'entregue' };
   const abandoned = isAbandonedPix(order, now);
   const late = isOrderLate(order, now);
   const requested = hasPendingCancelRequest(order);
   const owed = owesRefund(order) || refundFailed(order);
   const flagged = abandoned || late || requested || owed;
-  return <div className={`rounded-2xl p-3 space-y-2 shadow-xs border ${flagged ? 'border-[#FCA5A5]' : 'border-[#E7E5E4]'}`}><div className="flex items-start gap-2"><button onClick={onToggle} className="flex-1 text-left min-w-0"><div className="flex items-center justify-between gap-2"><strong className="text-xs">{order.id}</strong><span className="text-sm font-extrabold text-[#B91C1C]">{money(order.total)}</span></div><div className="text-[11px] text-[#57534E] truncate">{order.customerName} · {order.address.neighborhood || order.address.city}</div></button><button onClick={onChat} className="relative p-1.5 rounded-full hover:bg-[#F5F5F4]" title="Conversar com o cliente"><MessagesSquare className="w-3.5 h-3.5" />{unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 px-1 h-4 rounded-full bg-[#B91C1C] text-white text-[9px] font-black flex items-center justify-center">{unreadCount}</span>}</button><button onClick={onPrint} className="p-1.5 rounded-full hover:bg-[#F5F5F4]" title="Imprimir"><Printer className="w-3.5 h-3.5" /></button>{expanded ? <ChevronUp className="w-4 h-4 mt-1" /> : <ChevronDown className="w-4 h-4 mt-1" />}</div>{flagged && <div className="flex flex-wrap gap-1.5">{requested && <Flag tone="alert">Cliente pediu cancelamento</Flag>}{owed && <Flag tone="alert"><AlertTriangle className="w-3 h-3" />Devolver {money(order.total)}</Flag>}{late && <Flag tone="warn"><Clock className="w-3 h-3" />Atrasado</Flag>}{abandoned && <Flag tone="warn">PIX não pago há {ABANDONED_PIX_MINUTES} min</Flag>}</div>}{abandoned && <button onClick={onCancelAbandoned} disabled={busy} className="w-full py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold disabled:opacity-40">{busy ? 'Cancelando...' : 'Cancelar pedido abandonado'}</button>}{expanded && <div className="space-y-2 text-[11px]"><div className="bg-[#F5F5F4] rounded-xl p-2"><strong>{order.address.street}, {order.address.number}</strong>{order.address.complement && <span> · {order.address.complement}</span>}{order.customerPhone && <a className="block text-[#059669] mt-1" href={whatsAppLink(order.customerPhone, `Olá, ${order.customerName}!`) } target="_blank" rel="noreferrer"><MessageCircle className="inline w-3 h-3 mr-1" />WhatsApp</a>}{order.driverName && <span className="block text-[#7C3AED]">🛵 {order.driverName}</span>}{order.driverLat && order.driverLng && <span className="block text-[#2563EB]"><MapPin className="inline w-3 h-3 mr-1" />GPS ativo</span>}</div><div className="space-y-1">{order.items.map((item) => <div key={item.id} className="flex justify-between gap-2"><span>{item.quantity}x {item.product.name}{item.isFree ? ' (grátis)' : ''}</span><strong>{money(item.itemTotalPrice)}</strong></div>)}</div><PaymentLine order={order} onConfirmPayment={onConfirmPayment} />{order.cancellationReason && <span className="block text-[#57534E]">Motivo: {order.cancellationReason}</span>}{next[order.status] && <button onClick={() => onAdvance(next[order.status]!)} className="w-full py-1.5 rounded-full bg-[#B91C1C] text-white font-bold">Avançar para {next[order.status]!.replace('_', ' ')}</button>}{order.status !== 'entregue' && order.status !== 'cancelado' && <button onClick={onCancel} disabled={busy} className="w-full py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 font-bold disabled:opacity-40">Cancelar pedido</button>}{order.rating && <span className="text-amber-700 font-bold"><Star className="inline w-3 h-3 fill-current" /> {order.rating}/5</span>}</div>}</div>;
+  return <div className={`rounded-2xl p-3 space-y-2 shadow-xs border ${flagged ? 'border-[#FCA5A5]' : 'border-[#E7E5E4]'}`}><div className="flex items-start gap-2"><button onClick={onToggle} className="flex-1 text-left min-w-0"><div className="flex items-center justify-between gap-2"><strong className="text-xs">{order.id}</strong><span className="text-sm font-extrabold text-[#B91C1C]">{money(order.total)}</span></div><div className="text-[11px] text-[#57534E] truncate">{order.customerName} · {pickup ? 'Retirada na loja' : order.address.neighborhood || order.address.city}</div></button><button onClick={onChat} className="relative p-1.5 rounded-full hover:bg-[#F5F5F4]" title="Conversar com o cliente"><MessagesSquare className="w-3.5 h-3.5" />{unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 px-1 h-4 rounded-full bg-[#B91C1C] text-white text-[9px] font-black flex items-center justify-center">{unreadCount}</span>}</button><button onClick={onPrint} className="p-1.5 rounded-full hover:bg-[#F5F5F4]" title="Imprimir"><Printer className="w-3.5 h-3.5" /></button>{expanded ? <ChevronUp className="w-4 h-4 mt-1" /> : <ChevronDown className="w-4 h-4 mt-1" />}</div>{flagged && <div className="flex flex-wrap gap-1.5">{requested && <Flag tone="alert">Cliente pediu cancelamento</Flag>}{owed && <Flag tone="alert"><AlertTriangle className="w-3 h-3" />Devolver {money(order.total)}</Flag>}{late && <Flag tone="warn"><Clock className="w-3 h-3" />Atrasado</Flag>}{abandoned && <Flag tone="warn">PIX não pago há {ABANDONED_PIX_MINUTES} min</Flag>}</div>}{abandoned && <button onClick={onCancelAbandoned} disabled={busy} className="w-full py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold disabled:opacity-40">{busy ? 'Cancelando...' : 'Cancelar pedido abandonado'}</button>}{expanded && <div className="space-y-2 text-[11px]"><div className="bg-[#F5F5F4] rounded-xl p-2">{pickup ? <strong className="text-[#059669]">🏪 Retirada no balcão</strong> : <strong>{order.address.street}, {order.address.number}</strong>}{order.address.complement && <span> · {order.address.complement}</span>}{order.customerPhone && <a className="block text-[#059669] mt-1" href={whatsAppLink(order.customerPhone, `Olá, ${order.customerName}!`) } target="_blank" rel="noreferrer"><MessageCircle className="inline w-3 h-3 mr-1" />WhatsApp</a>}{order.driverName && <span className="block text-[#7C3AED]">🛵 {order.driverName}</span>}{order.driverLat && order.driverLng && <span className="block text-[#2563EB]"><MapPin className="inline w-3 h-3 mr-1" />GPS ativo</span>}</div><div className="space-y-1">{order.items.map((item) => <div key={item.id} className="flex justify-between gap-2"><span>{item.quantity}x {item.product.name}{item.isFree ? ' (grátis)' : ''}</span><strong>{money(item.itemTotalPrice)}</strong></div>)}</div><PaymentLine order={order} onConfirmPayment={onConfirmPayment} />{order.cancellationReason && <span className="block text-[#57534E]">Motivo: {order.cancellationReason}</span>}{next[order.status] && <button onClick={() => onAdvance(next[order.status]!)} className="w-full py-1.5 rounded-full bg-[#B91C1C] text-white font-bold">Avançar para {nextLabel[order.status] || next[order.status]!.replace('_', ' ')}</button>}{order.status !== 'entregue' && order.status !== 'cancelado' && <button onClick={onCancel} disabled={busy} className="w-full py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 font-bold disabled:opacity-40">Cancelar pedido</button>}{order.rating && <span className="text-amber-700 font-bold"><Star className="inline w-3 h-3 fill-current" /> {order.rating}/5</span>}</div>}</div>;
 };

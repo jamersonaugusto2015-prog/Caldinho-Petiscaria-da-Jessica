@@ -87,6 +87,9 @@ export interface CartItem {
   freeToken?: string;
 }
 
+/** Como o pedido chega ao cliente: motoboy leva ou o cliente retira no balcao. */
+export type Fulfillment = 'delivery' | 'pickup';
+
 export type OrderStatus =
   | 'recebido'
   | 'em_preparo'
@@ -98,8 +101,15 @@ export type OrderStatus =
 /** 'pendente' = a loja deve esse dinheiro ao cliente e ainda não devolveu. */
 export type RefundStatus = 'pendente' | 'devolvido' | 'falhou';
 
+export type PaymentMethod = 'pix' | 'card' | 'cash';
+
+/** Quando o dinheiro entra: agora no site, ou com o motoboy/balcão. */
+export type PaymentTiming = 'online' | 'delivery';
+
 export interface PaymentDetails {
-  method: 'pix' | 'card' | 'cash';
+  method: PaymentMethod;
+  /** Ausente em pedidos antigos — veja normalizePaymentTiming em shared/payment. */
+  timing?: PaymentTiming;
   pixQrCode?: string;
   pixCopyPaste?: string;
   mpPaymentId?: string;
@@ -136,6 +146,8 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   address: DeliveryAddress;
+  /** Ausente em pedidos antigos, gravados antes da retirada existir: leia como 'delivery'. */
+  fulfillment?: Fulfillment;
   items: CartItem[];
   subtotal: number;
   discount: number;
@@ -224,8 +236,11 @@ export interface OpeningHour {
 export interface StoreSettings {
   storeName: string;
   city: string;
+  storeAddress: string; // endereco escrito da loja, mostrado a quem vai retirar
   storeLat: number;
   storeLng: number;
+  pickupEnabled: boolean; // aceita retirada na loja
+  pickupReadyMinutes: number; // minutos ate o pedido ficar pronto para retirar
   deliveryPricePerKm: number; // R$ por km
   deliveryBaseFee: number; // R$ taxa base
   deliveryMinFee: number; // R$ taxa mínima
@@ -237,6 +252,7 @@ export interface StoreSettings {
   pixKey: string;
   pixMerchantName: string;
   pixMerchantCity: string;
+  cardOnDeliveryEnabled: boolean; // a loja tem maquininha para levar na entrega
   storeWhatsApp: string; // WhatsApp da loja p/ receber comprovantes (ex: 5581999990000)
   orderSoundUrl: string; // áudio MP3 personalizado do alerta de novo pedido ('' = voz do sistema)
   openingHours: (OpeningHour | null)[]; // 7 dias: domingo=0 ... sábado=6

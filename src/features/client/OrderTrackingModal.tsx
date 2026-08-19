@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell } from './ClientStore';
 import { LiveMap } from '../../components/common/LiveMap';
+import { isPickup, storeAddressLine } from '../../shared/fulfillment';
+import { paymentLabel } from '../../shared/payment';
 import { formatKm } from '../../shared/geo';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
@@ -356,29 +358,26 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
   );
 }
 
-  const STATUS_STEPS: { status: OrderStatus; title: string; desc: string; color: string }[] = [
-    { status: 'recebido', title: 'Pedido Recebido', desc: 'Confirmado pela loja', color: '#2563EB' },
-    { status: 'em_preparo', title: 'Em Preparo', desc: 'Ajeitando seu caldinho bem quente', color: '#D97706' },
-    { status: 'pronto', title: 'Pronto', desc: 'Aguardando o motoboy', color: '#B45309' },
-    { status: 'saiu_entrega', title: 'A Caminho', desc: 'Motoboy no trecho', color: '#7C3AED' },
-    { status: 'entregue', title: 'Entregue', desc: 'Bom apetite!', color: '#059669' },
-  ];
+  // Na retirada o passo do motoboy não existe: o pedido vai de "pronto" para "retirado".
+  const pickupOrder = isPickup(order);
+  const STATUS_STEPS: { status: OrderStatus; title: string; desc: string; color: string }[] = pickupOrder
+    ? [
+        { status: 'recebido', title: 'Pedido Recebido', desc: 'Confirmado pela loja', color: '#2563EB' },
+        { status: 'em_preparo', title: 'Em Preparo', desc: 'Ajeitando seu caldinho bem quente', color: '#D97706' },
+        { status: 'pronto', title: 'Pronto para retirar', desc: 'Pode buscar no balcão', color: '#B45309' },
+        { status: 'entregue', title: 'Retirado', desc: 'Bom apetite!', color: '#059669' },
+      ]
+    : [
+        { status: 'recebido', title: 'Pedido Recebido', desc: 'Confirmado pela loja', color: '#2563EB' },
+        { status: 'em_preparo', title: 'Em Preparo', desc: 'Ajeitando seu caldinho bem quente', color: '#D97706' },
+        { status: 'pronto', title: 'Pronto', desc: 'Aguardando o motoboy', color: '#B45309' },
+        { status: 'saiu_entrega', title: 'A Caminho', desc: 'Motoboy no trecho', color: '#7C3AED' },
+        { status: 'entregue', title: 'Entregue', desc: 'Bom apetite!', color: '#059669' },
+      ];
 
   const getStepIndex = (st: OrderStatus) => {
-    switch (st) {
-      case 'recebido':
-        return 0;
-      case 'em_preparo':
-        return 1;
-      case 'pronto':
-        return 2;
-      case 'saiu_entrega':
-        return 3;
-      case 'entregue':
-        return 4;
-      default:
-        return 0;
-    }
+    const index = STATUS_STEPS.findIndex((step) => step.status === st);
+    return index >= 0 ? index : 0;
   };
 
   const currentIndex = getStepIndex(order.status);
@@ -419,6 +418,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 ? order.cancellationReason || 'Pedido cancelado'
                 : isLate
                 ? `A previsão de ~${order.estimatedDeliveryMinutes} minutos já passou`
+                : pickupOrder
+                ? `Pronto para retirar em ~${order.estimatedDeliveryMinutes} minutos`
                 : `Previsão de entrega: ~${order.estimatedDeliveryMinutes} minutos`}
             </p>
           </div>
@@ -582,11 +583,15 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
           {order.status !== 'cancelado' && (
             <LiveMap
               store={{ lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }}
-              customer={{
-                lat: order.address.lat || settings.storeLat,
-                lng: order.address.lng || settings.storeLng,
-                label: `${order.address.street}, ${order.address.number}`,
-              }}
+              customer={
+                pickupOrder
+                  ? null
+                  : {
+                      lat: order.address.lat || settings.storeLat,
+                      lng: order.address.lng || settings.storeLng,
+                      label: `${order.address.street}, ${order.address.number}`,
+                    }
+              }
               driver={
                 order.driverLat != null && order.driverLng != null
                   ? { lat: order.driverLat, lng: order.driverLng, name: order.driverName }
@@ -600,16 +605,22 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
           <div className="bg-white p-3.5 rounded-2xl border border-[#E7E5E4] flex items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
-                {isCanceled ? '💬' : '🛵'}
+                {isCanceled ? '💬' : pickupOrder ? '🏪' : '🛵'}
               </div>
               <div>
                 <div className="text-xs font-bold text-[#1C1917]">
                   {isCanceled
                     ? 'Fale com a loja'
+                    : pickupOrder
+                    ? 'Retirada na loja'
                     : order.driverName || (order.status === 'pronto' ? 'Aguardando motoboy' : 'A definir')}
                 </div>
                 <div className="text-[10px] text-[#57534E]">
-                  {isCanceled ? 'O chat deste pedido continua aberto' : 'Moto Boy Exclusivo da Loja'}
+                  {isCanceled
+                    ? 'O chat deste pedido continua aberto'
+                    : pickupOrder
+                    ? storeAddressLine(settings)
+                    : 'Moto Boy Exclusivo da Loja'}
                 </div>
               </div>
             </div>
@@ -700,7 +711,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 </div>
               )}
               <div className="flex justify-between">
-                <span>Entrega</span>
+                <span>{pickupOrder ? 'Retirada na loja' : 'Entrega'}</span>
                 <span className="font-bold text-[#1C1917]">
                   {order.deliveryFee > 0 ? `R$ ${order.deliveryFee.toFixed(2)}` : 'Grátis'}
                 </span>
@@ -708,8 +719,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             </div>
             <div className="pt-2 flex justify-between text-sm font-extrabold text-[#1C1917] border-t border-[#E7E5E4]">
               <span>
-                Total ({order.payment.method.toUpperCase()})
-                {order.payment.isPaid ? '' : ' - pendente'}
+                Total · {paymentLabel(order.payment, order.fulfillment)}
+                {order.payment.isPaid ? ' · pago' : ' · a pagar'}
               </span>
               <span className="text-[#B91C1C]">R$ {order.total.toFixed(2)}</span>
             </div>
