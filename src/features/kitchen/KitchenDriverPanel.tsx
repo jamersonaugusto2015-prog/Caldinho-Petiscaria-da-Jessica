@@ -56,7 +56,7 @@ export const KitchenDriverPanel: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between"><Heading icon={<Bike />} title="Motoboys" subtitle="Acessos e disponibilidade dos entregadores." /><button onClick={() => openDriver()} className="btn-primary">Novo motoboy</button></div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-3">
         {drivers.map((driver) => (
           <Panel key={driver.id}>
             <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1C1917] text-white flex items-center justify-center"><Bike className="w-5 h-5" /></div><div className="min-w-0 flex-1"><strong className="block truncate">{driver.name}</strong><span className="text-[11px] text-[#57534E]">{driver.phone || 'Sem telefone'}</span></div><span className={`text-[9px] font-black px-2 py-1 rounded-full ${driver.active ? 'bg-[#ECFDF5] text-[#059669]' : 'bg-[#FEF2F2] text-[#B91C1C]'}`}>{driver.online ? 'ONLINE' : driver.active ? 'ATIVO' : 'INATIVO'}</span></div>
