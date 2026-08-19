@@ -30,8 +30,8 @@ export const ClientView: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [view, setView] = useState<'inicio' | 'pedidos' | 'busca'>('inicio');
 
-  const caldinhoDoDia =
-    products.find((p) => p.isCaldinhoDoDia) || products.find((p) => p.category === 'caldinhos' && p.available) || null;
+  // Promoção do dia: só aparece quando a cozinha marca um produto (de qualquer categoria) e ele está disponível.
+  const caldinhoDoDia = products.find((p) => p.isCaldinhoDoDia && p.available) || null;
 
   // Categorias dinâmicas (do painel da cozinha), com fallback derivado dos produtos
   const categoryList: Category[] = categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : [];

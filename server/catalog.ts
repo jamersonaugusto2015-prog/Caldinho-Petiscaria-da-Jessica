@@ -154,16 +154,21 @@ export function deleteProduct(id: string): void {
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
 }
 
-export function setCaldinhoDoDia(id: string): void {
+/** Promoção do dia: qualquer produto pode ser o destaque. `null` desmarca todos. */
+export function setCaldinhoDoDia(id: string | null): void {
   const rows = db.prepare('SELECT data FROM products').all() as { data: string }[];
   const tx = db.transaction(() => {
     for (const r of rows) {
       const p: Product = JSON.parse(r.data);
-      p.isCaldinhoDoDia = p.id === id;
+      p.isCaldinhoDoDia = id !== null && p.id === id;
       db.prepare('UPDATE products SET data = ? WHERE id = ?').run(JSON.stringify(p), p.id);
     }
   });
   tx();
+}
+
+export function clearCaldinhoDoDia(): void {
+  setCaldinhoDoDia(null);
 }
 
 // ---------- Cupons ----------

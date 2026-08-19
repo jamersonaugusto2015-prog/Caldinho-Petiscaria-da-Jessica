@@ -1,5 +1,5 @@
-/** Redimensiona uma imagem de arquivo para um data URL (JPEG), evitando uploads gigantes. */
-export function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<string> {
+/** Carrega o arquivo como <img> já decodificado, com timeout e mensagens de erro amigáveis. */
+export function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     let settled = false;
     // Em celular fraco o decode de um arquivo corrompido às vezes não dispara
@@ -29,36 +29,50 @@ export function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<
           )
         );
       img.onload = () => {
-        try {
-          if (!img.width || !img.height) {
-            return settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
-          }
-          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-          const w = Math.round(img.width * scale);
-          const h = Math.round(img.height * scale);
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return settle(() => reject(new Error('Falha ao processar a imagem.')));
-          // Fundo branco: sem isso, um PNG com transparência (ex.: logo recortada)
-          // vira JPEG com fundo preto, porque o JPEG não tem canal alfa.
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-          ctx.drawImage(img, 0, 0, w, h);
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
-          if (!dataUrl || dataUrl.length < 100) {
-            return settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
-          }
-          settle(() => resolve(dataUrl));
-        } catch {
-          settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
+        if (!img.width || !img.height) {
+          return settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
         }
+        settle(() => resolve(img));
       };
       img.src = String(reader.result);
     };
     reader.readAsDataURL(file);
   });
+}
+
+type CropRect = { sx: number; sy: number; sw: number; sh: number };
+
+/** Desenha um pedaço da imagem num JPEG (data URL), limitando o lado maior a maxDim. */
+export function cropImageToDataUrl(
+  img: HTMLImageElement,
+  crop: CropRect,
+  maxDim = 1000,
+  quality = 0.85
+): string {
+  const scale = Math.min(1, maxDim / Math.max(crop.sw, crop.sh));
+  const w = Math.max(1, Math.round(crop.sw * scale));
+  const h = Math.max(1, Math.round(crop.sh * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Falha ao processar a imagem.');
+  // Fundo branco: sem isso, um PNG com transparência (ex.: logo recortada)
+  // vira JPEG com fundo preto, porque o JPEG não tem canal alfa.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  if (!dataUrl || dataUrl.length < 100) {
+    throw new Error('Falha ao processar a imagem. Tente outro arquivo.');
+  }
+  return dataUrl;
+}
+
+/** Redimensiona uma imagem de arquivo para um data URL (JPEG), evitando uploads gigantes. */
+export async function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<string> {
+  const img = await loadImageFile(file);
+  return cropImageToDataUrl(img, { sx: 0, sy: 0, sw: img.width, sh: img.height }, maxDim, quality);
 }
 
 export const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/gif';

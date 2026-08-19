@@ -15,7 +15,8 @@ import {
   Zap,
 } from 'lucide-react';
 import type { Category, ComboSlot, ExtraOption, Product } from '../../types';
-import { ACCEPTED_IMAGE_TYPES, resizeImage, validateImageFile } from '../../lib/image';
+import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
+import { useImageFramer } from '../../components/common/ImageFramer';
 import { useKitchenUpload } from './useKitchenUpload';
 
 export const PRODUCT_IMAGE_FALLBACK =
@@ -61,6 +62,7 @@ interface Props {
 export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClose, onSave }) => {
   const original = value === 'new' ? null : value;
   const uploadImage = useKitchenUpload();
+  const { frameImage, framerNode } = useImageFramer();
 
   const [form, setForm] = useState<Draft>(() => toDraft(original, categories));
   const [extras, setExtras] = useState<ExtraOption[]>(() =>
@@ -106,9 +108,10 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
         return;
       }
       setUploadError(null);
-      setUploading(true);
       try {
-        const dataUrl = await resizeImage(file);
+        const dataUrl = await frameImage(file, { title: 'Enquadrar foto do produto' });
+        if (!dataUrl) return;
+        setUploading(true);
         const url = await uploadImage(dataUrl, `produto-${form.id}`);
         if (url) patch({ image: url });
         else setUploadError('Não foi possível enviar a imagem. Tente de novo.');
@@ -118,7 +121,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
         setUploading(false);
       }
     },
-    [form.id, patch, uploadImage]
+    [form.id, frameImage, patch, uploadImage]
   );
 
   const submit = async (event: React.FormEvent) => {
@@ -634,6 +637,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
           </button>
         </footer>
       </form>
+      {framerNode}
     </div>
   );
 };

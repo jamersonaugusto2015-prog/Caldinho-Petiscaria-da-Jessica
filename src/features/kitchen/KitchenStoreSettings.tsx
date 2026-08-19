@@ -3,7 +3,8 @@ import { Check, CloudUpload, MapPin, Settings, Upload } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import type { PublicStoreSettings } from '../../types';
 import { kitchenApi as api } from '../../lib/api';
-import { ACCEPTED_IMAGE_TYPES, resizeImage, validateImageFile } from '../../lib/image';
+import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
+import { useImageFramer } from '../../components/common/ImageFramer';
 import { generateRandomPixKey, normalizePixKey, validatePixKey } from '../../shared/pix';
 import { LiveMap } from '../../components/common/LiveMap';
 import { useKitchenSettings } from './KitchenSettingsStore';
@@ -74,14 +75,20 @@ export const KitchenStoreSettings: React.FC<{ activeTab: KitchenTab; setActiveTa
   const setField = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => setDraft((previous) => ({ ...previous, [key]: value }));
   const save = async () => {
     const normalizedPix = normalizePixKey(draft.pixKey);
-    if (normalizedPix && !validatePixKey(normalizedPix)) {
-      setPixError('Chave PIX inválida.');
+    // validatePixKey devolve a mensagem do erro (ou null quando está tudo certo):
+    // negar o retorno invertia a checagem e travava o save com a chave válida.
+    const pixProblem = normalizedPix ? validatePixKey(normalizedPix) : null;
+    setPixError(pixProblem || '');
+    if (pixProblem) {
+      // Sem o toast o motivo fica só no painel do PIX, fora da tela: dá a
+      // impressão de que o botão Salvar não faz nada.
+      triggerToast(pixProblem);
       return;
     }
-    setPixError('');
     const newPin = draft.kitchenPin.trim();
     if (newPin && newPin.length < 4) {
       setPinError('O PIN precisa ter pelo menos 4 caracteres.');
+      triggerToast('O PIN da cozinha precisa ter pelo menos 4 caracteres.');
       return;
     }
     setPinError('');
@@ -183,5 +190,5 @@ const Field: React.FC<{ label: string; value: string; onChange: (value: string) 
 const NumberGrid: React.FC<{ fields: [string, keyof SettingsDraft][]; draft: SettingsDraft; setField: <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => void }> = ({ fields, draft, setField }) => <div className="grid grid-cols-2 gap-2">{fields.map(([label, key]) => <Field key={key} label={label} type="number" value={String(draft[key])} onChange={(value) => setField(key, Number(value) || 0)} />)}</div>;
 const Toggle: React.FC<{ label: string; checked: boolean; onChange: (value: boolean) => void }> = ({ label, checked, onChange }) => <label className="flex items-center gap-2 text-xs font-bold mt-2"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 const Panel: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => <section className="bg-white rounded-2xl p-4 border border-[#E7E5E4] shadow-xs space-y-3"><h3 className="font-extrabold text-sm">{title}</h3>{children}</section>;
-const LogoEditor: React.FC<{ logo: string; uploadImage: (dataUrl: string, filename?: string) => Promise<string | null>; onSave: (logo: string) => Promise<void> }> = ({ logo, uploadImage, onSave }) => <div className="flex items-center gap-3"><div className="w-14 h-14 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] overflow-hidden flex items-center justify-center">{logo ? <img src={logo} alt="Logo" className="w-full h-full object-contain" /> : <span>🏪</span>}</div><label className="btn-secondary cursor-pointer"><Upload className="w-3.5 h-3.5" />Trocar logo<input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file || validateImageFile(file)) return; const url = await uploadImage(await resizeImage(file), 'logo'); if (url) await onSave(url); }} /></label></div>;
+const LogoEditor: React.FC<{ logo: string; uploadImage: (dataUrl: string, filename?: string) => Promise<string | null>; onSave: (logo: string) => Promise<void> }> = ({ logo, uploadImage, onSave }) => { const { frameImage, framerNode } = useImageFramer(); return <div className="flex items-center gap-3"><div className="w-14 h-14 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] overflow-hidden flex items-center justify-center">{logo ? <img src={logo} alt="Logo" className="w-full h-full object-contain" /> : <span>🏪</span>}</div><label className="btn-secondary cursor-pointer"><Upload className="w-3.5 h-3.5" />Trocar logo<input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file || validateImageFile(file)) return; const dataUrl = await frameImage(file, { aspect: 1, title: 'Enquadrar logo da loja' }); if (!dataUrl) return; const url = await uploadImage(dataUrl, 'logo'); if (url) await onSave(url); }} /></label>{framerNode}</div>; };
 const AudioUpload: React.FC<{ onUpload: (dataUrl: string) => Promise<void> }> = ({ onUpload }) => <label className="btn-secondary cursor-pointer w-fit"><Upload className="w-3.5 h-3.5" />Enviar áudio<input type="file" accept="audio/*" className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === 'string') void onUpload(reader.result); }; reader.readAsDataURL(file); }} /></label>;

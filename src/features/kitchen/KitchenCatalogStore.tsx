@@ -13,7 +13,7 @@ interface KitchenCatalogContextType {
   updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   addProduct: (p: Product) => Promise<void>;
-  setCaldinhoDoDia: (id: string) => Promise<void>;
+  toggleCaldinhoDoDia: (product: Product) => Promise<void>;
   updateProductImage: (id: string, imageUrl: string) => Promise<void>;
   saveCategory: (cat: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
@@ -127,16 +127,22 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
     [triggerToast]
   );
 
-  const setCaldinhoDoDia = useCallback(
-    async (id: string) => {
+  // Qualquer produto pode ser a promoção do dia; clicar no que já está marcado desmarca.
+  const toggleCaldinhoDoDia = useCallback(
+    async (product: Product) => {
+      const isCurrent = Boolean(product.isCaldinhoDoDia);
       try {
-        await api.post(`/products/${id}/caldinho-do-dia`);
+        if (isCurrent) await api.delete(`/products/${product.id}/caldinho-do-dia`);
+        else await api.post(`/products/${product.id}/caldinho-do-dia`);
         const list = await api.get<Product[]>('/products');
         setProducts(list);
-        const chosen = list.find((product) => product.id === id);
-        triggerToast(`🔥 ${chosen?.name || 'Produto'} agora é o Caldinho do Dia.`);
+        triggerToast(
+          isCurrent
+            ? '🔕 Promoção do dia removida.'
+            : `🔥 ${product.name || 'Produto'} agora é a Promoção do Dia.`
+        );
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao definir Caldinho do Dia.');
+        triggerToast(err instanceof Error ? err.message : 'Erro ao definir a Promoção do Dia.');
       }
     },
     [triggerToast]
@@ -247,7 +253,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       updateProduct,
       deleteProduct,
       addProduct,
-      setCaldinhoDoDia,
+      toggleCaldinhoDoDia,
       updateProductImage,
       saveCategory,
       deleteCategory,
@@ -264,7 +270,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       updateProduct,
       deleteProduct,
       addProduct,
-      setCaldinhoDoDia,
+      toggleCaldinhoDoDia,
       updateProductImage,
       saveCategory,
       deleteCategory,

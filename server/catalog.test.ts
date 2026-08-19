@@ -26,6 +26,7 @@ const {
   normalizeExtras,
   saveCoupon,
   setCaldinhoDoDia,
+  clearCaldinhoDoDia,
   updateCategory,
   updateProduct,
 } = await import('./catalog');
@@ -221,6 +222,21 @@ test('setCaldinhoDoDia with an id that matches nothing clears every product', ()
   createProduct(makeProduct({ id: 'p-c', isCaldinhoDoDia: true }));
   setCaldinhoDoDia('does-not-exist');
   assert.equal(getProduct('p-c')?.isCaldinhoDoDia, false);
+});
+
+test('setCaldinhoDoDia accepts a product from any category, not only caldinhos', () => {
+  createProduct(makeProduct({ id: 'p-caldinho', category: 'caldinhos', isCaldinhoDoDia: true }));
+  createProduct(makeProduct({ id: 'p-bebida', category: 'bebidas' }));
+  setCaldinhoDoDia('p-bebida');
+  assert.equal(getProduct('p-bebida')?.isCaldinhoDoDia, true);
+  assert.equal(getProduct('p-caldinho')?.isCaldinhoDoDia, false);
+});
+
+test('clearCaldinhoDoDia leaves no product marked as promotion of the day', () => {
+  createProduct(makeProduct({ id: 'p-d', isCaldinhoDoDia: true }));
+  createProduct(makeProduct({ id: 'p-e' }));
+  clearCaldinhoDoDia();
+  assert.ok(listProducts().every((p) => p.isCaldinhoDoDia === false));
 });
 
 test('saveCoupon rejects a coupon without a code or a numeric discount', () => {

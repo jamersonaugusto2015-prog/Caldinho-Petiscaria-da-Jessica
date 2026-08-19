@@ -65,6 +65,7 @@ import {
   listProducts,
   saveCoupon,
   setCaldinhoDoDia,
+  clearCaldinhoDoDia,
   updateCategory,
   updateProduct,
 } from './catalog';
@@ -349,6 +350,12 @@ export function createRoutes(io: Server): Router {
 
   router.post('/products/:id/caldinho-do-dia', requireRole('kitchen'), (req, res) => {
     setCaldinhoDoDia(req.params.id);
+    io.emit('products:updated');
+    res.json({ ok: true });
+  });
+
+  router.delete('/products/:id/caldinho-do-dia', requireRole('kitchen'), (req, res) => {
+    clearCaldinhoDoDia();
     io.emit('products:updated');
     res.json({ ok: true });
   });

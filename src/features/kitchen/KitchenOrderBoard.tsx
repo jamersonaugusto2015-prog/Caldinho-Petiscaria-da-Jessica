@@ -2,15 +2,22 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
+  Bike,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   Clock,
   MapPin,
   MessageCircle,
   MessagesSquare,
+  PauseCircle,
   Printer,
+  Receipt,
   Star,
+  Ticket,
+  TrendingUp,
   Users,
+  UtensilsCrossed,
   Wallet,
 } from 'lucide-react';
 import type { Order, OrderStatus } from '../../types';
@@ -26,7 +33,7 @@ import { useKitchenChat } from './KitchenChatStore';
 import { RevenueChart } from './RevenueChart';
 import { KitchenDriverPanel } from './KitchenDriverPanel';
 import { KitchenCancelOrderModal } from './KitchenCancelOrderModal';
-import { Heading, Panel, Empty } from './KitchenPanels';
+import { Heading, Panel, Empty, SwitchToggle } from './KitchenPanels';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { useNow } from './useNow';
 import {
@@ -39,6 +46,7 @@ import {
   pendingRefundTotal,
   refundFailed,
   shortDate,
+  shortDateTime,
 } from './kitchenOrderRules';
 import type { KitchenTab } from './kitchenTabs';
 
@@ -99,45 +107,83 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
 
 
   if (activeTab === 'dashboard') {
+    const pausedCount = products.filter((product) => !product.available).length;
     return (
-      <div className="space-y-5">
+      <div className="space-y-4 sm:space-y-5">
         <Heading icon={<BarChart3 />} title="Dashboard" subtitle="Visão geral da loja em tempo real." />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Metric label="Vendas" value={money(totalRevenue)} />
-          <Metric label="Pedidos ativos" value={String(activeOrders.length)} />
-          <Metric label="Ticket médio" value={money(averageTicket)} accent />
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
+          <Metric className="col-span-2 lg:col-span-1" icon={<Wallet className="w-4 h-4" />} label="Vendas" value={money(totalRevenue)} />
+          <Metric icon={<ClipboardList className="w-4 h-4" />} label="Pedidos ativos" value={String(activeOrders.length)} />
+          <Metric icon={<TrendingUp className="w-4 h-4" />} label="Ticket médio" value={money(averageTicket)} accent />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Metric label="Itens no cardápio" value={String(products.length)} />
-          <Metric label="Pausados" value={String(products.filter((p) => !p.available).length)} />
-          <Metric label="Cupons" value={String(coupons.length)} />
-          <Metric label="Motoboys" value={String(drivers.length)} />
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          <Metric icon={<UtensilsCrossed className="w-4 h-4" />} label="Itens no cardápio" value={String(products.length)} />
+          <Metric icon={<PauseCircle className="w-4 h-4" />} label="Pausados" value={String(pausedCount)} accent={pausedCount > 0} />
+          <Metric icon={<Ticket className="w-4 h-4" />} label="Cupons" value={String(coupons.length)} />
+          <Metric icon={<Bike className="w-4 h-4" />} label="Motoboys" value={String(drivers.length)} />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 items-start">
           <Panel title="Pedidos recentes">
-            {orders.slice(0, 6).map((order) => (
-              <div key={order.id} className="flex items-center justify-between gap-2 py-2 border-b last:border-0 border-[#F5F5F4] text-xs">
-                <span className="font-extrabold">{order.id}</span>
-                <span className="truncate text-[#57534E]">{order.customerName}</span>
-                <span className="font-extrabold">{money(order.total)}</span>
-              </div>
-            ))}
+            <p className="text-[11px] text-[#57534E] -mt-2 mb-2">Toque em um pedido para abrir a comanda.</p>
+            <div className="max-h-80 overflow-y-auto -mx-1 px-1">
+              {orders.slice(0, 8).map((order) => (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => setPrintOrder(order)}
+                  title={`Ver a comanda do pedido ${order.id}`}
+                  className="w-full text-left flex items-center gap-2.5 py-2.5 border-b last:border-0 border-[#F5F5F4] transition hover:bg-[#FAFAF9] active:scale-[0.99] rounded-xl"
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-xl bg-[#FEF2F2] text-[#B91C1C] flex items-center justify-center">
+                    <Receipt className="w-4 h-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      <strong className="text-xs">{order.id}</strong>
+                      <StatusPill status={order.status} />
+                    </span>
+                    <span className="block text-[11px] text-[#57534E] truncate">
+                      {order.customerName} · {shortDateTime(order.createdAt)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-extrabold tabular-nums">{money(order.total)}</span>
+                </button>
+              ))}
+            </div>
             {orders.length === 0 && <Empty text="Nenhum pedido ainda." />}
           </Panel>
+
           <Panel title="Status do cardápio">
-            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 -mt-2 mb-2 text-[11px] font-bold">
+              <span className="text-emerald-700">{products.length - pausedCount} no ar</span>
+              <span className="text-[#B91C1C]">{pausedCount} pausado(s)</span>
+              <span className="text-[#57534E] font-normal">Use o interruptor para pausar ou reativar.</span>
+            </div>
+            <div className="max-h-80 overflow-y-auto pr-1">
               {products.map((product) => (
-                <div key={product.id} className="flex items-center gap-2 py-1.5 text-xs">
-                  <span className={`w-2 h-2 rounded-full ${product.available ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                  <span className={`flex-1 truncate ${product.available ? '' : 'line-through text-red-700'}`}>{product.name}</span>
-                  <button className="text-[10px] font-bold" onClick={() => void toggleProductAvailability(product.id, product.available)}>
-                    {product.available ? 'Pausar' : 'Reativar'}
-                  </button>
+                <div key={product.id} className="flex items-center gap-2 py-2 border-b last:border-0 border-[#F5F5F4] text-xs">
+                  <span className={`w-2 h-2 shrink-0 rounded-full ${product.available ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  <span className={`flex-1 min-w-0 truncate ${product.available ? '' : 'line-through text-red-700'}`} title={product.name}>
+                    {product.name}
+                  </span>
+                  <SwitchToggle
+                    checked={product.available}
+                    label={product.available ? `Pausar ${product.name}` : `Reativar ${product.name}`}
+                    onChange={() => void toggleProductAvailability(product.id, product.available)}
+                  />
                 </div>
               ))}
+              {products.length === 0 && <Empty text="Nenhum produto no cardápio." />}
             </div>
           </Panel>
         </div>
+
+        {printOrder && (
+          <OrderReceiptModal order={printOrder} storeName={settings.storeName} onClose={() => setPrintOrder(null)} />
+        )}
       </div>
     );
   }
@@ -236,7 +282,29 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
   return null;
 };
 
-const Metric: React.FC<{ label: string; value: string; accent?: boolean }> = ({ label, value, accent }) => <div className="bg-white rounded-2xl p-4 border border-[#E7E5E4] shadow-xs"><span className="text-[10px] text-[#57534E] uppercase font-bold">{label}</span><div className={`font-extrabold text-xl mt-1 ${accent ? 'text-[#B91C1C]' : ''}`}>{value}</div></div>;
+const Metric: React.FC<{ label: string; value: string; accent?: boolean; icon?: React.ReactNode; className?: string }> = ({ label, value, accent, icon, className = '' }) => (
+  <div className={`bg-white rounded-2xl p-3 sm:p-4 border border-[#E7E5E4] shadow-xs min-w-0 ${className}`}>
+    <span className="flex items-center gap-1.5 text-[10px] text-[#57534E] uppercase font-bold">
+      {icon && <span className="text-[#B91C1C] shrink-0">{icon}</span>}
+      <span className="truncate">{label}</span>
+    </span>
+    <div className={`font-extrabold text-lg sm:text-xl mt-1 truncate tabular-nums ${accent ? 'text-[#B91C1C]' : ''}`} title={value}>{value}</div>
+  </div>
+);
+
+const STATUS_PILL: Record<OrderStatus, { label: string; className: string }> = {
+  recebido: { label: 'Novo', className: 'bg-[#EFF6FF] text-[#1D4ED8]' },
+  em_preparo: { label: 'Em preparo', className: 'bg-[#FFFBEB] text-[#B45309]' },
+  pronto: { label: 'Pronto', className: 'bg-[#F5F3FF] text-[#6D28D9]' },
+  saiu_entrega: { label: 'A caminho', className: 'bg-[#F5F3FF] text-[#7C3AED]' },
+  entregue: { label: 'Concluído', className: 'bg-[#ECFDF5] text-[#047857]' },
+  cancelado: { label: 'Cancelado', className: 'bg-[#FEF2F2] text-[#B91C1C]' },
+};
+
+const StatusPill: React.FC<{ status: OrderStatus }> = ({ status }) => {
+  const pill = STATUS_PILL[status];
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${pill.className}`}>{pill.label}</span>;
+};
 
 const Flag: React.FC<{ tone: 'alert' | 'warn'; children: React.ReactNode }> = ({ tone, children }) => (
   <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-1 rounded-full ${tone === 'alert' ? 'bg-[#FEF2F2] text-[#B91C1C]' : 'bg-[#FFFBEB] text-[#B45309]'}`}>{children}</span>

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Flame, ImagePlus, Megaphone, Pause, Pencil, Play, PlusCircle, Search, Tags, Ticket, Trash2, Upload, UtensilsCrossed } from 'lucide-react';
 import type { Category, Coupon, Product } from '../../types';
-import { ACCEPTED_IMAGE_TYPES, resizeImage, validateImageFile } from '../../lib/image';
+import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
+import { useImageFramer } from '../../components/common/ImageFramer';
 import { useKitchenCatalog } from './KitchenCatalogStore';
 import { useKitchenUpload } from './useKitchenUpload';
 import { KitchenProductEditor, PRODUCT_IMAGE_FALLBACK } from './KitchenProductEditor';
@@ -26,7 +27,7 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
     updateProduct,
     deleteProduct,
     addProduct,
-    setCaldinhoDoDia,
+    toggleCaldinhoDoDia,
     updateProductImage,
     saveCategory,
     deleteCategory,
@@ -35,6 +36,7 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
     deleteCoupon,
   } = useKitchenCatalog();
   const uploadImage = useKitchenUpload();
+  const { frameImage, framerNode } = useImageFramer();
   const [editor, setEditor] = useState<Product | 'new' | null>(null);
   const sortedCategories = useMemo(
     () => (categories.length ? [...categories].sort((a, b) => a.sort - b.sort) : FALLBACK_CATEGORIES),
@@ -54,7 +56,7 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
   ) : null;
 
   if (activeTab === 'cardapio') {
-    return <><ProductCatalog products={products} categories={sortedCategories} onNew={() => setEditor('new')} onEdit={setEditor} onDelete={(product) => { if (window.confirm(`Excluir ${product.name}?`)) void deleteProduct(product.id); }} onToggle={(product) => toggleProductAvailability(product.id, product.available)} onPrice={updateProductPrice} onDay={setCaldinhoDoDia} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const url = await uploadImage(await resizeImage(file), `produto-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}</>;
+    return <><ProductCatalog products={products} categories={sortedCategories} onNew={() => setEditor('new')} onEdit={setEditor} onDelete={(product) => { if (window.confirm(`Excluir ${product.name}?`)) void deleteProduct(product.id); }} onToggle={(product) => toggleProductAvailability(product.id, product.available)} onPrice={updateProductPrice} onDay={toggleCaldinhoDoDia} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const dataUrl = await frameImage(file, { title: `Enquadrar foto de ${product.name}` }); if (!dataUrl) return; const url = await uploadImage(dataUrl, `produto-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}{framerNode}</>;
   }
 
   if (activeTab === 'categorias') {
@@ -62,7 +64,7 @@ export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ acti
   }
 
   if (activeTab === 'promocoes') {
-    return <><PromotionCatalog products={products} onDay={setCaldinhoDoDia} onEdit={setEditor} onUpdate={updateProduct} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const url = await uploadImage(await resizeImage(file), `promocao-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}</>;
+    return <><PromotionCatalog products={products} onDay={toggleCaldinhoDoDia} onEdit={setEditor} onUpdate={updateProduct} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const dataUrl = await frameImage(file, { title: `Enquadrar foto de ${product.name}` }); if (!dataUrl) return; const url = await uploadImage(dataUrl, `promocao-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}{framerNode}</>;
   }
 
   if (activeTab === 'cupons') {
@@ -80,7 +82,7 @@ const ProductCatalog: React.FC<{
   onDelete: (product: Product) => void;
   onToggle: (product: Product) => Promise<void>;
   onPrice: (id: string, price: number) => Promise<void>;
-  onDay: (id: string) => Promise<void>;
+  onDay: (product: Product) => Promise<void>;
   onUpload: (product: Product, file: File) => Promise<void>;
 }> = ({ products, categories, onNew, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => {
   const [query, setQuery] = useState('');
@@ -191,7 +193,7 @@ const ProductCard: React.FC<{
   onDelete: (product: Product) => void;
   onToggle: (product: Product) => Promise<void>;
   onPrice: (id: string, price: number) => Promise<void>;
-  onDay: (id: string) => Promise<void>;
+  onDay: (product: Product) => Promise<void>;
   onUpload: (product: Product, file: File) => Promise<void>;
 }> = ({ product, categoryLabel, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => (
   <article
@@ -238,17 +240,15 @@ const ProductCard: React.FC<{
           {product.available ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
           {product.available ? 'Pausar' : 'Reativar'}
         </button>
-        {product.category === 'caldinhos' && (
-          <button
-            className={product.isCaldinhoDoDia ? 'btn-primary p-2' : 'btn-secondary p-2'}
-            title={product.isCaldinhoDoDia ? 'Este é o caldinho do dia' : 'Marcar como caldinho do dia'}
-            aria-pressed={product.isCaldinhoDoDia}
-            aria-label="Marcar como caldinho do dia"
-            onClick={() => void onDay(product.id)}
-          >
-            <Flame className="w-3.5 h-3.5" />
-          </button>
-        )}
+        <button
+          className={product.isCaldinhoDoDia ? 'btn-primary p-2' : 'btn-secondary p-2'}
+          title={product.isCaldinhoDoDia ? 'Tirar da promoção do dia' : 'Marcar como promoção do dia'}
+          aria-pressed={product.isCaldinhoDoDia}
+          aria-label={product.isCaldinhoDoDia ? 'Tirar da promoção do dia' : 'Marcar como promoção do dia'}
+          onClick={() => void onDay(product)}
+        >
+          <Flame className="w-3.5 h-3.5" />
+        </button>
         <label className="btn-secondary p-2 cursor-pointer" title="Trocar a foto">
           <Upload className="w-3.5 h-3.5" />
           <span className="sr-only">Trocar a foto</span>
@@ -309,7 +309,7 @@ const CategoryRow: React.FC<{ category: Category; count: number; first: boolean;
   return <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] flex items-center gap-2"><div className="flex flex-col"><button disabled={first} onClick={() => void onMove(category.id, -1)}><span className="sr-only">Subir</span>↑</button><button disabled={last} onClick={() => void onMove(category.id, 1)}><span className="sr-only">Descer</span>↓</button></div><input aria-label="Emoji" className="w-12 bg-[#F5F5F4] rounded-lg p-2 text-center" value={emoji} onChange={(event) => setEmoji(event.target.value)} /><input className="flex-1 input" value={label} onChange={(event) => setLabel(event.target.value)} /><input aria-label="Cor" type="color" className="w-8 h-8" value={color} onChange={(event) => setColor(event.target.value)} /><button className="btn-primary p-2" onClick={() => void onSave({ ...category, label, emoji, color })}><Check className="w-4 h-4" /></button><button className="btn-danger p-2" disabled={count > 0} onClick={() => { if (window.confirm(`Excluir ${category.label}?`)) void onDelete(category.id); }}><Trash2 className="w-4 h-4" /></button></div>;
 };
 
-const PromotionCatalog: React.FC<{ products: Product[]; onDay: (id: string) => Promise<void>; onEdit: (product: Product) => void; onUpdate: (id: string, patch: Partial<Product>) => Promise<void>; onUpload: (product: Product, file: File) => Promise<void> }> = ({ products, onDay, onEdit, onUpdate, onUpload }) => <div className="space-y-4"><Header icon={<Megaphone />} title="Promoções" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{products.filter((product) => product.isPopular || product.isFlashPromo || product.isCaldinhoDoDia).map((product) => <div key={product.id} className="bg-white rounded-2xl border border-[#E7E5E4] p-4"><div className="flex items-center gap-3"><img src={product.image} alt={product.name} className="w-14 h-14 rounded-xl object-cover" /><div className="flex-1"><strong className="block">{product.name}</strong><span className="text-xs text-[#B91C1C]">{money(product.basePrice)}</span></div></div><div className="flex flex-wrap gap-1.5 mt-3 text-[10px] font-bold">{product.isCaldinhoDoDia && <span className="badge">🔥 Destaque</span>}{product.isPopular && <span className="badge">⭐ Popular</span>}{product.isFlashPromo && <span className="badge">⚡ Flash</span>}</div><div className="flex gap-2 mt-3"><button className="btn-secondary flex-1" onClick={() => onEdit(product)}>Editar</button><button className="btn-danger" onClick={() => void onUpdate(product.id, { isPopular: false, isFlashPromo: false, isCaldinhoDoDia: false, originalPrice: null })}>Remover</button><button className="btn-secondary" onClick={() => void onDay(product.id)}>🔥</button><label className="btn-secondary cursor-pointer"><ImagePlus className="w-3.5 h-3.5" /><input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onUpload(product, file); }} /></label></div></div>)}</div>{products.every((product) => !product.isPopular && !product.isFlashPromo && !product.isCaldinhoDoDia) && <Empty text="Nenhuma promoção ativa." />}</div>;
+const PromotionCatalog: React.FC<{ products: Product[]; onDay: (product: Product) => Promise<void>; onEdit: (product: Product) => void; onUpdate: (id: string, patch: Partial<Product>) => Promise<void>; onUpload: (product: Product, file: File) => Promise<void> }> = ({ products, onDay, onEdit, onUpdate, onUpload }) => <div className="space-y-4"><Header icon={<Megaphone />} title="Promoções" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{products.filter((product) => product.isPopular || product.isFlashPromo || product.isCaldinhoDoDia).map((product) => <div key={product.id} className="bg-white rounded-2xl border border-[#E7E5E4] p-4"><div className="flex items-center gap-3"><img src={product.image} alt={product.name} className="w-14 h-14 rounded-xl object-cover" /><div className="flex-1"><strong className="block">{product.name}</strong><span className="text-xs text-[#B91C1C]">{money(product.basePrice)}</span></div></div><div className="flex flex-wrap gap-1.5 mt-3 text-[10px] font-bold">{product.isCaldinhoDoDia && <span className="badge">🔥 Destaque</span>}{product.isPopular && <span className="badge">⭐ Popular</span>}{product.isFlashPromo && <span className="badge">⚡ Flash</span>}</div><div className="flex gap-2 mt-3"><button className="btn-secondary flex-1" onClick={() => onEdit(product)}>Editar</button><button className="btn-danger" onClick={() => void onUpdate(product.id, { isPopular: false, isFlashPromo: false, isCaldinhoDoDia: false, originalPrice: null })}>Remover</button><button className={product.isCaldinhoDoDia ? 'btn-primary' : 'btn-secondary'} title={product.isCaldinhoDoDia ? 'Tirar da promoção do dia' : 'Marcar como promoção do dia'} aria-pressed={product.isCaldinhoDoDia} onClick={() => void onDay(product)}>🔥</button><label className="btn-secondary cursor-pointer"><ImagePlus className="w-3.5 h-3.5" /><input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onUpload(product, file); }} /></label></div></div>)}</div>{products.every((product) => !product.isPopular && !product.isFlashPromo && !product.isCaldinhoDoDia) && <Empty text="Nenhuma promoção ativa." />}</div>;
 
 const CouponCatalog: React.FC<{ coupons: Coupon[]; onSave: (coupon: Coupon) => Promise<void>; onDelete: (code: string) => Promise<void> }> = ({ coupons, onSave, onDelete }) => {
   const [form, setForm] = useState({ code: '', percent: '', fixed: '', min: '', description: '' });
