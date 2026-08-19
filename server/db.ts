@@ -53,6 +53,11 @@ db.exec(`
     data TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS promotions (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS loyalty (
     customer_id TEXT PRIMARY KEY,
     points INTEGER NOT NULL DEFAULT 0

@@ -8,6 +8,7 @@ import {
   PaymentDetails,
   PaymentMethod,
   Product,
+  Promotion,
   StoreSettings,
 } from '../src/types';
 import { computeCartItemTotal, computeCartTotals, findCoupon } from '../src/shared/pricing';
@@ -81,6 +82,12 @@ export interface OrderIntakeDependencies {
   settings: StoreSettings | (() => StoreSettings);
   loadProduct(id: string): Product | null;
   listCoupons(): Coupon[];
+  /** Promoções automáticas ativas. Ausente = nenhuma (usado por testes antigos). */
+  listPromotions?: () => Promotion[];
+  /** Cardápio completo, usado só para resolver o produto de um brinde. */
+  listProducts?: () => Product[];
+  /** Sobe o contador da promoção dentro da transação do pedido. */
+  registerPromotionUses?: (applied: Order['appliedPromotions'], orderTotal: number) => void;
   payment: OrderPaymentAdapter;
   peekFreeRedeem(token: string, productId: string): boolean;
   consumeFreeItems(items: CartItem[]): void;
@@ -259,7 +266,12 @@ export async function placeOrder(
   }
 
   const coupon = findCoupon(String(input.couponCode ?? ''), deps.listCoupons());
-  const totals = computeCartTotals(cartItems, coupon ?? null, address, settings, fulfillment);
+  // O preço promocional é recalculado aqui: o carrinho do cliente é só uma
+  // sugestão, quem decide o que o pedido custa é o servidor.
+  const totals = computeCartTotals(cartItems, coupon ?? null, address, settings, fulfillment, {
+    promotions: deps.listPromotions?.() ?? [],
+    products: deps.listProducts?.(),
+  });
   const distanceKm = isPickupOrder ? 0 : effectiveDistanceKm(address, settings);
   if (!isPickupOrder && settings.maxDeliveryKm > 0 && distanceKm > settings.maxDeliveryKm) {
     throw new DomainError(
@@ -329,6 +341,8 @@ export async function placeOrder(
     items: cartItems,
     subtotal: totals.subtotal,
     discount: totals.discount,
+    promoDiscount: totals.promoDiscount,
+    appliedPromotions: totals.appliedPromotions,
     deliveryFee: totals.deliveryFee,
     total: totals.total,
     distanceKm,
@@ -344,7 +358,10 @@ export async function placeOrder(
   const willCharge = requiresOnlineCharge(method, timing);
 
   if (!willCharge) {
-    deps.persistOrder(order, () => deps.consumeFreeItems(freeItems));
+    deps.persistOrder(order, () => {
+      deps.consumeFreeItems(freeItems);
+      deps.registerPromotionUses?.(totals.appliedPromotions, totals.total);
+    });
     return { order, loyaltyPoints: deps.getLoyaltyPoints(customerId) };
   }
 
@@ -355,6 +372,9 @@ export async function placeOrder(
    * a successful charge) and the loyalty double-spend window (a replayed request that re-uses
    * a freeToken fails here, before collectPix/collectCard ever runs).
    */
+  // A promoção só é contabilizada depois que a cobrança passa: a linha reservada
+  // aqui ainda pode ser apagada, e um contador que subiu sozinho esgotaria a
+  // promoção sem nenhum pedido real por trás.
   deps.persistOrder(order, () => deps.consumeFreeItems(freeItems));
 
   try {
@@ -391,6 +411,8 @@ export async function placeOrder(
     if (freeItems.length > 0) (deps.releaseFreeItems ?? releaseFreeItems)(freeItems);
     throw err;
   }
+
+  deps.registerPromotionUses?.(totals.appliedPromotions, totals.total);
 
   try {
     (deps.updateOrder ?? saveOrder)(order);

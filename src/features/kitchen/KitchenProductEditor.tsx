@@ -28,6 +28,7 @@ type Draft = {
   description: string;
   category: string;
   basePrice: string;
+  costPrice: string;
   image: string;
   prepTimeMinutes: string;
   available: boolean;
@@ -43,6 +44,7 @@ function toDraft(original: Product | null, categories: Category[]): Draft {
     description: original?.description || '',
     category: original?.category || categories[0]?.id || 'caldinhos',
     basePrice: original ? String(original.basePrice) : '',
+    costPrice: original?.costPrice ? String(original.costPrice) : '',
     image: original?.image || '',
     prepTimeMinutes: String(original?.prepTimeMinutes || 15),
     available: original?.available ?? true,
@@ -142,6 +144,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
         name: form.name.trim(),
         description: form.description.trim(),
         basePrice: price,
+        costPrice: form.costPrice.trim() ? Math.max(0, Number(form.costPrice) || 0) : undefined,
         prepTimeMinutes: Number(form.prepTimeMinutes) || 15,
         originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined,
         image: form.image.trim() || PRODUCT_IMAGE_FALLBACK,
@@ -353,6 +356,21 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                       patch({ basePrice: event.target.value });
                       if (errors.basePrice) setErrors((current) => ({ ...current, basePrice: undefined }));
                     }}
+                  />
+                </Field>
+
+                {/* O custo alimenta o guarda de margem das promoções: sem ele, a
+                    tela de Promoções não consegue avisar quando o desconto dá prejuízo. */}
+                <Field label="Custo do prato (R$)" hint="Opcional. Usado para calcular a margem nas promoções.">
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={form.costPrice}
+                    onChange={(event) => patch({ costPrice: event.target.value })}
                   />
                 </Field>
 

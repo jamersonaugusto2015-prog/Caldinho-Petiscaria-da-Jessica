@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { Category, CategoryId, Coupon, DeliveryAddress, Product, PublicStoreSettings } from '../../types';
+import type { Category, CategoryId, Coupon, DeliveryAddress, Product, Promotion, PublicStoreSettings } from '../../types';
 import { api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useLiveSession } from '../../lib/liveSession';
@@ -17,6 +17,7 @@ interface ClientShellValue {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   coupons: Coupon[];
+  promotions: Promotion[];
   customerId: string;
   storeLogo: string;
   storeName: string;
@@ -47,6 +48,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const customerId = useMemo(getOrCreateCustomerId, []);
@@ -91,6 +93,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       api.get<Product[]>('/products').then(setProducts),
       api.get<Category[]>('/categories').then(setCategories),
       api.get<Coupon[]>('/coupons').then(setCoupons),
+      api.get<Promotion[]>('/promotions').then(setPromotions),
       api.get<{ logo: string }>('/store').then((result) => setStoreLogo(result.logo)),
       api.get<PublicStoreSettings>('/settings').then(setSettings),
     ])
@@ -117,6 +120,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useSocketEvent('products:updated', () => void api.get<Product[]>('/products').then(setProducts).catch(() => {}));
   useSocketEvent('categories:updated', () => void api.get<Category[]>('/categories').then(setCategories).catch(() => {}));
   useSocketEvent('coupons:updated', () => void api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {}));
+  useSocketEvent('promotions:updated', () => void api.get<Promotion[]>('/promotions').then(setPromotions).catch(() => {}));
 
   const shell: ClientShellValue = {
     products,
@@ -126,6 +130,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     searchQuery,
     setSearchQuery,
     coupons,
+    promotions,
     customerId,
     storeLogo,
     storeName: settings.storeName,
@@ -156,9 +161,14 @@ export const useClientShell = (): ClientShellValue => {
 };
 
 export const useCartTotals = () => {
-  const { settings } = useClientShell();
+  const { settings, promotions, products } = useClientShell();
   const { cart, appliedCoupon, selectedAddress, fulfillment } = useCart();
-  return computeCartTotals(cart, appliedCoupon, selectedAddress ?? EMPTY_ADDRESS, settings, fulfillment);
+  // Recalcula a cada render: uma promoção de happy hour precisa cair sozinha
+  // quando o relógio passa das 22h, sem o cliente recarregar a página.
+  return computeCartTotals(cart, appliedCoupon, selectedAddress ?? EMPTY_ADDRESS, settings, fulfillment, {
+    promotions,
+    products,
+  });
 };
 
 export { useCart } from './CartStore';

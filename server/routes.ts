@@ -51,6 +51,14 @@ import { liveOrderPaymentAdapter, refundPayment, settlePayment } from './payment
 import { applyOrderEvent } from './orderLifecycle';
 import { cancelOrder, defaultCancelReason } from './cancellation';
 import { DomainError } from './errors';
+import {
+  createPromotion,
+  deletePromotion,
+  listPromotions,
+  registerPromotionUses,
+  resetPromotionUses,
+  updatePromotion,
+} from './promotions';
 import { createOrderIntake } from './orderIntake';
 import type { OrderIntakeInput } from './orderIntake';
 import {
@@ -160,6 +168,9 @@ export function createRoutes(io: Server): Router {
     settings: getSettings,
     loadProduct,
     listCoupons,
+    listPromotions,
+    listProducts,
+    registerPromotionUses: (applied, total) => registerPromotionUses(applied ?? [], total),
     payment: liveOrderPaymentAdapter,
     peekFreeRedeem: hasFreeRedeem,
     consumeFreeItems,
@@ -1034,6 +1045,37 @@ export function createRoutes(io: Server): Router {
     deleteCoupon(String(req.params.code));
     io.emit('coupons:updated');
     res.json({ ok: true });
+  });
+
+  // ---------- Promoções automáticas ----------
+  // A leitura é pública: o cardápio do cliente precisa saber o preço promocional
+  // antes de o pedido existir. Só a escrita pede a sessão da cozinha.
+  router.get('/promotions', (_req, res) => {
+    res.json(listPromotions());
+  });
+
+  router.post('/promotions', requireRole('kitchen'), (req, res) => {
+    const promo = createPromotion(req.body);
+    io.emit('promotions:updated');
+    res.status(201).json(promo);
+  });
+
+  router.patch('/promotions/:id', requireRole('kitchen'), (req, res) => {
+    const promo = updatePromotion(String(req.params.id), req.body ?? {});
+    io.emit('promotions:updated');
+    res.json(promo);
+  });
+
+  router.delete('/promotions/:id', requireRole('kitchen'), (req, res) => {
+    deletePromotion(String(req.params.id));
+    io.emit('promotions:updated');
+    res.json({ ok: true });
+  });
+
+  router.post('/promotions/:id/reset-uses', requireRole('kitchen'), (req, res) => {
+    const promo = resetPromotionUses(String(req.params.id));
+    io.emit('promotions:updated');
+    res.json(promo);
   });
 
   // ---------- Drivers / Motoboys ----------

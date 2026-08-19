@@ -1,6 +1,8 @@
 import React from 'react';
 import { Product } from '../../types';
 import { Star, Flame, Plus, Clock, Tag } from 'lucide-react';
+import { bestProductPromotion, productPromotionBadges } from '../../shared/promotions';
+import { useClientShell } from './ClientStore';
 
 interface ProductCardProps {
   product: Product;
@@ -8,6 +10,14 @@ interface ProductCardProps {
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) => {
+  const { promotions } = useClientShell();
+  // A vitrine mostra o preço que a promoção faz agora; o valor cheio fica
+  // riscado ao lado para o desconto ficar visível sem ler o selo.
+  const promotion = bestProductPromotion(product, promotions);
+  const badges = productPromotionBadges(product, promotions);
+  const price = promotion ? promotion.price : product.basePrice;
+  const strikePrice = promotion ? product.basePrice : product.originalPrice;
+
   return (
     <div
       onClick={() => product.available && onSelect(product)}
@@ -42,6 +52,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) =
                 </span>
               </span>
             )}
+
+            {promotion && (
+              <span className="bg-[#059669] text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shadow-sm uppercase tracking-wide">
+                <Tag className="w-2.5 h-2.5" />
+                <span>
+                  {promotion.promo.badge ||
+                    `-${Math.round(((product.basePrice - promotion.price) / product.basePrice) * 100)}%`}
+                </span>
+              </span>
+            )}
+
+            {badges.map((badge) => (
+              <span
+                key={badge}
+                className="bg-[#7C3AED] text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-sm uppercase tracking-wide"
+              >
+                {badge}
+              </span>
+            ))}
 
             {product.isPopular && !product.isCaldinhoDoDia && !product.isFlashPromo && (
               <span className="bg-[#1C1917] text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
@@ -85,12 +114,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) =
       <div className="p-3 pt-0 flex items-center justify-between gap-1.5 border-t border-[#F5F5F4] mt-1.5">
         <div className="min-w-0">
           <div className="flex items-baseline gap-1">
-            <span className="text-sm font-black text-[#1C1917]">
-              R$ {product.basePrice.toFixed(2)}
+            <span className={`text-sm font-black ${promotion ? 'text-[#059669]' : 'text-[#1C1917]'}`}>
+              R$ {price.toFixed(2)}
             </span>
-            {product.originalPrice && (
+            {strikePrice && strikePrice > price && (
               <span className="text-[10px] text-[#A8A29E] line-through">
-                R$ {product.originalPrice.toFixed(2)}
+                R$ {strikePrice.toFixed(2)}
               </span>
             )}
           </div>

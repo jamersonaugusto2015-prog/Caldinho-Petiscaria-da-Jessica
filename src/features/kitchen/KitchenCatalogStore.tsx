@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Product, Coupon, Category } from '../../types';
+import { Product, Coupon, Category, Promotion } from '../../types';
 import { kitchenApi as api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useKitchenToast } from './KitchenNotificationsStore';
@@ -8,6 +8,7 @@ interface KitchenCatalogContextType {
   products: Product[];
   categories: Category[];
   coupons: Coupon[];
+  promotions: Promotion[];
   toggleProductAvailability: (id: string, currentlyAvailable: boolean) => Promise<void>;
   updateProductPrice: (id: string, newPrice: number) => Promise<void>;
   updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
@@ -18,8 +19,13 @@ interface KitchenCatalogContextType {
   saveCategory: (cat: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   moveCategory: (id: string, dir: -1 | 1) => Promise<void>;
+  reorderCategories: (orderedIds: string[]) => Promise<void>;
   saveCoupon: (c: Coupon) => Promise<void>;
   deleteCoupon: (code: string) => Promise<void>;
+  savePromotion: (promo: Promotion) => Promise<boolean>;
+  deletePromotion: (id: string) => Promise<void>;
+  togglePromotion: (promo: Promotion) => Promise<void>;
+  resetPromotionUses: (id: string) => Promise<void>;
 }
 
 interface KitchenCatalogSyncContextType {
@@ -34,10 +40,16 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
 
   // Category ordering needs the current list without capturing it in a closure.
   const categoriesRef = useRef(categories);
   categoriesRef.current = categories;
+
+  // Salvar uma promoção precisa saber se ela já existe (PATCH) ou não (POST)
+  // sem prender a lista atual dentro do callback.
+  const promotionsRef = useRef(promotions);
+  promotionsRef.current = promotions;
 
   const fetchProducts = useCallback(() => {
     api.get<Product[]>('/products').then(setProducts).catch(() => {});
@@ -51,11 +63,16 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
     api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {});
   }, []);
 
+  const fetchPromotions = useCallback(() => {
+    api.get<Promotion[]>('/promotions').then(setPromotions).catch(() => {});
+  }, []);
+
   const refetch = useCallback(() => {
     fetchProducts();
     fetchCategories();
     fetchCoupons();
-  }, [fetchProducts, fetchCategories, fetchCoupons]);
+    fetchPromotions();
+  }, [fetchProducts, fetchCategories, fetchCoupons, fetchPromotions]);
 
   useEffect(() => {
     refetch();
@@ -64,6 +81,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
   useSocketEvent('products:updated', fetchProducts);
   useSocketEvent('categories:updated', fetchCategories);
   useSocketEvent('coupons:updated', fetchCoupons);
+  useSocketEvent('promotions:updated', fetchPromotions);
 
   const toggleProductAvailability = useCallback(
     async (id: string, currentlyAvailable: boolean) => {
@@ -215,6 +233,35 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
     [triggerToast]
   );
 
+  /** Reordena pela lista inteira — é o que o arrastar-e-soltar da tela de categorias envia. */
+  const reorderCategories = useCallback(
+    async (orderedIds: string[]) => {
+      const current = categoriesRef.current;
+      const byId = new Map<string, Category>(current.map((c) => [c.id, c] as const));
+      const next = orderedIds
+        .map((id, index) => {
+          const found = byId.get(id);
+          return found ? { ...found, sort: index } : null;
+        })
+        .filter((c): c is Category => c !== null);
+      if (next.length !== current.length) return;
+      const changed = next.filter((c) => byId.get(c.id)?.sort !== c.sort);
+      if (!changed.length) return;
+      setCategories(next); // otimista: o card não pode voltar para o lugar antigo enquanto salva
+      try {
+        await Promise.all(
+          changed.map((c) => api.patch(`/categories/${encodeURIComponent(c.id)}`, { sort: c.sort }))
+        );
+        const list = await api.get<Category[]>('/categories');
+        setCategories(list);
+      } catch (err) {
+        setCategories(current);
+        triggerToast(err instanceof Error ? err.message : 'Erro ao reordenar.');
+      }
+    },
+    [triggerToast]
+  );
+
   // ---------- Cupons ----------
   const saveCoupon = useCallback(
     async (c: Coupon) => {
@@ -243,11 +290,72 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
     [triggerToast]
   );
 
+  // ---------- Promoções ----------
+  // O servidor é quem valida a regra (ex.: leve 3 pague 4 não existe). O painel
+  // devolve `false` para o editor saber que deve continuar aberto com o erro.
+  const savePromotion = useCallback(
+    async (promo: Promotion) => {
+      try {
+        const exists = promotionsRef.current.some((p) => p.id === promo.id);
+        if (exists) await api.patch<Promotion>(`/promotions/${encodeURIComponent(promo.id)}`, promo);
+        else await api.post<Promotion>('/promotions', promo);
+        setPromotions(await api.get<Promotion[]>('/promotions'));
+        triggerToast('📣 Promoção salva!');
+        return true;
+      } catch (err) {
+        triggerToast(err instanceof Error ? err.message : 'Erro ao salvar promoção.');
+        return false;
+      }
+    },
+    [triggerToast]
+  );
+
+  const deletePromotion = useCallback(
+    async (id: string) => {
+      try {
+        await api.delete(`/promotions/${encodeURIComponent(id)}`);
+        setPromotions((prev) => prev.filter((p) => p.id !== id));
+        triggerToast('🗑️ Promoção removida.');
+      } catch (err) {
+        triggerToast(err instanceof Error ? err.message : 'Erro ao remover promoção.');
+      }
+    },
+    [triggerToast]
+  );
+
+  const togglePromotion = useCallback(
+    async (promo: Promotion) => {
+      try {
+        const updated = await api.patch<Promotion>(`/promotions/${encodeURIComponent(promo.id)}`, {
+          enabled: !promo.enabled,
+        });
+        setPromotions((prev) => prev.map((p) => (p.id === promo.id ? updated : p)));
+      } catch (err) {
+        triggerToast(err instanceof Error ? err.message : 'Erro ao pausar promoção.');
+      }
+    },
+    [triggerToast]
+  );
+
+  const resetPromotionUses = useCallback(
+    async (id: string) => {
+      try {
+        const updated = await api.post<Promotion>(`/promotions/${encodeURIComponent(id)}/reset-uses`, {});
+        setPromotions((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        triggerToast('🔄 Contador de usos zerado.');
+      } catch (err) {
+        triggerToast(err instanceof Error ? err.message : 'Erro ao zerar o contador.');
+      }
+    },
+    [triggerToast]
+  );
+
   const value = useMemo<KitchenCatalogContextType>(
     () => ({
       products,
       categories,
       coupons,
+      promotions,
       toggleProductAvailability,
       updateProductPrice,
       updateProduct,
@@ -258,13 +366,19 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       saveCategory,
       deleteCategory,
       moveCategory,
+      reorderCategories,
       saveCoupon,
       deleteCoupon,
+      savePromotion,
+      deletePromotion,
+      togglePromotion,
+      resetPromotionUses,
     }),
     [
       products,
       categories,
       coupons,
+      promotions,
       toggleProductAvailability,
       updateProductPrice,
       updateProduct,
@@ -275,8 +389,13 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       saveCategory,
       deleteCategory,
       moveCategory,
+      reorderCategories,
       saveCoupon,
       deleteCoupon,
+      savePromotion,
+      deletePromotion,
+      togglePromotion,
+      resetPromotionUses,
     ]
   );
 

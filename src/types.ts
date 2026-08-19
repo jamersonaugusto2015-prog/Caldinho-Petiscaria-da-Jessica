@@ -59,6 +59,8 @@ export interface Product {
   isCaldinhoDoDia?: boolean;
   isFlashPromo?: boolean;
   originalPrice?: number;
+  /** Quanto o prato custa para a loja. Alimenta o guarda de margem das promoções. */
+  costPrice?: number;
   available: boolean;
   rating: number;
   reviewsCount: number;
@@ -151,6 +153,10 @@ export interface Order {
   items: CartItem[];
   subtotal: number;
   discount: number;
+  /** Desconto vindo das promoções automáticas (separado do cupom). */
+  promoDiscount?: number;
+  /** Quais promoções pegaram neste pedido — base do relatório de resultado. */
+  appliedPromotions?: AppliedPromotion[];
   deliveryFee: number;
   total: number;
   distanceKm: number;
@@ -211,6 +217,90 @@ export interface Coupon {
   discountFixed?: number;
   minOrderValue: number;
   description: string;
+}
+
+// ---------- Promoções automáticas ----------
+// Diferente do cupom, a promoção não precisa de código: ela vale sozinha quando
+// a regra bate (produto, horário, canal, valor mínimo).
+
+/** O que a promoção faz com o preço. */
+export type PromotionKind =
+  | 'desconto' // tira % ou R$ do item, ou fixa um "por apenas"
+  | 'leve_pague' // leve 3 pague 2 dentro do mesmo grupo de itens
+  | 'brinde' // acima de X reais, um produto vai junto sem custo
+  | 'frete'; // zera ou abate a taxa de entrega
+
+/** Em quais itens a promoção pega. */
+export type PromotionScope = 'produtos' | 'categorias' | 'todos';
+
+/** Canal de venda: entrega, retirada ou os dois. */
+export type PromotionChannel = 'ambos' | 'delivery' | 'pickup';
+
+/** Quando a promoção vale. Campos vazios = sem restrição. */
+export interface PromotionWindow {
+  startDate?: string; // 'YYYY-MM-DD'
+  endDate?: string; // 'YYYY-MM-DD'
+  weekdays: number[]; // 0=domingo ... 6=sábado; vazio = todo dia
+  startTime?: string; // 'HH:MM'
+  endTime?: string; // 'HH:MM'; menor que startTime = cruza a meia-noite
+}
+
+export interface Promotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  enabled: boolean;
+
+  scope: PromotionScope;
+  productIds: string[];
+  categoryIds: string[];
+
+  // kind = 'desconto' (usa só um dos três)
+  discountPercent?: number;
+  discountFixed?: number;
+  fixedPrice?: number;
+
+  // kind = 'leve_pague'
+  buyQty?: number;
+  payQty?: number;
+
+  // kind = 'brinde'
+  giftProductId?: string;
+
+  // kind = 'frete'
+  deliveryFree?: boolean;
+  deliveryDiscount?: number;
+
+  minOrderValue: number;
+  channel: PromotionChannel;
+  /** 0 = sem limite. Conta pedidos, não itens. */
+  maxUses: number;
+  usedCount: number;
+  /** false = o cliente escolhe entre a promoção e o cupom, nunca os dois. */
+  stacksWithCoupon: boolean;
+  /** Aparece na vitrine do cardápio do cliente. */
+  highlight: boolean;
+  /** Selo curto mostrado ao cliente (ex.: 'HAPPY HOUR'). */
+  badge?: string;
+  window: PromotionWindow;
+  createdAt: string;
+
+  // Resultado acumulado, gravado a cada pedido que usou a promoção.
+  totalDiscount: number;
+  totalRevenue: number;
+  totalOrders: number;
+}
+
+/** Registro leve do que a promoção fez em um pedido. */
+export interface AppliedPromotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  /** Quanto de desconto esta promoção deu neste pedido. */
+  discount: number;
+  /** Preenchido só em kind = 'brinde'. */
+  giftProductId?: string;
+  giftProductName?: string;
 }
 
 export interface Driver {

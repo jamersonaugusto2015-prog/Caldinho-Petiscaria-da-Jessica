@@ -138,6 +138,10 @@ export function updateProduct(id: string, body: Record<string, unknown>): Produc
   if (typeof b.category === 'string' && b.category.trim()) p.category = b.category.trim();
   if (typeof b.originalPrice === 'number') p.originalPrice = b.originalPrice;
   if (b.originalPrice === null) p.originalPrice = undefined;
+  // Custo do prato: `undefined` no corpo significa "apagar o custo", e é assim
+  // que o editor manda quando o dono limpa o campo.
+  if (typeof b.costPrice === 'number') p.costPrice = Math.max(0, b.costPrice);
+  else if (b.costPrice === null || ('costPrice' in b && b.costPrice === undefined)) p.costPrice = undefined;
   if (typeof b.hasSizeOption === 'boolean') p.hasSizeOption = b.hasSizeOption;
   if (typeof b.isPopular === 'boolean') p.isPopular = b.isPopular;
   if (typeof b.isFlashPromo === 'boolean') p.isFlashPromo = b.isFlashPromo;

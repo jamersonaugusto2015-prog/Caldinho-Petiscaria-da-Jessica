@@ -59,6 +59,27 @@
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0;
 }
 
+/* Barra de rolagem fina: a nativa do Chrome no desktop é larga e cinza,
+   e come a borda arredondada dos painéis. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: #D6D3D1 transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background-color: #D6D3D1;
+  border-radius: 9999px;
+}
+.scroll-slim::-webkit-scrollbar-thumb:hover {
+  background-color: #A8A29E;
+}
+
 /* Custom Scrollbar Utilities */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

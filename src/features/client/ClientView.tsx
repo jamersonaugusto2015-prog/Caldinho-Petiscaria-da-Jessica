@@ -12,7 +12,7 @@ import { ChatModal } from './ChatModal';
 import { LoyaltySection } from './LoyaltySection';
 import { ClosedStoreModal } from './ClosedStoreModal';
 import { CategoryId, Category, Product, OpeningHour } from '../../types';
-import { Flame, Sparkles, History, ShoppingBag, Home, ClipboardList, Search, ChevronRight, Clock, Store } from 'lucide-react';
+import { Flame, Sparkles, History, ShoppingBag, Home, ClipboardList, Search, ChevronRight, Clock } from 'lucide-react';
 
 function formatTodayHours(hours: OpeningHour | null): string {
   if (!hours) return 'Fechado hoje';
@@ -68,14 +68,9 @@ export const ClientView: React.FC = () => {
 
   return (
     <div className="space-y-4 pb-28">
-      {/* Status da loja (aberta/fechada) */}
-      {settings.isOpen ? (
-        <div className="flex items-center gap-2 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl px-4 py-2.5 text-xs font-extrabold text-[#065F46]">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#059669] animate-pulse shrink-0" />
-          <Store className="w-4 h-4 shrink-0" />
-          <span>Loja aberta — recebendo pedidos agora</span>
-        </div>
-      ) : (
+      {/* Loja fechada: o cabeçalho já mostra "Aberto agora", então só o aviso de
+          fechada precisa de espaço aqui. */}
+      {!settings.isOpen && (
         <div className="flex items-center justify-between gap-2 bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl px-4 py-2.5 text-xs font-bold text-[#92400E]">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 shrink-0" />
@@ -250,9 +245,11 @@ export const ClientView: React.FC = () => {
         </div>
       )}
 
-      {selectedProduct && (
-        <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
-      )}
+      <AnimatePresence>
+        {selectedProduct && (
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+        )}
+      </AnimatePresence>
         </>
       )}
 

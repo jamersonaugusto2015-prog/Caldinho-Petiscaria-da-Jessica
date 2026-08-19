@@ -61,7 +61,7 @@ export const KITCHEN_NAV: KitchenNavGroup[] = [
     id: 'cardapio',
     label: 'Cardápio',
     items: [
-      { id: 'cardapio', label: 'Produtos', icon: UtensilsCrossed },
+      { id: 'cardapio', label: 'Cardápio', icon: UtensilsCrossed },
       { id: 'categorias', label: 'Categorias', icon: Tags },
       { id: 'promocoes', label: 'Promoções', icon: Megaphone },
       { id: 'cupons', label: 'Cupons', icon: Ticket },

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { computeCartItemTotal, computeCartTotals, computeUnitPrice, findCoupon } from './pricing';
 import { DEFAULT_STORE_SETTINGS } from './defaults';
-import { CartItem, Coupon, DeliveryAddress, Product } from '../types';
+import { CartItem, Coupon, DeliveryAddress, Product, Promotion } from '../types';
 
 const address: DeliveryAddress = {
   id: 'a',
@@ -138,4 +138,69 @@ test('retirada na loja não cobra frete nem sai da área de entrega', () => {
 
   assert.equal(totals.deliveryFee, 0);
   assert.equal(totals.total, totals.subtotal);
+});
+
+/** Promoção de 50% valendo sempre, no cardápio inteiro. */
+function halfOffPromotion(overrides: Partial<Promotion> = {}): Promotion {
+  return {
+    id: 'promo-1',
+    name: 'Metade do preço',
+    kind: 'desconto',
+    enabled: true,
+    scope: 'todos',
+    productIds: [],
+    categoryIds: [],
+    minOrderValue: 0,
+    channel: 'ambos',
+    maxUses: 0,
+    usedCount: 0,
+    stacksWithCoupon: true,
+    highlight: true,
+    window: { weekdays: [] },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    totalDiscount: 0,
+    totalRevenue: 0,
+    totalOrders: 0,
+    discountPercent: 50,
+    ...overrides,
+  };
+}
+
+test('computeCartTotals separa o desconto do cupom do desconto da promoção', () => {
+  const cart = [cartItem({ product: { basePrice: 20 }, quantity: 1 })];
+  const coupon: Coupon = { code: 'X', discountPercent: 10, minOrderValue: 0, description: '' };
+  const totals = computeCartTotals(cart, coupon, address, DEFAULT_STORE_SETTINGS, 'delivery', {
+    promotions: [halfOffPromotion()],
+  });
+  assert.equal(totals.discount, 2);
+  assert.equal(totals.promoDiscount, 10);
+  assert.equal(totals.total, 20 - 2 - 10 + totals.deliveryFee);
+});
+
+test('computeCartTotals abate o frete da promoção de entrega grátis', () => {
+  const cart = [cartItem({ product: { basePrice: 20 } })];
+  const promo = halfOffPromotion({
+    kind: 'frete',
+    deliveryFree: true,
+    discountPercent: undefined,
+    channel: 'delivery',
+  });
+  const totals = computeCartTotals(cart, null, address, DEFAULT_STORE_SETTINGS, 'delivery', {
+    promotions: [promo],
+  });
+  assert.equal(totals.deliveryFee, 0);
+  assert.ok(totals.promoDeliveryDiscount > 0);
+});
+
+test('computeCartTotals na retirada aplica a promoção de item e ignora a de frete', () => {
+  const cart = [cartItem({ product: { basePrice: 20 } })];
+  const totals = computeCartTotals(cart, null, address, DEFAULT_STORE_SETTINGS, 'pickup', {
+    promotions: [
+      halfOffPromotion(),
+      halfOffPromotion({ id: 'p2', kind: 'frete', deliveryFree: true, discountPercent: undefined, channel: 'delivery' }),
+    ],
+  });
+  assert.equal(totals.promoDiscount, 10);
+  assert.equal(totals.deliveryFee, 0);
+  assert.equal(totals.total, 10);
 });

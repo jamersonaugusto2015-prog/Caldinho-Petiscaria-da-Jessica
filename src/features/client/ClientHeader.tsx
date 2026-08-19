@@ -13,6 +13,7 @@ import {
   Search,
   Award,
   ChevronDown,
+  ChevronRight,
   Plus,
   X,
   Soup,
@@ -54,7 +55,9 @@ export const ClientHeader: React.FC = () => {
 
   const isPickupMode = fulfillment === 'pickup';
 
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // busca com texto continua aberta mesmo depois de perder o foco
+  const searchOpen = isSearchOpen || searchQuery.length > 0;
 
   const [newLabel, setNewLabel] = useState('');
   const [newStreet, setNewStreet] = useState('');
@@ -74,6 +77,23 @@ export const ClientHeader: React.FC = () => {
       orders.find((o) => ['recebido', 'em_preparo', 'pronto', 'saiu_entrega'].includes(o.status)) || null,
     [orders]
   );
+
+  const activeOrderLabel = useMemo(() => {
+    if (!activeOrder) return '';
+    const isPickupOrder = activeOrder.fulfillment === 'pickup';
+    switch (activeOrder.status) {
+      case 'recebido':
+        return 'Pedido recebido';
+      case 'em_preparo':
+        return 'Em preparo';
+      case 'pronto':
+        return isPickupOrder ? 'Pronto para retirada' : 'Pronto';
+      case 'saiu_entrega':
+        return 'Saiu para entrega';
+      default:
+        return 'Pedido em andamento';
+    }
+  }, [activeOrder]);
 
   const previewAddress =
     newLat != null && newLng != null
@@ -174,93 +194,126 @@ export const ClientHeader: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#B91C1C] text-white shadow-lg">
+    <header className="sticky top-0 z-40 bg-[#B91C1C] text-white shadow-[0_2px_12px_rgba(0,0,0,0.14)]">
       {notificationToast && (
-        <div className="fixed top-0 left-0 right-0 z-[80] bg-[#991B1B] text-white px-4 py-2 text-center text-[11px] font-bold flex items-center justify-center gap-2 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[80] bg-[#7F1D1D] text-white px-4 py-2 text-center text-[11px] font-bold flex items-center justify-center gap-2 shadow-lg">
           <Soup className="w-3.5 h-3.5 text-[#FDE68A] animate-bounce" />
           <span>{notificationToast}</span>
         </div>
       )}
 
-      {/* MAIN ROW */}
-      <div className="px-4 py-3">
-        <div className="flex items-center justify-between">
-          {/* LEFT: Brand */}
-          <Link to="/" className="flex items-center gap-2.5 cursor-pointer group select-none">
+      {/* LINHA 1: marca + ações. Tudo em uma linha só, sem quebra de texto. */}
+      <div className="h-14 px-3 flex items-center gap-2.5">
+        <Link to="/" className="group flex items-center gap-2.5 flex-1 min-w-0 select-none">
+          <span className="w-9 h-9 shrink-0 rounded-xl bg-white/15 flex items-center justify-center overflow-hidden transition-transform group-active:scale-95">
             {storeLogo ? (
-              <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center overflow-hidden shadow-inner group-hover:bg-white/25 transition-colors">
-                <img src={storeLogo} alt="Logo Caldinho Express" className="w-full h-full object-contain p-1" />
-              </div>
+              <img src={storeLogo} alt={storeName} className="w-full h-full object-contain p-0.5" />
             ) : (
-              <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shadow-inner group-hover:bg-white/25 transition-colors">
-                <Flame className="w-5 h-5 text-[#FDE68A]" strokeWidth={2.5} />
-              </div>
+              <Flame className="w-[18px] h-[18px] text-[#FDE68A]" strokeWidth={2.5} />
             )}
-            <div>
-              <div className="flex items-baseline gap-1 leading-none">
-                <span className="font-black text-[17px] tracking-tight">{storeName}</span>
-              </div>
-              <span className="text-[9px] uppercase tracking-widest text-white/60 font-bold">
-                {settings.isOpen ? 'Aberto agora' : 'Fechado no momento'} &bull; {city}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[15px] font-extrabold leading-tight tracking-tight truncate">
+              {storeName}
+            </span>
+            <span className="flex items-center gap-1.5 mt-1 min-w-0">
+              <span
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  settings.isOpen ? 'bg-[#4ADE80]' : 'bg-[#FCA5A5]'
+                }`}
+              />
+              <span className="text-[10px] font-semibold leading-none text-white/70 truncate">
+                {settings.isOpen ? 'Aberto agora' : 'Fechado'} &bull; {city}
               </span>
-            </div>
-          </Link>
+            </span>
+          </span>
+        </Link>
 
-          {/* RIGHT: Loyalty + Cart */}
-          <div className="flex items-center gap-2">
-            {loyaltyPoints > 0 && (
-              <div
-                className="flex items-center gap-1 bg-white/15 backdrop-blur-sm px-2.5 py-1.5 rounded-xl text-[10px] font-bold"
-                title="Fidelidade"
-              >
-                <Award className="w-3.5 h-3.5 text-[#FDE68A]" />
-                <span>{loyaltyPoints}/{LOYALTY_STAMP_COST}</span>
-              </div>
-            )}
-
-            {activeOrder && (
-              <button
-                onClick={() => setTrackingOrderId(activeOrder.id)}
-                className="flex items-center gap-1.5 bg-white/15 backdrop-blur-sm hover:bg-white/25 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-colors"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] animate-pulse" />
-                <span>Pedido {activeOrder.id}</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setIsCartOpen(true)}
-              className="relative bg-white text-[#B91C1C] w-10 h-10 rounded-xl flex items-center justify-center shadow-md hover:bg-[#FEF2F2] transition-colors active:scale-95"
-              aria-label="Abrir Sacola"
+        <div className="flex items-center gap-1.5 shrink-0">
+          {loyaltyPoints > 0 && (
+            <span
+              className="h-9 px-2.5 rounded-xl bg-white/15 flex items-center gap-1 text-[11px] font-bold tabular-nums"
+              title="Cartão fidelidade"
             >
-              <ShoppingBag className="w-5 h-5" strokeWidth={2.5} />
-              {cartTotalCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-[#D97706] text-white text-[9px] font-black min-w-[18px] h-[18px] rounded-full flex items-center justify-center border-2 border-[#B91C1C] shadow-sm">
-                  {cartTotalCount}
-                </span>
-              )}
-            </button>
-          </div>
+              <Award className="w-3.5 h-3.5 text-[#FDE68A]" strokeWidth={2.5} />
+              {loyaltyPoints}/{LOYALTY_STAMP_COST}
+            </span>
+          )}
+
+          <button
+            onClick={() => setIsCartOpen(true)}
+            className="relative w-9 h-9 rounded-xl bg-white text-[#B91C1C] flex items-center justify-center transition-transform active:scale-95"
+            aria-label="Abrir sacola"
+          >
+            <ShoppingBag className="w-[18px] h-[18px]" strokeWidth={2.5} />
+            {cartTotalCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#D97706] border-2 border-[#B91C1C] text-white text-[9px] font-black flex items-center justify-center tabular-nums">
+                {cartTotalCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* ADDRESS + SEARCH ROW */}
-      <div className="bg-white shadow-sm">
-        <div className="px-4 py-2.5">
+      {/* LINHA 2: pedido em andamento. Fica fora da linha da marca para não
+          disputar espaço com o nome da loja em telas estreitas. */}
+      {activeOrder && (
+        <button
+          onClick={() => setTrackingOrderId(activeOrder.id)}
+          className="w-full h-9 px-3 flex items-center gap-2 bg-[#991B1B] text-left transition-colors active:bg-[#7F1D1D]"
+        >
+          <span className="relative flex w-2 h-2 shrink-0">
+            <span className="absolute inset-0 rounded-full bg-[#4ADE80] opacity-75 animate-ping" />
+            <span className="relative w-2 h-2 rounded-full bg-[#4ADE80]" />
+          </span>
+          <span className="flex-1 min-w-0 text-[11px] font-bold truncate">
+            {activeOrderLabel} &bull; {activeOrder.id}
+          </span>
+          <span className="text-[10px] font-bold text-white/70 shrink-0">Acompanhar</span>
+          <ChevronRight className="w-3.5 h-3.5 text-white/70 shrink-0" />
+        </button>
+      )}
+
+      {/* LINHA 3: endereço + busca. A busca abre no lugar do endereço para
+          caber inteira em 430px, no lugar de dois campos espremidos. */}
+      <div className="bg-white border-b border-[#E7E5E4] px-3 py-2">
+        {searchOpen ? (
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#A8A29E]" />
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar no cardápio"
+              className="w-full h-10 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] pl-9 pr-10 text-[13px] font-medium text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:bg-white focus:border-[#B91C1C] focus:ring-2 focus:ring-[#B91C1C]/15 transition-colors"
+            />
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setIsSearchOpen(false);
+              }}
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-[#78716C] active:bg-[#E7E5E4]"
+              aria-label="Fechar busca"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
           <div className="flex items-center gap-2">
             {/* Na retirada não existe endereço do cliente: a barra mostra a loja e
                 não abre nada, senão o cliente acha que ainda precisa cadastrar. */}
             {isPickupMode ? (
-              <div className="flex items-center gap-2 flex-1 min-w-0 bg-[#ECFDF5] rounded-xl px-3 py-2">
-                <Store className="w-4 h-4 text-[#059669] shrink-0" />
-                <div className="flex-1 min-w-0 text-left">
-                  <span className="text-[9px] text-[#059669] font-bold uppercase tracking-wider block">
+              <div className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-[#ECFDF5] flex items-center gap-2">
+                <Store className="w-4 h-4 text-[#059669] shrink-0" strokeWidth={2.5} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[9px] font-bold uppercase tracking-wider leading-none text-[#059669]">
                     Retirar na loja
                   </span>
-                  <span className="text-[12px] font-bold text-[#065F46] truncate block">
+                  <span className="block text-[12px] font-bold leading-tight text-[#065F46] truncate mt-1">
                     {storeAddressLine(settings)}
                   </span>
-                </div>
+                </span>
               </div>
             ) : (
               <button
@@ -268,49 +321,32 @@ export const ClientHeader: React.FC = () => {
                   setAddressFormOpen(false);
                   setAddressModalOpen(true);
                 }}
-                className="flex items-center gap-2 flex-1 min-w-0 bg-[#F5F5F4] hover:bg-[#E7E5E4] rounded-xl px-3 py-2 transition-colors group"
+                className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-[#F5F5F4] flex items-center gap-2 transition-colors active:bg-[#E7E5E4]"
               >
-                <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0 group-hover:scale-110 transition-transform" />
-                <div className="flex-1 min-w-0 text-left">
-                  <span className="text-[9px] text-[#A8A29E] font-bold uppercase tracking-wider block">
+                <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0" strokeWidth={2.5} />
+                <span className="flex-1 min-w-0 text-left">
+                  <span className="block text-[9px] font-bold uppercase tracking-wider leading-none text-[#A8A29E]">
                     Entregar em
                   </span>
-                  <span className="text-[12px] font-bold text-[#1C1917] truncate block">
+                  <span className="block text-[12px] font-bold leading-tight text-[#1C1917] truncate mt-1">
                     {isUsableAddress(selectedAddress)
                       ? formatAddressLine(selectedAddress)
                       : 'Selecione seu endereço'}
                   </span>
-                </div>
+                </span>
                 <ChevronDown className="w-4 h-4 text-[#78716C] shrink-0" />
               </button>
             )}
 
-            <div className="relative flex-1 max-w-xs">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#A8A29E]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setIsSearchFocused(false)}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar..."
-                className={`w-full bg-[#F5F5F4] text-[#1C1917] placeholder-[#A8A29E] text-[12px] font-medium rounded-xl pl-9 pr-8 py-2 border transition-all ${
-                  isSearchFocused
-                    ? 'border-[#B91C1C] bg-white ring-2 ring-[#B91C1C]/15'
-                    : 'border-transparent'
-                }`}
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A8A29E] hover:text-[#1C1917]"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="w-10 h-10 shrink-0 rounded-xl bg-[#F5F5F4] text-[#57534E] flex items-center justify-center transition-colors active:bg-[#E7E5E4]"
+              aria-label="Buscar no cardápio"
+            >
+              <Search className="w-4 h-4" strokeWidth={2.5} />
+            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Address Modal */}

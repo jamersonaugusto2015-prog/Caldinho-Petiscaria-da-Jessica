@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Store } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { KitchenProvider } from './KitchenProvider';
 import { KitchenShellProvider, useKitchenShell } from './KitchenShellStore';
 import { KitchenHeader } from './KitchenHeader';
 import { KitchenSidebar } from './KitchenSidebar';
 import { KitchenView } from './KitchenView';
+import { useKitchenToast } from './KitchenNotificationsStore';
 import type { KitchenTab } from './kitchenTabs';
 import { LoginGate } from '../../components/LoginGate';
 import { useRoleSession } from '../../lib/auth';
@@ -16,6 +18,19 @@ import { useRoleSession } from '../../lib/auth';
 const KitchenShell: React.FC = () => {
   const [activeTab, setActiveTab] = useState<KitchenTab>('dashboard');
   const { railPinned } = useKitchenShell();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const triggerToast = useKitchenToast();
+
+  // A volta do OAuth do Mercado Pago cai no painel na aba inicial. Tratar o
+  // retorno aqui (e não dentro das Configurações, que só existem quando a aba
+  // está aberta) garante que o aviso apareça e a tela certa seja mostrada.
+  useEffect(() => {
+    const result = searchParams.get('mp');
+    if (!result) return;
+    setActiveTab('config');
+    triggerToast(result === 'ok' ? 'Mercado Pago conectado!' : searchParams.get('reason') || 'Falha ao conectar o Mercado Pago.');
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, triggerToast]);
 
   return (
     <div className="k-shell min-h-screen bg-[#F5F5F4] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
@@ -27,7 +42,7 @@ const KitchenShell: React.FC = () => {
       >
         <KitchenHeader activeTab={activeTab} />
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <KitchenView activeTab={activeTab} setActiveTab={setActiveTab} />
+          <KitchenView activeTab={activeTab} />
         </main>
       </div>
     </div>

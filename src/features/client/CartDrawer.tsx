@@ -28,7 +28,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
     setAddressModalOpen,
   } = useCart();
   const { settings } = useClientShell();
-  const { subtotal, discount, deliveryFee, total } = useCartTotals();
+  const { subtotal, discount, appliedPromotions, blockedPromotions, deliveryFee, total } =
+    useCartTotals();
   const isPickupMode = fulfillment === 'pickup';
   const hasAddress = isPickupMode || isUsableAddress(selectedAddress);
   const outOfRange = !isPickupMode && isUsableAddress(selectedAddress) && deliveryFee < 0;
@@ -243,6 +244,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                   <span>Desconto cupom</span>
                   <span>- R$ {discount.toFixed(2)}</span>
                 </div>
+              )}
+
+              {/* Cada promoção aparece com o nome que a loja deu: o cliente entende
+                  de onde veio o desconto sem precisar perguntar. */}
+              {appliedPromotions.map((promo) => (
+                <div key={promo.id} className="flex justify-between text-[#059669] font-bold">
+                  <span className="truncate pr-2">🎉 {promo.name}</span>
+                  <span className="shrink-0">
+                    {promo.kind === 'frete' ? 'Frete abatido' : `- R$ ${promo.discount.toFixed(2)}`}
+                  </span>
+                </div>
+              ))}
+
+              {blockedPromotions.length > 0 && (
+                <p className="text-[11px] text-[#B45309] bg-[#FEF3C7] border border-[#FDE68A] rounded-xl px-2.5 py-2 font-semibold">
+                  O cupom desliga {blockedPromotions.length === 1 ? 'a promoção' : 'as promoções'}{' '}
+                  {blockedPromotions.map((promo) => promo.name).join(', ')}. Tire o cupom para usar a promoção.
+                </p>
               )}
 
               <div className="flex justify-between">

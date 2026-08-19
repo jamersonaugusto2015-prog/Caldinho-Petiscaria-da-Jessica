@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CartItem, Order, Product, StoreSettings } from '../src/types';
+import { CartItem, Order, Product, Promotion, StoreSettings } from '../src/types';
 import {
   createFakePaymentAdapter,
   OrderIntakeDependencies,
@@ -489,4 +489,93 @@ test('troco só é guardado em pedidos de dinheiro', async () => {
     cash.base
   );
   assert.equal(cashResult.order.payment.changeForAmount, 50);
+});
+
+/** Promoção do tipo desconto, ligada o tempo todo, valendo no cardápio inteiro. */
+function livePromotion(overrides: Partial<Promotion> = {}): Promotion {
+  return {
+    id: 'promo-1',
+    name: 'Quarta em dobro',
+    kind: 'desconto',
+    enabled: true,
+    scope: 'todos',
+    productIds: [],
+    categoryIds: [],
+    minOrderValue: 0,
+    channel: 'ambos',
+    maxUses: 0,
+    usedCount: 0,
+    stacksWithCoupon: false,
+    highlight: true,
+    window: { weekdays: [] },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    totalDiscount: 0,
+    totalRevenue: 0,
+    totalOrders: 0,
+    discountPercent: 50,
+    ...overrides,
+  };
+}
+
+test('o servidor aplica a promoção sozinho e grava o desconto no pedido', async () => {
+  const state = deps({ listPromotions: () => [livePromotion()] });
+  const result = await placeOrder(
+    { items: [item()], address: address(), paymentMethod: 'cash', customerId: 'customer-1' },
+    state.base
+  );
+
+  assert.equal(result.order.subtotal, 18);
+  assert.equal(result.order.promoDiscount, 9);
+  assert.equal(result.order.total, 9);
+  assert.equal(result.order.appliedPromotions?.[0].name, 'Quarta em dobro');
+});
+
+test('a promoção pausada não mexe no preço do pedido', async () => {
+  const state = deps({ listPromotions: () => [livePromotion({ enabled: false })] });
+  const result = await placeOrder(
+    { items: [item()], address: address(), paymentMethod: 'cash', customerId: 'customer-1' },
+    state.base
+  );
+  assert.equal(result.order.promoDiscount, 0);
+  assert.equal(result.order.total, 18);
+});
+
+test('o contador da promoção só sobe junto com o pedido gravado', async () => {
+  const registered: { discount: number; total: number }[] = [];
+  const state = deps({
+    listPromotions: () => [livePromotion()],
+    registerPromotionUses: (applied, total) =>
+      registered.push({ discount: applied?.[0]?.discount ?? 0, total }),
+  });
+  await placeOrder(
+    { items: [item()], address: address(), paymentMethod: 'cash', customerId: 'customer-1' },
+    state.base
+  );
+  assert.deepEqual(registered, [{ discount: 9, total: 9 }]);
+});
+
+test('cobrança que falha não deixa a promoção contada', async () => {
+  const registered: number[] = [];
+  const state = deps({
+    listPromotions: () => [livePromotion()],
+    registerPromotionUses: (_applied, total) => registered.push(total),
+  });
+  state.base.payment.collectCard = async () => {
+    throw new DomainError(400, 'Cartão recusado.');
+  };
+  await assert.rejects(() =>
+    placeOrder(
+      {
+        items: [item()],
+        address: address(),
+        paymentMethod: 'card',
+        customerId: 'customer-1',
+        cardToken: 'tok_test',
+        cardPaymentMethodId: 'visa',
+      },
+      state.base
+    )
+  );
+  assert.deepEqual(registered, []);
+  assert.deepEqual(state.saved, []);
 });
