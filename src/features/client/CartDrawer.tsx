@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { useClient, useCartTotals } from './ClientStore';
+import { useCart } from './CartStore';
+import { useClientShell, useCartTotals } from './ClientStore';
+import { formatKm, effectiveDistanceKm } from '../../shared/geo';
+import { formatAddressLine, isUsableAddress } from '../../shared/address';
+import { computeCartItemTotal } from '../../shared/pricing';
 import { X, Trash2, Plus, Minus, Ticket, ArrowRight, ShoppingBag, MapPin } from 'lucide-react';
 
 interface CartDrawerProps {
@@ -8,9 +12,23 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
-  const { cart, setIsCartOpen, removeFromCart, updateCartQuantity, appliedCoupon, applyCoupon, removeCoupon, selectedAddress } =
-    useClient();
+  const {
+    cart,
+    setIsCartOpen,
+    removeFromCart,
+    updateCartQuantity,
+    appliedCoupon,
+    applyCoupon,
+    removeCoupon,
+    selectedAddress,
+    openAddressForm,
+    setAddressModalOpen,
+  } = useCart();
+  const { settings } = useClientShell();
   const { subtotal, discount, deliveryFee, total } = useCartTotals();
+  const hasAddress = isUsableAddress(selectedAddress);
+  const outOfRange = hasAddress && deliveryFee < 0;
+  const liveKm = selectedAddress && hasAddress ? effectiveDistanceKm(selectedAddress, settings) : 0;
 
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState<string | null>(null);
@@ -123,7 +141,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
                   <div className="flex items-center justify-between mt-2 pt-1 border-t border-[#F5F5F4]">
                     <span className="font-extrabold text-xs text-[#B91C1C]">
-                      R$ {item.itemTotalPrice.toFixed(2)}
+                      R$ {computeCartItemTotal(item, settings.sizeOptions).toFixed(2)}
                     </span>
 
                     <div className="flex items-center bg-[#F5F5F4] rounded-full border border-[#E7E5E4] p-0.5">
@@ -150,13 +168,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
         {cart.length > 0 && (
           <div className="p-4 bg-white border-t border-[#E7E5E4] space-y-3 shrink-0">
-            <div className="bg-[#F5F5F4] p-2.5 rounded-2xl border border-[#E7E5E4] flex items-center gap-2 text-xs text-[#57534E]">
+            <button
+              type="button"
+              onClick={() => (hasAddress ? setAddressModalOpen(true) : openAddressForm())}
+              className="w-full bg-[#F5F5F4] p-2.5 rounded-2xl border border-[#E7E5E4] flex items-center gap-2 text-xs text-[#57534E] text-left hover:bg-[#E7E5E4]"
+            >
               <MapPin className="w-4 h-4 text-[#B91C1C] shrink-0" />
-              <div className="truncate">
-                <span className="font-bold text-[#1C1917]">{selectedAddress.label}:</span>{' '}
-                {selectedAddress.street}, {selectedAddress.number} ({selectedAddress.neighborhood})
+              <div className="truncate flex-1">
+                {hasAddress ? (
+                  <span className="font-bold text-[#1C1917]">{formatAddressLine(selectedAddress)}</span>
+                ) : (
+                  <span className="font-bold text-[#B91C1C]">Toque para adicionar o endereço</span>
+                )}
               </div>
-            </div>
+            </button>
 
             <div>
               {!appliedCoupon ? (
@@ -203,22 +228,36 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               )}
 
               <div className="flex justify-between">
-                <span>Taxa de entrega ({selectedAddress.distanceKm} km)</span>
-                <span className="text-[#1C1917] font-semibold">R$ {deliveryFee.toFixed(2)}</span>
+                <span>Taxa de entrega ({liveKm > 0 ? formatKm(liveKm) : '—'})</span>
+                <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                  {outOfRange ? 'Fora da área' : `R$ ${deliveryFee.toFixed(2)}`}
+                </span>
               </div>
+
+              {outOfRange && (
+                <p className="text-[11px] text-[#B91C1C] font-bold">
+                  Este endereço está fora da área de entrega.
+                </p>
+              )}
 
               <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">
                 <span>Total do Pedido</span>
-                <span className="text-[#B91C1C]">R$ {total.toFixed(2)}</span>
+                <span className="text-[#B91C1C]">{outOfRange ? '—' : `R$ ${total.toFixed(2)}`}</span>
               </div>
             </div>
 
             <button
+              disabled={outOfRange || !hasAddress}
               onClick={() => {
+                if (!hasAddress) {
+                  openAddressForm();
+                  return;
+                }
+                if (outOfRange) return;
                 setIsCartOpen(false);
                 onOpenCheckout();
               }}
-              className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-3.5 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm"
+              className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-3.5 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span>Continuar</span>
               <ArrowRight className="w-4 h-4" />

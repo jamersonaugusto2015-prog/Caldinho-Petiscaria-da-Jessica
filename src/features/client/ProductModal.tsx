@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Product, CartItemExtra, ComboSlotOption } from '../../types';
-import { useClient } from './ClientStore';
+import { useCart } from './CartStore';
+import { useClientShell } from './ClientStore';
+import { computeCartItemTotal } from '../../shared/pricing';
 import { X, Plus, Minus, ShoppingBag, Check, Sparkles } from 'lucide-react';
 
 interface ProductModalProps {
@@ -9,7 +11,8 @@ interface ProductModalProps {
 }
 
 export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) => {
-  const { addToCart } = useClient();
+  const { addToCart } = useCart();
+  const { settings } = useClientShell();
 
   const slots = product.comboSlots ?? [];
   const [comboChoices, setComboChoices] = useState<Record<string, ComboSlotOption>>({});
@@ -21,14 +24,24 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
   const missingSlot = slots.find((s) => s.required && !comboChoices[s.id]);
   const canAdd = slots.length === 0 || !missingSlot;
 
-  const comboDelta = (Object.values(comboChoices) as ComboSlotOption[]).reduce(
-    (sum, o) => sum + (o.priceDelta ?? 0),
-    0
+  const previewChoices = (Object.entries(comboChoices) as [string, ComboSlotOption][]).map(
+    ([slotId, opt]) => ({
+      slotId,
+      slotLabel: slots.find((s) => s.id === slotId)?.label ?? slotId,
+      optionId: opt.id,
+      optionLabel: opt.label,
+      priceDelta: opt.priceDelta ?? 0,
+    })
   );
-  const unitPrice = product.basePrice + comboDelta;
-
-  const extrasTotalPrice = selectedExtras.reduce((sum, e) => sum + e.price, 0);
-  const totalItemPrice = (unitPrice + extrasTotalPrice) * quantity;
+  const totalItemPrice = computeCartItemTotal(
+    {
+      product,
+      selectedExtras,
+      comboChoices: previewChoices,
+      quantity,
+    },
+    settings.sizeOptions
+  );
 
   const toggleExtra = (extra: { id: string; name: string; price: number }) => {
     setSelectedExtras((prev) => {
@@ -40,7 +53,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
 
   const handleAddToCart = () => {
     if (!canAdd) return;
-    addToCart({
+    const added = addToCart({
       product,
       ...(slots.length > 0
         ? {
@@ -59,7 +72,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
       observation,
       quantity,
     });
-    onClose();
+    if (added) onClose();
   };
 
   return (

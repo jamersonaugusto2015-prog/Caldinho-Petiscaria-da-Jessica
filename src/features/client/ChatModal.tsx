@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useClient } from './ClientStore';
+import { useCheckout } from './CheckoutStore';
 import { api } from '../../lib/api';
-import { useSocketEvent } from '../../lib/socket';
+import { useLiveSession } from '../../lib/liveSession';
 import { X, Send } from 'lucide-react';
 import { ChatMessage } from '../../types';
 
@@ -12,30 +12,59 @@ interface ChatModalProps {
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onClose }) => {
-  const { sendChatMessage } = useClient();
+  const { sendChatMessage, customerId } = useCheckout();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [sendError, setSendError] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const sendingRef = useRef(false);
 
   useEffect(() => {
-    api.get<ChatMessage[]>(`/orders/${orderId}/chat`).then(setMessages).catch(() => {});
-  }, [orderId]);
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(false);
+    api
+      .get<ChatMessage[]>(`/orders/${orderId}/chat?customerId=${encodeURIComponent(customerId)}`)
+      .then((data) => {
+        if (cancelled) return;
+        setMessages(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, customerId]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages.length]);
 
-  useSocketEvent<ChatMessage>('chat:message', (msg) => {
-    if (msg.orderId !== orderId) return;
-    // Ignora o eco das próprias mensagens (elas já entraram de forma otimista)
-    if (msg.sender === 'client') return;
-    setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+  useLiveSession({
+    join: false,
+    onChatMessage: (msg) => {
+      // Payload de socket não é garantido: protege contra evento malformado.
+      if (!msg || !msg.id || msg.orderId !== orderId) return;
+      // Ignora o eco das próprias mensagens (elas já entraram de forma otimista)
+      if (msg.sender === 'client') return;
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+    },
   });
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
+    // Evita duplo envio em toque duplo (comum em celular com tela travando)
+    if (sendingRef.current) return;
     const text = inputText.trim();
     if (!text) return;
+    sendingRef.current = true;
+    setSendError(false);
     const localId = 'msg-local-' + Date.now();
     const optimistic: ChatMessage = {
       id: localId,
@@ -49,8 +78,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
     setInputText('');
     sendChatMessage(orderId, 'client', optimistic.senderName, text)
       .catch(() => {
-        // falha ao enviar: remove a mensagem otimista
+        // falha ao enviar: remove a mensagem otimista, devolve o texto e avisa o cliente
         setMessages((prev) => prev.filter((m) => m.id !== localId));
+        setInputText(text);
+        setSendError(true);
+      })
+      .finally(() => {
+        sendingRef.current = false;
       });
   };
 
@@ -79,7 +113,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
         </div>
 
         <div ref={listRef} className="p-4 flex-1 overflow-y-auto space-y-3 bg-[#F5F5F4]/40 text-xs">
-          {messages.length === 0 ? (
+          {isLoading ? (
+            <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
+              Carregando conversa...
+            </div>
+          ) : loadError ? (
+            <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
+              Não foi possível carregar as mensagens. Puxe pra baixo ou reabra o chat.
+            </div>
+          ) : messages.length === 0 ? (
             <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
               Nenhuma mensagem ainda. Digite sua dúvida ou recado abaixo.
             </div>
@@ -106,7 +148,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
           )}
         </div>
 
-        <form onSubmit={handleSend} className="p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] bg-white border-t border-[#E7E5E4] flex gap-2 shrink-0">
+        <form onSubmit={handleSend} className="p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] bg-white border-t border-[#E7E5E4] flex flex-col gap-2 shrink-0">
+          {sendError && (
+            <p className="text-[10px] text-[#B91C1C] font-semibold px-1">
+              Não foi possível enviar. Verifique sua internet e tente de novo.
+            </p>
+          )}
+          <div className="flex gap-2">
           <input
             type="text"
             value={inputText}
@@ -120,6 +168,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
           >
             <Send className="w-4 h-4" />
           </button>
+          </div>
         </form>
       </div>
     </div>

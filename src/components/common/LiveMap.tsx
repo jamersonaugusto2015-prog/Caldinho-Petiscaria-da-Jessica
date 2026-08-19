@@ -21,6 +21,12 @@ interface LiveMapProps {
   className?: string;
 }
 
+/** Leaflet throws on a non-finite LatLng: drop half-loaded points instead of rendering them. */
+function usablePoint<T extends GeoPoint>(point?: T | null): T | null {
+  if (!point) return null;
+  return Number.isFinite(point.lat) && Number.isFinite(point.lng) ? point : null;
+}
+
 function pinIcon(emoji: string, bg: string, pulse?: boolean): L.DivIcon {
   return L.divIcon({
     className: 'live-map-pin',
@@ -58,17 +64,21 @@ function FitBounds({ points }: { points: GeoPoint[] }) {
 }
 
 export const LiveMap: React.FC<LiveMapProps> = ({
-  store,
-  customer,
-  driver,
-  pickPosition,
+  store: storeProp,
+  customer: customerProp,
+  driver: driverProp,
+  pickPosition: pickPositionProp,
   onPick,
-  center,
+  center: centerProp,
   zoom = 13,
   heightClass = 'h-52',
   className = '',
 }) => {
-  const mapCenter = center ?? store ?? pickPosition ?? RECIFE_CENTER;
+  const store = usablePoint(storeProp);
+  const customer = usablePoint(customerProp);
+  const driver = usablePoint(driverProp);
+  const pickPosition = usablePoint(pickPositionProp);
+  const mapCenter = usablePoint(centerProp) ?? store ?? pickPosition ?? RECIFE_CENTER;
 
   const fitPoints = useMemo(() => {
     const pts: GeoPoint[] = [];
@@ -103,9 +113,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
         {store && <Marker position={[store.lat, store.lng]} icon={pinIcon('🏪', '#B91C1C')} />}
         {customer && <Marker position={[customer.lat, customer.lng]} icon={pinIcon('🏠', '#059669')} />}
-        {driver && driver.lat != null && driver.lng != null && (
-          <Marker position={[driver.lat, driver.lng]} icon={pinIcon('🛵', '#7C3AED', true)} />
-        )}
+        {driver && <Marker position={[driver.lat, driver.lng]} icon={pinIcon('🛵', '#7C3AED', true)} />}
         {pickPosition && onPick && (
           <Marker
             draggable

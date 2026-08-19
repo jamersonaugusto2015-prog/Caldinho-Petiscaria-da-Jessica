@@ -17,16 +17,25 @@ const Line: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="flex justify-between gap-2 text-[13px] leading-snug">{children}</div>
 );
 
+/** Formata em R$ mesmo quando o campo falta ou está corrompido num pedido antigo. */
+const money = (n: unknown): string => (typeof n === 'number' && isFinite(n) ? n.toFixed(2) : '0.00');
+
 const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, storeName }) => {
   const date = new Date(order.createdAt);
   const fmtDate = date.toLocaleDateString('pt-BR');
   const fmtTime = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const obs = order.items.map((it) => it.observation).filter(Boolean).join(' | ');
+  const items = Array.isArray(order.items) ? order.items : [];
+  const address = order.address;
+  const payment = order.payment;
+  const distanceKm = typeof order.distanceKm === 'number' && order.distanceKm > 0 ? order.distanceKm : 0;
+  const obs = items.map((it) => it.observation).filter(Boolean).join(' | ');
+  const isCancelled = order.status === 'cancelado';
+  const cancelledAtFmt = order.cancelledAt ? new Date(order.cancelledAt) : null;
 
   return (
     <div className="text-black font-mono text-[13px] leading-snug">
       <div className="text-center font-bold text-[16px] uppercase px-1">{storeName}</div>
-      <div className="text-center text-[12px]">{order.address.city}</div>
+      <div className="text-center text-[12px]">{address?.city || ''}</div>
       <Divider />
 
       <div className="font-bold text-[13px]">PEDIDO: {order.id}</div>
@@ -38,33 +47,64 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
       </Line>
       <Divider />
 
+      {isCancelled && (
+        <>
+          <div className="bg-black text-white text-center font-bold text-[16px] uppercase py-1.5 my-1">
+            *** PEDIDO CANCELADO ***
+          </div>
+          <div className="text-[13px]">
+            {cancelledAtFmt && (
+              <div>
+                <span className="font-bold">Cancelado em:</span>{' '}
+                {cancelledAtFmt.toLocaleDateString('pt-BR')}{' '}
+                {cancelledAtFmt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+            <div>
+              <span className="font-bold">Cancelado por:</span>{' '}
+              {order.cancelledBy === 'cliente' ? 'Cliente' : order.cancelledBy === 'loja' ? 'Loja' : '—'}
+            </div>
+            <div className="break-words">
+              <span className="font-bold">Motivo:</span> {order.cancellationReason || 'Não informado'}
+            </div>
+          </div>
+          <Divider />
+        </>
+      )}
+
       <div className="text-[13px]">
         <div>
           <span className="font-bold">Cliente:</span> {order.customerName}
         </div>
         {order.customerPhone && <div>{order.customerPhone}</div>}
       </div>
-      <div className="mt-0.5 break-words text-[13px]">
-        <span className="font-bold">End:</span> {order.address.street}, {order.address.number}
-        {order.address.neighborhood && <> - {order.address.neighborhood}</>}
-        {order.address.complement && <div className="pl-4 italic">{order.address.complement}</div>}
-      </div>
-      {order.distanceKm > 0 && (
+      {address ? (
+        <div className="mt-0.5 break-words text-[13px]">
+          <span className="font-bold">End:</span> {address.street}, {address.number}
+          {address.neighborhood && <> - {address.neighborhood}</>}
+          {address.complement && <div className="pl-4 italic">{address.complement}</div>}
+        </div>
+      ) : (
+        <div className="mt-0.5 text-[13px]">
+          <span className="font-bold">End:</span> (não informado)
+        </div>
+      )}
+      {distanceKm > 0 && (
         <div className="text-[13px]">
-          <span className="font-bold">Dist:</span> {order.distanceKm.toFixed(1)} km
+          <span className="font-bold">Dist:</span> {distanceKm.toFixed(1)} km
         </div>
       )}
       <Divider />
 
       <div className="space-y-1">
-        {order.items.map((it) => (
+        {items.map((it) => (
           <div key={it.id}>
             <Line>
               <span className="break-words pr-1">
-                {it.quantity}x {it.product.name}
+                {it.quantity}x {it.product?.name || 'Item'}
                 {it.isFree && <span className="font-bold"> (GRATIS)</span>}
               </span>
-              <span className="shrink-0">R$ {it.itemTotalPrice.toFixed(2)}</span>
+              <span className="shrink-0">R$ {money(it.itemTotalPrice)}</span>
             </Line>
             {it.size && <div className="pl-4 text-[12px]">{it.size}</div>}
             {it.comboChoices && it.comboChoices.length > 0 && (
@@ -72,7 +112,7 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
                 {it.comboChoices.map((c) => `${c.slotLabel}: ${c.optionLabel}`).join(' | ')}
               </div>
             )}
-            {it.selectedExtras.length > 0 && (
+            {it.selectedExtras && it.selectedExtras.length > 0 && (
               <div className="pl-4 text-[12px]">+ {it.selectedExtras.map((e) => e.name).join(', ')}</div>
             )}
           </div>
@@ -82,31 +122,48 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
 
       <Line>
         <span>Subtotal</span>
-        <span>R$ {order.subtotal.toFixed(2)}</span>
+        <span>R$ {money(order.subtotal)}</span>
       </Line>
       {order.discount > 0 && (
         <Line>
           <span>Desconto</span>
-          <span>- R$ {order.discount.toFixed(2)}</span>
+          <span>- R$ {money(order.discount)}</span>
         </Line>
       )}
       <Line>
-        <span>Entrega{order.distanceKm > 0 ? ` (${order.distanceKm.toFixed(1)} km)` : ''}</span>
-        <span>{order.deliveryFee > 0 ? `R$ ${order.deliveryFee.toFixed(2)}` : 'GRATIS'}</span>
+        <span>Entrega{distanceKm > 0 ? ` (${distanceKm.toFixed(1)} km)` : ''}</span>
+        <span>{order.deliveryFee > 0 ? `R$ ${money(order.deliveryFee)}` : 'GRATIS'}</span>
       </Line>
       <Line>
         <span className="font-bold text-[16px]">TOTAL</span>
-        <span className="font-bold text-[16px]">R$ {order.total.toFixed(2)}</span>
+        <span className="font-bold text-[16px]">R$ {money(order.total)}</span>
       </Line>
       <Divider />
 
       <div className="text-[13px]">
-        <span className="font-bold">Pagamento:</span> {order.payment.method.toUpperCase()}{' '}
-        {order.payment.isPaid ? '(PAGO)' : '(PENDENTE)'}
-        {order.payment.changeForAmount && (
-          <div>Troco para: R$ {order.payment.changeForAmount.toFixed(2)}</div>
-        )}
+        <span className="font-bold">Pagamento:</span> {(payment?.method || '—').toUpperCase()}{' '}
+        {isCancelled
+          ? payment?.isPaid
+            ? '(PAGO — PEDIDO CANCELADO)'
+            : '(NÃO COBRADO — PEDIDO CANCELADO)'
+          : payment?.isPaid
+          ? '(PAGO)'
+          : '(PENDENTE)'}
+        {!!payment?.changeForAmount && <div>Troco para: R$ {money(payment.changeForAmount)}</div>}
       </div>
+      {isCancelled && payment?.refundStatus === 'pendente' && (
+        <div className="bg-black text-white text-[13px] font-bold px-1.5 py-1 my-0.5">
+          DEVOLVER R$ {money(order.total)} AO CLIENTE
+        </div>
+      )}
+      {isCancelled && payment?.refundStatus === 'devolvido' && (
+        <div className="text-[13px] font-bold">Valor já devolvido ao cliente.</div>
+      )}
+      {isCancelled && payment?.refundStatus === 'falhou' && (
+        <div className="bg-black text-white text-[13px] font-bold px-1.5 py-1 my-0.5">
+          DEVOLUÇÃO FALHOU — DEVOLVER R$ {money(order.total)} MANUALMENTE
+        </div>
+      )}
       {obs && (
         <div className="mt-0.5 break-words text-[13px]">
           <span className="font-bold">Obs:</span> {obs}
@@ -119,8 +176,14 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
       )}
       <Divider />
 
-      <div className="text-center font-bold uppercase text-[13px]">Obrigado pela preferencia!</div>
-      <div className="text-center text-[12px]">Acompanhe seu pedido no app</div>
+      {isCancelled ? (
+        <div className="text-center font-bold uppercase text-[13px]">Não entregar — pedido cancelado</div>
+      ) : (
+        <>
+          <div className="text-center font-bold uppercase text-[13px]">Obrigado pela preferencia!</div>
+          <div className="text-center text-[12px]">Acompanhe seu pedido no app</div>
+        </>
+      )}
     </div>
   );
 };
@@ -146,7 +209,14 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({ order, sto
       <div className="bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col w-full max-w-md">
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#E7E5E4] shrink-0">
           <div>
-            <h3 className="text-sm font-extrabold text-[#1C1917]">Impressão Térmica</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-[#1C1917]">Impressão Térmica</h3>
+              {order.status === 'cancelado' && (
+                <span className="text-[10px] bg-[#B91C1C] text-white font-black px-2 py-0.5 rounded-full uppercase">
+                  Cancelado
+                </span>
+              )}
+            </div>
             <p className="text-[10px] text-[#57534E]">
               Cupom 80mm (1 página) • Pedido {order.id} — configure a impressora como "papel térmico 80mm"
             </p>

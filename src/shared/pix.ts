@@ -2,8 +2,12 @@
 // Compartilhado entre servidor (criação de pedidos) e painel (pré-visualização).
 
 function emvField(id: string, value: string): string {
-  const len = value.length.toString().padStart(2, '0');
-  return `${id}${len}${value}`;
+  // O tamanho é um prefixo fixo de 2 dígitos no formato EMV/BR Code: um valor
+  // com 100+ caracteres produziria um prefixo de 3 dígitos e corromperia o
+  // parsing de todos os campos seguintes do payload.
+  const v = value.length > 99 ? value.slice(0, 99) : value;
+  const len = v.length.toString().padStart(2, '0');
+  return `${id}${len}${v}`;
 }
 
 function crc16(payload: string): string {
@@ -36,6 +40,9 @@ export interface PixPayloadOptions {
 }
 
 export function generatePixCopyPaste(opts: PixPayloadOptions): string {
+  if (!Number.isFinite(opts.amount) || opts.amount <= 0) {
+    throw new Error('Valor do PIX inválido.');
+  }
   const key = normalizePixKey(opts.pixKey);
   const gui = emvField('00', 'br.gov.bcb.pix');
   const keyField = emvField('01', key);
@@ -51,7 +58,12 @@ export function generatePixCopyPaste(opts: PixPayloadOptions): string {
     emvField('59', sanitize(opts.merchantName || 'LOJA', 25)) +
     emvField('60', sanitize(opts.merchantCity || 'BRASIL', 15)) +
     txid;
-  return payload + emvField('63', crc16(payload));
+  // O CRC16 (Bacen/EMV) cobre o payload inteiro INCLUINDO a tag+tamanho "6304"
+  // do próprio campo 63 — só os 4 dígitos do CRC ficam de fora. Calcular sobre
+  // `payload` sozinho gera um CRC que passa na validação interna mas que os
+  // apps de banco recusam como inválido, então o QR/copia-e-cola nunca funciona.
+  const withCrcTag = payload + '6304';
+  return withCrcTag + crc16(withCrcTag);
 }
 
 /**

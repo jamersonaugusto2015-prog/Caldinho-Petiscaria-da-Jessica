@@ -1,0 +1,285 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { CartItem, Order, Product, StoreSettings } from '../src/types';
+import {
+  createFakePaymentAdapter,
+  OrderIntakeDependencies,
+  placeOrder,
+} from './orderIntake';
+import { DomainError } from './errors';
+
+const product: Product = {
+  id: 'caldinho-feijao',
+  name: 'Caldinho de feijão',
+  description: '',
+  category: 'caldinhos',
+  basePrice: 18,
+  image: '',
+  available: true,
+  rating: 5,
+  reviewsCount: 0,
+  prepTimeMinutes: 15,
+};
+
+const settings: StoreSettings = {
+  storeName: 'Teste',
+  city: 'Recife',
+  storeLat: -8.05,
+  storeLng: -34.9,
+  deliveryPricePerKm: 2,
+  deliveryBaseFee: 5,
+  deliveryMinFee: 5,
+  freeDeliveryAbove: 0,
+  maxDeliveryKm: 20,
+  minOrderValue: 0,
+  routeFactor: 1.35,
+  driverFeePerDelivery: 0,
+  pixKey: '',
+  pixMerchantName: 'Teste',
+  pixMerchantCity: 'Recife',
+  storeWhatsApp: '',
+  orderSoundUrl: '',
+  openingHours: Array(7).fill({ open: '00:00', close: '23:59' }),
+  sizeOptions: [],
+  orderEnabled: true,
+  forceOpen: true,
+};
+
+function address() {
+  return {
+    id: 'addr-1',
+    label: 'Casa',
+    street: 'Rua Teste',
+    number: '10',
+    neighborhood: 'Centro',
+    city: 'Recife',
+    lat: settings.storeLat,
+    lng: settings.storeLng,
+    distanceKm: 0,
+  };
+}
+
+function item(overrides: Partial<CartItem> = {}): CartItem {
+  return {
+    id: 'item-1',
+    product,
+    selectedExtras: [],
+    quantity: 1,
+    itemTotalPrice: product.basePrice,
+    ...overrides,
+  };
+}
+
+function deps(overrides: Partial<OrderIntakeDependencies> = {}) {
+  const saved: Order[] = [];
+  const consumed: CartItem[][] = [];
+  const released: CartItem[][] = [];
+  const releasedOrderIds: string[] = [];
+  const base: OrderIntakeDependencies = {
+    settings,
+    loadProduct: (id) => (id === product.id ? product : null),
+    listCoupons: () => [],
+    payment: createFakePaymentAdapter(),
+    peekFreeRedeem: () => true,
+    consumeFreeItems: (items) => consumed.push(items),
+    persistOrder: (order, beforePersist) => {
+      beforePersist();
+      saved.push(order);
+    },
+    updateOrder: (order) => {
+      const idx = saved.findIndex((o) => o.id === order.id);
+      if (idx >= 0) saved[idx] = order;
+      else saved.push(order);
+    },
+    releaseOrder: (id) => {
+      releasedOrderIds.push(id);
+      const idx = saved.findIndex((o) => o.id === id);
+      if (idx >= 0) saved.splice(idx, 1);
+    },
+    releaseFreeItems: (items) => released.push(items),
+    getLoyaltyPoints: () => 4,
+    createOrderId: () => 'CX-TEST',
+    now: () => '2026-08-18T14:30:00.000Z',
+    ...overrides,
+  };
+  return { base, saved, consumed, released, releasedOrderIds };
+}
+
+test('placeOrder resolves, prices, charges and persists through one interface', async () => {
+  const state = deps();
+  const result = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'card',
+      customerId: 'customer-1',
+      customerName: 'Ana',
+      cardToken: 'tok_test',
+      cardPaymentMethodId: 'visa',
+    },
+    state.base
+  );
+
+  assert.equal(result.order.id, 'CX-TEST');
+  assert.equal(result.order.total, 18);
+  assert.equal(result.order.payment.isPaid, true);
+  assert.equal(result.loyaltyPoints, 4);
+  assert.deepEqual(state.saved, [result.order]);
+});
+
+test('an unknown payment method is rejected instead of silently becoming pix', async () => {
+  const state = deps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        { items: [item()], address: address(), paymentMethod: 'dinheiro', customerId: 'customer-1' },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('a card order is rejected when no card adapter is available, never persisted unpaid', async () => {
+  const state = deps();
+  state.base.payment.isCardAvailable = () => false;
+  await assert.rejects(
+    () =>
+      placeOrder(
+        { items: [item()], address: address(), paymentMethod: 'card', customerId: 'customer-1' },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('invalid loyalty token fails before charging or persistence', async () => {
+  let charged = false;
+  const state = deps({
+    peekFreeRedeem: () => false,
+    payment: {
+      ...createFakePaymentAdapter(),
+      isCardAvailable: () => {
+        charged = true;
+        return true;
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [item({ isFree: true, freeToken: 'bad-token' })],
+          address: address(),
+          paymentMethod: 'card',
+        },
+        state.base
+      ),
+    (error: unknown) => error instanceof DomainError && error.status === 400
+  );
+  assert.equal(charged, false);
+  assert.equal(state.saved.length, 0);
+});
+
+test('free tokens are consumed in the same persistence callback', async () => {
+  const state = deps();
+  const result = await placeOrder(
+    {
+      items: [item({ isFree: true, freeToken: 'valid-token' })],
+      address: address(),
+      paymentMethod: 'cash',
+    },
+    state.base
+  );
+
+  assert.equal(result.order.total, 0);
+  assert.deepEqual(state.consumed, [[result.order.items[0]]]);
+});
+
+test('an order id collision is retried instead of failing the insert', async () => {
+  let existsCalls = 0;
+  const state = deps({
+    createOrderId: undefined,
+    orderIdExists: () => {
+      existsCalls += 1;
+      return existsCalls === 1; // first generated id "collides", second is free
+    },
+  });
+
+  const result = await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'cash',
+    },
+    state.base
+  );
+
+  assert.ok(existsCalls >= 2, 'a colliding id must be regenerated, not used');
+  assert.match(result.order.id, /^CX-[0-9A-Z]+$/);
+  assert.equal(state.saved.length, 1);
+});
+
+test('a replayed free-item token blocks the charge before it is attempted', async () => {
+  let collectCardCalled = false;
+  const state = deps({
+    consumeFreeItems: () => {
+      throw new DomainError(400, 'Item grátis de fidelidade inválido. Verifique seus selos.');
+    },
+    payment: {
+      ...createFakePaymentAdapter(),
+      async collectCard(input) {
+        collectCardCalled = true;
+        return { mpPaymentId: `fake-${input.orderId}`, cardBrand: 'visa', isPaid: true };
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [item({ isFree: true, freeToken: 'replayed-token' })],
+          address: address(),
+          paymentMethod: 'card',
+          cardToken: 'tok_test',
+        },
+        state.base
+      ),
+    (error: unknown) => error instanceof DomainError && error.status === 400
+  );
+
+  assert.equal(collectCardCalled, false);
+  assert.equal(state.saved.length, 0);
+});
+
+test('a failed charge releases the reserved order row and the loyalty token', async () => {
+  const state = deps({
+    payment: {
+      ...createFakePaymentAdapter(),
+      async collectCard() {
+        throw new DomainError(400, 'Cartão recusado.');
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [item({ isFree: true, freeToken: 'valid-token' }), item()],
+          address: address(),
+          paymentMethod: 'card',
+          cardToken: 'tok_test',
+        },
+        state.base
+      ),
+    (error: unknown) => error instanceof DomainError
+  );
+
+  assert.equal(state.saved.length, 0);
+  assert.equal(state.releasedOrderIds.length, 1);
+  assert.equal(state.released.length, 1);
+});

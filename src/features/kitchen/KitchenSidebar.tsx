@@ -1,7 +1,12 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../../lib/auth';
-import { useKitchen } from './KitchenStore';
+import { useKitchenOrders } from './KitchenOrdersStore';
+import { useKitchenCatalog } from './KitchenCatalogStore';
+import { useKitchenDrivers } from './KitchenDriversStore';
+import { useKitchenSettings } from './KitchenSettingsStore';
+import { useKitchenChat } from './KitchenChatStore';
+import { hasOpenComplaint, hasPendingCancelRequest, owesRefund, refundFailed } from './kitchenOrderRules';
 import {
   LayoutDashboard,
   ChefHat,
@@ -16,12 +21,15 @@ import {
   LogOut,
   Store,
   Bike,
+  Inbox,
+  Undo2,
 } from 'lucide-react';
-import type { KitchenTab } from './KitchenView';
+import type { KitchenTab } from './kitchenTabs';
 
 const NAV_ITEMS: { id: KitchenTab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'orders', label: 'Pedidos', icon: ChefHat },
+  { id: 'solicitacoes', label: 'Solicitações', icon: Inbox },
   { id: 'cardapio', label: 'Cardápio', icon: UtensilsCrossed },
   { id: 'categorias', label: 'Categorias', icon: Tags },
   { id: 'clientes', label: 'Clientes', icon: Users },
@@ -29,23 +37,34 @@ const NAV_ITEMS: { id: KitchenTab; label: string; icon: React.FC<{ className?: s
   { id: 'promocoes', label: 'Promoções', icon: Megaphone },
   { id: 'cupons', label: 'Cupons', icon: Ticket },
   { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+  { id: 'devolucoes', label: 'A devolver', icon: Undo2 },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
   { id: 'config', label: 'Configurações', icon: Settings },
 ];
+
+/** Abas cujo contador é uma pendência: passa a vermelho enquanto for maior que zero. */
+const ALERT_TABS: KitchenTab[] = ['solicitacoes', 'devolucoes'];
 
 export const KitchenSidebar: React.FC<{
   activeTab: KitchenTab;
   setActiveTab: (tab: KitchenTab) => void;
 }> = ({ activeTab, setActiveTab }) => {
   const navigate = useNavigate();
-  const { orders, products, coupons, drivers, settings, storeLogo, saveSettings } = useKitchen();
+  const { orders } = useKitchenOrders();
+  const { products, coupons } = useKitchenCatalog();
+  const { drivers } = useKitchenDrivers();
+  const { settings, storeLogo, saveSettings } = useKitchenSettings();
+  const { totalUnread } = useKitchenChat();
 
   const counts: Partial<Record<KitchenTab, number>> = {
     orders: orders.filter((o) => ['recebido', 'em_preparo', 'pronto', 'saiu_entrega'].includes(o.status))
       .length,
+    solicitacoes:
+      orders.filter(hasPendingCancelRequest).length + orders.filter(hasOpenComplaint).length + totalUnread,
     cardapio: products.length,
     cupons: coupons.length,
     motoboys: drivers.length,
+    devolucoes: orders.filter((o) => owesRefund(o) || refundFailed(o)).length,
   };
 
   const toggleStore = () => {
@@ -58,6 +77,8 @@ export const KitchenSidebar: React.FC<{
     logout('kitchen');
     navigate('/');
   };
+
+  const alerting = (tab: KitchenTab) => ALERT_TABS.includes(tab) && !!counts[tab];
 
   const itemClass = (active: boolean) =>
     `flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-xs font-bold transition-colors ${
@@ -131,7 +152,13 @@ export const KitchenSidebar: React.FC<{
                 {counts[item.id] !== undefined && (
                   <span
                     className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                      active ? 'bg-white/20 text-white' : 'bg-white/5 text-[#A8A29E]'
+                      alerting(item.id)
+                        ? active
+                          ? 'bg-white text-[#B91C1C]'
+                          : 'bg-[#B91C1C] text-white'
+                        : active
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white/5 text-[#A8A29E]'
                     }`}
                   >
                     {counts[item.id]}
@@ -174,7 +201,13 @@ export const KitchenSidebar: React.FC<{
                 {counts[item.id] !== undefined && (
                   <span
                     className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                      active ? 'bg-white/20' : 'bg-white/10'
+                      alerting(item.id)
+                        ? active
+                          ? 'bg-white text-[#B91C1C]'
+                          : 'bg-[#B91C1C] text-white'
+                        : active
+                          ? 'bg-white/20'
+                          : 'bg-white/10'
                     }`}
                   >
                     {counts[item.id]}

@@ -12,6 +12,10 @@ const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export const RevenueChart: React.FC<RevenueChartProps> = ({ points, periodLabel }) => {
+  if (points.length === 0) {
+    return <p className="text-xs text-[#A8A29E] italic py-8 text-center">Sem dados de faturamento neste período.</p>;
+  }
+
   const max = Math.max(...points.map((p) => p.revenue), 1);
   const total = points.reduce((s, p) => s + p.revenue, 0);
   const totalOrders = points.reduce((s, p) => s + p.orders, 0);

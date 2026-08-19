@@ -1,11 +1,12 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logout, getDriverProfile } from '../../lib/auth';
+import { logout } from '../../lib/auth';
+import { useDriver } from './DriverStore';
 import { LogOut } from 'lucide-react';
 
 export const DriverHeader: React.FC = () => {
   const navigate = useNavigate();
-  const profile = getDriverProfile();
+  const { profile } = useDriver();
 
   const handleLogout = () => {
     logout('driver');

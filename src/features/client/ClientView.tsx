@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useClient, useCartTotals } from './ClientStore';
+import { useCart } from './CartStore';
+import { useCheckout } from './CheckoutStore';
+import { useClientShell, useCartTotals } from './ClientStore';
 import { ProductCard } from './ProductCard';
 import { ProductModal } from './ProductModal';
 import { CartDrawer } from './CartDrawer';
@@ -18,8 +20,9 @@ function formatTodayHours(hours: OpeningHour | null): string {
 }
 
 export const ClientView: React.FC = () => {
-  const { products, categories, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, orders, trackingOrderId, setTrackingOrderId, cart, isCartOpen, setIsCartOpen, addToCart, isClosedModalOpen, setClosedModalOpen, settings } =
-    useClient();
+  const { products, categories, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, settings } = useClientShell();
+  const { orders, trackingOrderId, setTrackingOrderId } = useCheckout();
+  const { cart, isCartOpen, setIsCartOpen, addToCart, isClosedModalOpen, setClosedModalOpen } = useCart();
   const { total } = useCartTotals();
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -280,6 +283,8 @@ export const ClientView: React.FC = () => {
                         className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                           ord.status === 'entregue'
                             ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                            : ord.status === 'cancelado'
+                            ? 'bg-[#F5F5F4] text-[#78716C] border border-[#E7E5E4]'
                             : 'bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5] animate-pulse'
                         }`}
                       >

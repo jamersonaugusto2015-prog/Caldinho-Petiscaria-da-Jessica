@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import { INITIAL_PRODUCTS } from '../src/data/initialData';
 import { OpeningHour, SizeOption, StoreSettings } from '../src/types';
 import { DEFAULT_OPENING_HOURS, DEFAULT_SIZE_OPTIONS, DEFAULT_STORE_SETTINGS } from '../src/shared/defaults';
-import { hashPassword } from './auth';
+import { hashPasswordSync } from './auth';
 import { DATA_DIR } from './paths';
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -12,6 +12,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 export const db = new Database(`${DATA_DIR}/caldinho.db`);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS products (
@@ -77,6 +78,19 @@ function migrateOrdersCustomerId() {
   }
 }
 migrateOrdersCustomerId();
+
+// Índices para as consultas reais do app (kanban por status, histórico por
+// cliente, relatórios ordenados por data e chat por pedido). Sem eles, cada
+// consulta é um full table scan que piora conforme o banco cresce ao longo
+// dos anos. CREATE INDEX IF NOT EXISTS é idempotente: seguro em todo boot.
+// Roda depois das migrações acima: idx_orders_customer_created usa customer_id,
+// que só existe a partir daqui em um banco antigo (migrado, não recriado).
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+  CREATE INDEX IF NOT EXISTS idx_orders_customer_created ON orders(customer_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_order_id ON chat_messages(order_id);
+`);
 
 // ---------- Seeds ----------
 function seedCategories() {
@@ -144,7 +158,7 @@ function seedDrivers() {
       id: 'drv-1',
       name: 'Marcos Motoboy',
       phone: '(81) 98765-4321',
-      password: hashPassword('1234'),
+      password: hashPasswordSync('1234'),
       bikeModel: 'Honda Biz 125',
       plate: 'PCD-1A23',
       active: true,
@@ -160,7 +174,7 @@ function upgradeDriverPasswords() {
   for (const row of rows) {
     const d = JSON.parse(row.data);
     if (typeof d.password === 'string' && !d.password.startsWith('scrypt:')) {
-      d.password = hashPassword(d.password);
+      d.password = hashPasswordSync(d.password);
       db.prepare('UPDATE drivers SET data = ? WHERE id = ?').run(JSON.stringify(d), row.id);
     }
   }
@@ -206,7 +220,7 @@ function seedSettings() {
   const pinRow = db.prepare("SELECT value FROM meta WHERE key = 'kitchen_pin_hash'").get();
   if (!pinRow) {
     db.prepare("INSERT INTO meta (key, value) VALUES ('kitchen_pin_hash', ?)").run(
-      hashPassword('1234')
+      hashPasswordSync('1234')
     );
   }
 
@@ -315,11 +329,15 @@ export function createFreeRedeem(productId: string): string {
   return token;
 }
 
-export function consumeFreeRedeem(token: string, productId: string): boolean {
+export function peekFreeRedeem(token: string, productId: string): boolean {
   const row = db.prepare('SELECT product_id, used FROM free_redeems WHERE token = ?').get(token) as
     | { product_id: string; used: number }
     | undefined;
-  if (!row || row.used !== 0 || row.product_id !== productId) return false;
+  return !!row && row.used === 0 && row.product_id === productId;
+}
+
+export function consumeFreeRedeem(token: string, productId: string): boolean {
+  if (!peekFreeRedeem(token, productId)) return false;
   db.prepare('UPDATE free_redeems SET used = 1 WHERE token = ?').run(token);
   return true;
 }

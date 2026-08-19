@@ -8,6 +8,7 @@
     "dev:web": "vite --port=3000 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
+    "test": "tsx --test server/*.test.ts src/shared/*.test.ts",
     "preview": "vite preview",
     "start": "tsx server/index.ts",
     "clean": "rm -rf dist server.js",

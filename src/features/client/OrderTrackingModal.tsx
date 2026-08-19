@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { useClient } from './ClientStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { useCheckout } from './CheckoutStore';
+import { useClientShell } from './ClientStore';
 import { LiveMap } from '../../components/common/LiveMap';
 import { formatKm } from '../../shared/geo';
 import { whatsAppLink } from '../../lib/whatsapp';
@@ -19,8 +20,26 @@ import {
   Check,
   ShieldCheck,
   MessageCircle,
+  AlertCircle,
+  AlertTriangle,
+  Timer,
+  Undo2,
 } from 'lucide-react';
 import { OrderStatus } from '../../types';
+import { usePixPaymentPoll } from './usePixPoll';
+import { copyToClipboard, selectElementText } from './clipboard';
+import { OrderActionSheet } from './OrderActionSheet';
+import {
+  cancelRequestDeadline,
+  canOpenComplaint,
+  formatShortDate,
+  isCancelRequestExpired,
+  isOrderLate,
+  minutesLeft,
+  useNow,
+} from './orderTiming';
+
+const REQUESTABLE_STATUSES: OrderStatus[] = ['em_preparo', 'pronto', 'saiu_entrega'];
 
 interface OrderTrackingModalProps {
   orderId: string;
@@ -29,20 +48,200 @@ interface OrderTrackingModalProps {
 }
 
 export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId, onClose, onOpenChat }) => {
-  const { orders, rateOrder, cancelOrder, settings } = useClient();
+  const {
+    orders,
+    rateOrder,
+    cancelOrder,
+    requestOrderCancellation,
+    openOrderComplaint,
+    customerId,
+    applyOrderUpdate,
+  } = useCheckout();
+  const { settings } = useClientShell();
   const order = orders.find((o) => o.id === orderId);
 
   const [ratingStars, setRatingStars] = useState(5);
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
-  const [isCanceling, setIsCanceling] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sheet, setSheet] = useState<'cancel' | 'request' | 'complaint' | null>(null);
   const [pixCopied, setPixCopied] = useState(false);
+  const [pixCopyFailed, setPixCopyFailed] = useState(false);
+  const pixCodeRef = useRef<HTMLDivElement>(null);
+
+  const hasPendingRequest = order?.cancellationRequest?.status === 'pendente';
+  const now = useNow(hasPendingRequest ? 10000 : 60000);
+
+  const { failed: pixPollFailed, retry: retryPixPoll } = usePixPaymentPoll({
+    orderId: order?.id,
+    customerId,
+    mpPaymentId: order?.payment.mpPaymentId,
+    isPaid: order?.payment.isPaid ?? false,
+    isCanceled: order?.status === 'cancelado',
+    onUpdate: applyOrderUpdate,
+  });
+
+  const handleCopyPix = async (text?: string) => {
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setPixCopyFailed(false);
+      setPixCopied(true);
+      setTimeout(() => setPixCopied(false), 3000);
+      return;
+    }
+    setPixCopied(false);
+    setPixCopyFailed(true);
+    if (pixCodeRef.current) selectElementText(pixCodeRef.current);
+    setTimeout(() => setPixCopyFailed(false), 5000);
+  };
 
   if (!order) return null;
 
-  // Pagamento PIX pendente: bloqueia o detalhe/rastreio até a cozinha confirmar
-  if (order.payment.method === 'pix' && !order.payment.isPaid) {
+  const isCanceled = order.status === 'cancelado';
+  const cancelRequest = order.cancellationRequest;
+  const requestExpired = isCancelRequestExpired(cancelRequest, now);
+  const requestPending = cancelRequest?.status === 'pendente' && !requestExpired;
+  const canRequestCancel =
+    !isCanceled &&
+    REQUESTABLE_STATUSES.includes(order.status) &&
+    (!cancelRequest || cancelRequest.status === 'recusado');
+  const isLate = isOrderLate(order, now);
+  const refundStatus = order.payment.refundStatus;
+  const canComplain = canOpenComplaint(order, now);
+
+  const handleImmediateCancel = async (reason: string) => {
+    setIsSubmitting(true);
+    const ok = await cancelOrder(order.id, reason || 'Cancelado pelo cliente');
+    setIsSubmitting(false);
+    if (ok) setSheet(null);
+  };
+
+  const handleRequestCancel = async (reason: string) => {
+    setIsSubmitting(true);
+    const ok = await requestOrderCancellation(order.id, reason);
+    setIsSubmitting(false);
+    if (ok) setSheet(null);
+  };
+
+  const handleComplaint = async (text: string) => {
+    setIsSubmitting(true);
+    const ok = await openOrderComplaint(order.id, text);
+    setIsSubmitting(false);
+    if (ok) setSheet(null);
+  };
+
+  const actionSheet =
+    sheet === 'cancel' ? (
+      <OrderActionSheet
+        emoji="🚫"
+        title="Cancelar este pedido?"
+        description="A loja ainda não começou o preparo, então o cancelamento é na hora. Depois de cancelar não dá para voltar atrás."
+        reasonLabel="Motivo (opcional)"
+        reasonPlaceholder="Ex: pedi sem querer, mudei de endereço..."
+        confirmLabel="Sim, cancelar pedido"
+        busyLabel="Cancelando..."
+        dismissLabel="Não, manter o pedido"
+        busy={isSubmitting}
+        onConfirm={handleImmediateCancel}
+        onClose={() => setSheet(null)}
+      />
+    ) : sheet === 'request' ? (
+      <OrderActionSheet
+        emoji="🙋"
+        title="Pedir cancelamento"
+        description="Seu caldinho já está sendo preparado, então quem decide é a loja. Ela tem 5 minutos para responder."
+        reasonLabel="Conte o motivo"
+        reasonPlaceholder="Ex: está muito atrasado, não posso mais receber..."
+        reasonRequired
+        confirmLabel="Enviar pedido de cancelamento"
+        busyLabel="Enviando..."
+        busy={isSubmitting}
+        onConfirm={handleRequestCancel}
+        onClose={() => setSheet(null)}
+      />
+    ) : sheet === 'complaint' ? (
+      <OrderActionSheet
+        emoji="😕"
+        title="Tive um problema"
+        description="Conte o que aconteceu com este pedido. A loja recebe sua mensagem no chat e responde por lá."
+        reasonLabel="O que aconteceu?"
+        reasonPlaceholder="Ex: veio faltando um item, chegou frio..."
+        reasonRequired
+        maxLength={400}
+        confirmLabel="Enviar reclamação"
+        busyLabel="Enviando..."
+        busy={isSubmitting}
+        onConfirm={handleComplaint}
+        onClose={() => setSheet(null)}
+      />
+    ) : null;
+
+  const storeWhatsAppButton = (label: string, message: string) =>
+    settings.storeWhatsApp ? (
+      <a
+        href={whatsAppLink(settings.storeWhatsApp, message)}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2.5 w-full bg-[#25D366] hover:bg-[#1EBE5B] text-white font-extrabold py-3 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-xs"
+      >
+        <MessageCircle className="w-4 h-4" />
+        {label}
+      </a>
+    ) : null;
+
+  const immediateCancelButton = order.status === 'recebido' && (
+    <button
+      onClick={() => setSheet('cancel')}
+      disabled={isSubmitting}
+      className="w-full py-3 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition disabled:opacity-50"
+    >
+      <Ban className="w-4 h-4" />
+      <span>{isSubmitting ? 'Cancelando...' : 'Cancelar pedido'}</span>
+    </button>
+  );
+
+  const refundPanel = refundStatus && (
+    <div
+      className={`rounded-2xl p-3.5 border text-xs font-bold flex items-start gap-2 ${
+        refundStatus === 'devolvido'
+          ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
+          : refundStatus === 'falhou'
+          ? 'bg-[#FEF2F2] border-[#FCA5A5] text-[#B91C1C]'
+          : 'bg-[#FEF3C7] border-[#FCD34D] text-[#92400E]'
+      }`}
+    >
+      <Undo2 className="w-4 h-4 shrink-0 mt-0.5" />
+      <div className="flex-1">
+        {refundStatus === 'pendente' && (
+          <>
+            <p>Devolução de R$ {order.total.toFixed(2)} em andamento.</p>
+            <p className="font-semibold mt-0.5">
+              O dinheiro volta pelo mesmo jeito que você pagou. Qualquer dúvida, fale com a loja pelo chat.
+            </p>
+          </>
+        )}
+        {refundStatus === 'devolvido' && <p>Valor devolvido em {formatShortDate(order.payment.refundedAt)}.</p>}
+        {refundStatus === 'falhou' && (
+          <>
+            <p>A devolução falhou. A loja ainda deve R$ {order.total.toFixed(2)} a você.</p>
+            {storeWhatsAppButton(
+              'Falar com a loja no WhatsApp',
+              `Olá! 🍲 Pedido ${order.id} foi cancelado e a devolução de R$ ${order.total.toFixed(
+                2
+              )} não foi concluída. Podem verificar?`
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // Pagamento PIX pendente: bloqueia o detalhe/rastreio até a cozinha confirmar.
+  // Pedido cancelado nunca entra aqui — seria pedir dinheiro por um pedido que não existe mais.
+  if (!isCanceled && order.payment.method === 'pix' && !order.payment.isPaid) {
     return (
+      <>
       <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
         <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
           <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between shrink-0">
@@ -72,35 +271,51 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
 
               <div>
                 <p className="text-[11px] text-[#57534E] mb-1.5">
-                  Pague <strong>R$ {order.total.toFixed(2)}</strong> para a chave PIX abaixo e envie o
-                  comprovante no WhatsApp:
+                  Pague <strong>R$ {order.total.toFixed(2)}</strong> no app do banco.
+                  {order.payment.mpPaymentId
+                    ? ' Esta tela libera sozinha quando o PIX cair.'
+                    : ' Envie o comprovante no WhatsApp.'}
                 </p>
+                {order.payment.pixQrCode && (
+                  <img
+                    src={`data:image/png;base64,${order.payment.pixQrCode}`}
+                    alt="QR Code PIX"
+                    className="w-44 h-44 mx-auto rounded-xl border border-[#E7E5E4] bg-white p-1"
+                  />
+                )}
                 <div className="bg-[#F5F5F4] border-2 border-dashed border-[#B91C1C]/40 rounded-2xl p-3.5">
                   <div className="text-[9px] font-extrabold text-[#57534E] uppercase tracking-wider mb-1">
-                    Chave PIX da loja
+                    PIX copia e cola
                   </div>
-                  <div className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
-                    {settings.pixKey}
+                  <div ref={pixCodeRef} className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
+                    {order.payment.pixCopyPaste || settings.pixKey}
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!settings.pixKey) return;
-                      navigator.clipboard
-                        .writeText(settings.pixKey)
-                        .then(() => {
-                          setPixCopied(true);
-                          setTimeout(() => setPixCopied(false), 3000);
-                        })
-                        .catch(() => {});
-                    }}
+                    onClick={() => void handleCopyPix(order.payment.pixCopyPaste || settings.pixKey)}
                     className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
                   >
                     {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{pixCopied ? 'Chave copiada!' : 'Copiar chave PIX'}</span>
+                    <span>{pixCopied ? 'PIX copiado!' : 'Copiar PIX'}</span>
                   </button>
+                  {pixCopyFailed && (
+                    <p className="mt-2 text-[10px] text-[#B91C1C] font-bold">
+                      Não conseguimos copiar automaticamente. Selecionamos o código acima — copie manualmente.
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {pixPollFailed && (
+                <button
+                  type="button"
+                  onClick={retryPixPoll}
+                  className="w-full bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-3.5 text-xs text-[#B91C1C] font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>Não conseguimos confirmar o pagamento. Toque para tentar de novo.</span>
+                </button>
+              )}
 
               {settings.storeWhatsApp ? (
                 <a
@@ -132,25 +347,12 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               </span>
             </div>
 
-            {order.status === 'recebido' && (
-              <button
-                onClick={() => {
-                  if (!window.confirm('Tem certeza que deseja cancelar este pedido?')) return;
-                  setIsCanceling(true);
-                  cancelOrder(order.id, 'Cancelado pelo cliente (PIX não pago)').finally(() =>
-                    setIsCanceling(false)
-                  );
-                }}
-                disabled={isCanceling}
-                className="w-full py-3 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition disabled:opacity-50"
-              >
-                <Ban className="w-4 h-4" />
-                <span>{isCanceling ? 'Cancelando...' : 'Cancelar pedido'}</span>
-              </button>
-            )}
+            {immediateCancelButton}
           </div>
         </div>
       </div>
+      {actionSheet}
+      </>
   );
 }
 
@@ -179,7 +381,6 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
     }
   };
 
-  const isCanceled = order.status === 'cancelado';
   const currentIndex = getStepIndex(order.status);
   const statusColor =
     order.status === 'cancelado'
@@ -194,14 +395,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
     setRatingSubmitted(true);
   };
 
-  const handleCancel = async () => {
-    if (!window.confirm('Tem certeza que deseja cancelar este pedido?')) return;
-    setIsCanceling(true);
-    await cancelOrder(order.id, 'Cancelado pelo cliente');
-    setIsCanceling(false);
-  };
-
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
       <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
         <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between shrink-0">
@@ -219,9 +414,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   : 'Ao Vivo'}
               </span>
             </div>
-            <p className="text-xs text-[#57534E]">
+            <p className={`text-xs ${isLate ? 'text-[#B45309] font-bold' : 'text-[#57534E]'}`}>
               {isCanceled
                 ? order.cancellationReason || 'Pedido cancelado'
+                : isLate
+                ? `A previsão de ~${order.estimatedDeliveryMinutes} minutos já passou`
                 : `Previsão de entrega: ~${order.estimatedDeliveryMinutes} minutos`}
             </p>
           </div>
@@ -235,6 +432,109 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto flex-1 bg-[#F5F5F4]/30">
+          {isCanceled && (
+            <div className="bg-white rounded-2xl p-4 border border-[#FCA5A5] shadow-xs space-y-1.5">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-[#B91C1C]">
+                <Ban className="w-4 h-4 shrink-0" />
+                <span>Pedido cancelado</span>
+              </div>
+              {cancelRequest?.status === 'aceito' && (
+                <p className="text-xs font-bold text-[#1C1917]">Cancelamento aceito pela loja.</p>
+              )}
+              <p className="text-xs text-[#57534E]">
+                {order.cancellationReason || 'Este pedido não será mais preparado nem entregue.'}
+              </p>
+              {order.cancelledAt && (
+                <p className="text-[10px] text-[#A8A29E] font-bold">
+                  {order.cancelledBy === 'loja' ? 'Cancelado pela loja' : 'Cancelado por você'} em{' '}
+                  {new Date(order.cancelledAt).toLocaleString('pt-BR', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
+                </p>
+              )}
+              {!refundStatus && order.payment.isPaid && (
+                <p className="text-[11px] text-[#57534E] font-semibold">
+                  Se você já pagou, fale com a loja pelo chat para acertar a devolução.
+                </p>
+              )}
+            </div>
+          )}
+
+          {refundPanel}
+
+          {isLate && (
+            <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3.5 text-xs font-bold text-[#92400E] flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p>Seu pedido está atrasado.</p>
+                <p className="font-semibold mt-0.5">
+                  A loja continua com ele. Fale pelo chat ou peça o cancelamento aqui embaixo se não puder
+                  mais esperar.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {requestPending && (
+            <div className="bg-white rounded-2xl p-3.5 border border-[#FCD34D] shadow-xs text-xs space-y-1">
+              <div className="flex items-center gap-2 font-extrabold text-[#92400E]">
+                <Timer className="w-4 h-4 shrink-0" />
+                <span>Pedido de cancelamento enviado. A loja tem 5 minutos para responder.</span>
+              </div>
+              <p className="text-[11px] text-[#57534E] font-bold">
+                Faltam {minutesLeft(cancelRequestDeadline(cancelRequest), now)} min para a resposta.
+              </p>
+              {cancelRequest?.reason && (
+                <p className="text-[11px] text-[#A8A29E]">Seu motivo: {cancelRequest.reason}</p>
+              )}
+            </div>
+          )}
+
+          {requestExpired && (
+            <div className="bg-white rounded-2xl p-3.5 border border-[#FCA5A5] shadow-xs text-xs">
+              <div className="flex items-center gap-2 font-extrabold text-[#B91C1C]">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>A loja ainda não respondeu. Fale com ela pelo WhatsApp.</span>
+              </div>
+              {storeWhatsAppButton(
+                'Falar com a loja no WhatsApp',
+                `Olá! 🍲 Pedi o cancelamento do pedido ${order.id} e ainda não tive resposta. Podem me ajudar?`
+              )}
+            </div>
+          )}
+
+          {cancelRequest?.status === 'recusado' && !isCanceled && (
+            <div className="bg-white rounded-2xl p-3.5 border border-[#E7E5E4] shadow-xs text-xs space-y-1">
+              <div className="flex items-center gap-2 font-extrabold text-[#1C1917]">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#B45309]" />
+                <span>A loja não aceitou o cancelamento.</span>
+              </div>
+              {cancelRequest.responseNote && (
+                <p className="text-[11px] text-[#57534E]">{cancelRequest.responseNote}</p>
+              )}
+              <p className="text-[11px] text-[#A8A29E]">Seu pedido segue normalmente.</p>
+            </div>
+          )}
+
+          {order.complaint && (
+            <div className="bg-white rounded-2xl p-3.5 border border-[#E7E5E4] shadow-xs text-xs space-y-1">
+              <div className="flex items-center gap-2 font-extrabold text-[#1C1917]">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#B91C1C]" />
+                <span>
+                  {order.complaint.status === 'resolvida'
+                    ? 'Reclamação resolvida pela loja.'
+                    : 'Reclamação aberta.'}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#57534E]">{order.complaint.text}</p>
+              <p className="text-[10px] text-[#A8A29E] font-bold">
+                Aberta em {formatShortDate(order.complaint.openedAt)}
+                {order.complaint.status === 'aberta' && ' — continue a conversa pelo chat.'}
+              </p>
+            </div>
+          )}
+
           {!isCanceled && (
             <div className="bg-white p-4 rounded-2xl border border-[#E7E5E4] shadow-xs">
               <div className="flex items-center justify-between relative">
@@ -296,49 +596,65 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             />
           )}
 
-          {!isCanceled && (
-            <div className="bg-white p-3.5 rounded-2xl border border-[#E7E5E4] flex items-center justify-between gap-3 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
-                  🛵
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-[#1C1917]">
-                    {order.driverName || (order.status === 'pronto' ? 'Aguardando motoboy' : 'A definir')}
-                  </div>
-                  <div className="text-[10px] text-[#57534E]">Moto Boy Exclusivo da Loja</div>
-                </div>
+          {/* O chat continua acessível no pedido cancelado: é a hora em que mais se precisa falar. */}
+          <div className="bg-white p-3.5 rounded-2xl border border-[#E7E5E4] flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
+                {isCanceled ? '💬' : '🛵'}
               </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={onOpenChat}
-                  className="bg-[#B91C1C] hover:bg-[#991B1B] text-white p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Chat</span>
-                </button>
-                {order.driverPhone && (
-                  <a
-                    href={`tel:${order.driverPhone.replace(/\D/g, '')}`}
-                    className="bg-[#F5F5F4] hover:bg-[#E7E5E4] text-[#1C1917] p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 border border-[#E7E5E4] transition"
-                  >
-                    <Phone className="w-4 h-4" />
-                    <span>Ligar</span>
-                  </a>
-                )}
+              <div>
+                <div className="text-xs font-bold text-[#1C1917]">
+                  {isCanceled
+                    ? 'Fale com a loja'
+                    : order.driverName || (order.status === 'pronto' ? 'Aguardando motoboy' : 'A definir')}
+                </div>
+                <div className="text-[10px] text-[#57534E]">
+                  {isCanceled ? 'O chat deste pedido continua aberto' : 'Moto Boy Exclusivo da Loja'}
+                </div>
               </div>
             </div>
-          )}
 
-          {order.status === 'recebido' && (
+            <div className="flex gap-2">
+              <button
+                onClick={onOpenChat}
+                className="bg-[#B91C1C] hover:bg-[#991B1B] text-white p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Chat</span>
+              </button>
+              {!isCanceled && order.driverPhone && (
+                <a
+                  href={`tel:${order.driverPhone.replace(/\D/g, '')}`}
+                  className="bg-[#F5F5F4] hover:bg-[#E7E5E4] text-[#1C1917] p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 border border-[#E7E5E4] transition"
+                >
+                  <Phone className="w-4 h-4" />
+                  <span>Ligar</span>
+                </a>
+              )}
+            </div>
+          </div>
+
+          {immediateCancelButton}
+
+          {canRequestCancel && (
             <button
-              onClick={handleCancel}
-              disabled={isCanceling}
+              onClick={() => setSheet('request')}
+              disabled={isSubmitting}
               className="w-full py-3 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition disabled:opacity-50"
             >
               <Ban className="w-4 h-4" />
-              <span>{isCanceling ? 'Cancelando...' : 'Cancelar pedido'}</span>
+              <span>Pedir cancelamento</span>
+            </button>
+          )}
+
+          {canComplain && (
+            <button
+              onClick={() => setSheet('complaint')}
+              disabled={isSubmitting}
+              className="w-full py-3 rounded-2xl border border-[#E7E5E4] bg-white text-[#57534E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#F5F5F4] transition disabled:opacity-50"
+            >
+              <AlertCircle className="w-4 h-4" />
+              <span>Tive um problema com este pedido</span>
             </button>
           )}
 
@@ -451,5 +767,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
         </div>
       </div>
     </div>
+    {actionSheet}
+    </>
   );
 };

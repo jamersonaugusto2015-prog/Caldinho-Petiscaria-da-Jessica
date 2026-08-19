@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { KitchenProvider } from './KitchenStore';
+import { KitchenProvider } from './KitchenProvider';
 import { KitchenHeader } from './KitchenHeader';
 import { KitchenSidebar } from './KitchenSidebar';
-import { KitchenView, KitchenTab } from './KitchenView';
+import { KitchenView } from './KitchenView';
+import type { KitchenTab } from './kitchenTabs';
 import { LoginGate } from '../../components/LoginGate';
-import { isAuthenticated } from '../../lib/auth';
+import { useRoleSession } from '../../lib/auth';
 import { Store } from 'lucide-react';
 
 export const KitchenApp: React.FC = () => {
-  const [authenticated, setAuthenticated] = useState(() => isAuthenticated('kitchen'));
+  const { authenticated, expired, refresh } = useRoleSession('kitchen');
   const [activeTab, setActiveTab] = useState<KitchenTab>('dashboard');
 
   if (!authenticated) {
@@ -18,7 +19,8 @@ export const KitchenApp: React.FC = () => {
         title="Painel do Restaurante"
         icon={<Store className="w-8 h-8" />}
         accentClass="bg-[#B91C1C]"
-        onLogin={() => setAuthenticated(true)}
+        onLogin={refresh}
+        hint={expired ? 'Sua sessão expirou, entre novamente.' : undefined}
       />
     );
   }

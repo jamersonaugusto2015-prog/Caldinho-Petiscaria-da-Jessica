@@ -10,19 +10,23 @@ function toRad(deg: number): number {
 export function haversineDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
-  const a =
+  const rawA =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  // Erro de ponto flutuante pode empurrar "a" pra pouco acima de 1 perto de
+  // pontos antípodas, o que vira sqrt(negativo) = NaN. Trava em [0, 1].
+  const a = Math.min(1, Math.max(0, rawA));
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return EARTH_RADIUS_KM * c;
 }
 
 /** Distância efetiva (com fator de rota) entre a loja e o endereço do cliente. */
 export function effectiveDistanceKm(address: DeliveryAddress, settings: StoreSettings): number {
-  if (address.distanceKm && address.distanceKm > 0) return address.distanceKm;
   if (
     typeof address.lat === 'number' &&
     typeof address.lng === 'number' &&
+    Number.isFinite(address.lat) &&
+    Number.isFinite(address.lng) &&
     Number.isFinite(settings.storeLat) &&
     Number.isFinite(settings.storeLng)
   ) {
@@ -30,6 +34,7 @@ export function effectiveDistanceKm(address: DeliveryAddress, settings: StoreSet
     const factor = settings.routeFactor > 0 ? settings.routeFactor : 1.35;
     return Math.round(straight * factor * 100) / 100;
   }
+  if (address.distanceKm && address.distanceKm > 0) return address.distanceKm;
   return 0;
 }
 

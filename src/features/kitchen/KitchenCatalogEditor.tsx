@@ -1,0 +1,110 @@
+import React, { useMemo, useState } from 'react';
+import { Check, ImagePlus, Megaphone, Pencil, PlusCircle, Tags, Ticket, Trash2, Upload, UtensilsCrossed, X } from 'lucide-react';
+import type { Category, ComboSlot, Coupon, ExtraOption, Product } from '../../types';
+import { ACCEPTED_IMAGE_TYPES, resizeImage, validateImageFile } from '../../lib/image';
+import { useKitchenCatalog } from './KitchenCatalogStore';
+import { useKitchenUpload } from './useKitchenUpload';
+import type { KitchenTab } from './kitchenTabs';
+
+const FALLBACK_CATEGORIES: Category[] = [
+  { id: 'caldinhos', label: 'Caldinhos', emoji: '🍲', color: '#C2410C', sort: 0 },
+  { id: 'petiscos', label: 'Petiscos', emoji: '🍤', color: '#7C3AED', sort: 1 },
+  { id: 'bebidas', label: 'Bebidas', emoji: '🥤', color: '#2563EB', sort: 2 },
+  { id: 'combos', label: 'Combos', emoji: '🍱', color: '#059669', sort: 3 },
+];
+
+const money = (value: number) => `R$ ${value.toFixed(2)}`;
+
+export const KitchenCatalogEditor: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }) => {
+  const {
+    products,
+    categories,
+    coupons,
+    toggleProductAvailability,
+    updateProductPrice,
+    updateProduct,
+    deleteProduct,
+    addProduct,
+    setCaldinhoDoDia,
+    updateProductImage,
+    saveCategory,
+    deleteCategory,
+    moveCategory,
+    saveCoupon,
+    deleteCoupon,
+  } = useKitchenCatalog();
+  const uploadImage = useKitchenUpload();
+  const [editor, setEditor] = useState<Product | 'new' | null>(null);
+  const sortedCategories = useMemo(
+    () => (categories.length ? [...categories].sort((a, b) => a.sort - b.sort) : FALLBACK_CATEGORIES),
+    [categories]
+  );
+  const editorModal = editor ? (
+    <ProductEditor
+      value={editor}
+      categories={sortedCategories}
+      onClose={() => setEditor(null)}
+      onSave={async (product) => {
+        if (editor === 'new') await addProduct(product);
+        else await updateProduct(product.id, product);
+        setEditor(null);
+      }}
+    />
+  ) : null;
+
+  if (activeTab === 'cardapio') {
+    return <><ProductCatalog products={products} categories={sortedCategories} onNew={() => setEditor('new')} onEdit={setEditor} onDelete={(product) => { if (window.confirm(`Excluir ${product.name}?`)) void deleteProduct(product.id); }} onToggle={(product) => toggleProductAvailability(product.id, product.available)} onPrice={updateProductPrice} onDay={setCaldinhoDoDia} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const url = await uploadImage(await resizeImage(file), `produto-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}</>;
+  }
+
+  if (activeTab === 'categorias') {
+    return <CategoryCatalog categories={sortedCategories} products={products} onSave={saveCategory} onDelete={deleteCategory} onMove={moveCategory} />;
+  }
+
+  if (activeTab === 'promocoes') {
+    return <><PromotionCatalog products={products} onDay={setCaldinhoDoDia} onEdit={setEditor} onUpdate={updateProduct} onUpload={async (product, file) => { const invalid = validateImageFile(file); if (invalid) return; const url = await uploadImage(await resizeImage(file), `promocao-${product.id}`); if (url) await updateProductImage(product.id, url); }} />{editorModal}</>;
+  }
+
+  if (activeTab === 'cupons') {
+    return <CouponCatalog coupons={coupons} onSave={saveCoupon} onDelete={deleteCoupon} />;
+  }
+
+  return editorModal;
+};
+
+const ProductCatalog: React.FC<{ products: Product[]; categories: Category[]; onNew: () => void; onEdit: (product: Product) => void; onDelete: (product: Product) => void; onToggle: (product: Product) => Promise<void>; onPrice: (id: string, price: number) => Promise<void>; onDay: (id: string) => Promise<void>; onUpload: (product: Product, file: File) => Promise<void> }> = ({ products, categories, onNew, onEdit, onDelete, onToggle, onPrice, onDay, onUpload }) => <div className="space-y-4"><Header icon={<UtensilsCrossed />} title="Cardápio e estoque" action={<button className="btn-primary" onClick={onNew}><PlusCircle className="w-4 h-4" />Novo produto</button>} /><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{products.map((product) => <div key={product.id} className={`bg-white rounded-2xl p-4 border shadow-xs ${product.available ? 'border-[#E7E5E4]' : 'border-red-200 opacity-70'}`}><div className="flex gap-3"><img src={product.image} alt={product.name} className="w-14 h-14 rounded-xl object-cover bg-[#F5F5F4]" /><div className="min-w-0 flex-1"><h3 className="font-extrabold text-sm truncate">{product.name}</h3><span className="text-[10px] uppercase text-[#57534E]">{categories.find((category) => category.id === product.category)?.label || product.category}</span>{product.isCaldinhoDoDia && <span className="block text-[10px] text-[#B91C1C] font-bold">🔥 Caldinho do dia</span>}</div></div><div className="flex items-center justify-between bg-[#F5F5F4] rounded-xl p-2 mt-3 text-xs"><span>Preço base</span><PriceInput product={product} onSave={onPrice} /></div><div className="flex gap-1.5 mt-3"><button className="btn-secondary flex-1" onClick={() => void onToggle(product)}>{product.available ? 'Pausar' : 'Reativar'}</button>{product.category === 'caldinhos' && <button className={`btn-secondary ${product.isCaldinhoDoDia ? 'text-[#B91C1C]' : ''}`} onClick={() => void onDay(product.id)}>🔥</button>}<label className="btn-secondary cursor-pointer"><Upload className="w-3.5 h-3.5" /><input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onUpload(product, file); }} /></label><button className="btn-secondary" onClick={() => onEdit(product)}><Pencil className="w-3.5 h-3.5" /></button><button className="btn-danger" onClick={() => onDelete(product)}><Trash2 className="w-3.5 h-3.5" /></button></div></div>)}</div></div>;
+
+const PriceInput: React.FC<{ product: Product; onSave: (id: string, price: number) => Promise<void> }> = ({ product, onSave }) => {
+  const [value, setValue] = useState(String(product.basePrice));
+  return <div className="flex items-center gap-1"><span>R$</span><input className="w-20 bg-white border border-[#E7E5E4] rounded-lg px-1.5 py-1 text-xs" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => { const parsed = Number(value); if (Number.isFinite(parsed) && parsed >= 0 && parsed !== product.basePrice) void onSave(product.id, parsed); }} /></div>;
+};
+
+const CategoryCatalog: React.FC<{ categories: Category[]; products: Product[]; onSave: (category: Category) => Promise<void>; onDelete: (id: string) => Promise<void>; onMove: (id: string, direction: -1 | 1) => Promise<void> }> = ({ categories, products, onSave, onDelete, onMove }) => <div className="space-y-4"><Header icon={<Tags />} title="Categorias" action={<button className="btn-primary" onClick={() => void onSave({ id: `cat-${Date.now()}`, label: 'Nova categoria', emoji: '🍽️', color: '#B91C1C', sort: categories.length })}><PlusCircle className="w-4 h-4" />Nova categoria</button>} /><div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{categories.map((category, index) => <CategoryRow key={category.id} category={category} count={products.filter((product) => product.category === category.id).length} first={index === 0} last={index === categories.length - 1} onSave={onSave} onDelete={onDelete} onMove={onMove} />)}</div></div>;
+
+const CategoryRow: React.FC<{ category: Category; count: number; first: boolean; last: boolean; onSave: (category: Category) => Promise<void>; onDelete: (id: string) => Promise<void>; onMove: (id: string, direction: -1 | 1) => Promise<void> }> = ({ category, count, first, last, onSave, onDelete, onMove }) => {
+  const [label, setLabel] = useState(category.label);
+  const [emoji, setEmoji] = useState(category.emoji);
+  const [color, setColor] = useState(category.color);
+  return <div className="bg-white rounded-2xl p-3 border border-[#E7E5E4] flex items-center gap-2"><div className="flex flex-col"><button disabled={first} onClick={() => void onMove(category.id, -1)}><span className="sr-only">Subir</span>↑</button><button disabled={last} onClick={() => void onMove(category.id, 1)}><span className="sr-only">Descer</span>↓</button></div><input aria-label="Emoji" className="w-12 bg-[#F5F5F4] rounded-lg p-2 text-center" value={emoji} onChange={(event) => setEmoji(event.target.value)} /><input className="flex-1 input" value={label} onChange={(event) => setLabel(event.target.value)} /><input aria-label="Cor" type="color" className="w-8 h-8" value={color} onChange={(event) => setColor(event.target.value)} /><button className="btn-primary p-2" onClick={() => void onSave({ ...category, label, emoji, color })}><Check className="w-4 h-4" /></button><button className="btn-danger p-2" disabled={count > 0} onClick={() => { if (window.confirm(`Excluir ${category.label}?`)) void onDelete(category.id); }}><Trash2 className="w-4 h-4" /></button></div>;
+};
+
+const PromotionCatalog: React.FC<{ products: Product[]; onDay: (id: string) => Promise<void>; onEdit: (product: Product) => void; onUpdate: (id: string, patch: Partial<Product>) => Promise<void>; onUpload: (product: Product, file: File) => Promise<void> }> = ({ products, onDay, onEdit, onUpdate, onUpload }) => <div className="space-y-4"><Header icon={<Megaphone />} title="Promoções" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{products.filter((product) => product.isPopular || product.isFlashPromo || product.isCaldinhoDoDia).map((product) => <div key={product.id} className="bg-white rounded-2xl border border-[#E7E5E4] p-4"><div className="flex items-center gap-3"><img src={product.image} alt={product.name} className="w-14 h-14 rounded-xl object-cover" /><div className="flex-1"><strong className="block">{product.name}</strong><span className="text-xs text-[#B91C1C]">{money(product.basePrice)}</span></div></div><div className="flex flex-wrap gap-1.5 mt-3 text-[10px] font-bold">{product.isCaldinhoDoDia && <span className="badge">🔥 Destaque</span>}{product.isPopular && <span className="badge">⭐ Popular</span>}{product.isFlashPromo && <span className="badge">⚡ Flash</span>}</div><div className="flex gap-2 mt-3"><button className="btn-secondary flex-1" onClick={() => onEdit(product)}>Editar</button><button className="btn-danger" onClick={() => void onUpdate(product.id, { isPopular: false, isFlashPromo: false, isCaldinhoDoDia: false, originalPrice: null })}>Remover</button><button className="btn-secondary" onClick={() => void onDay(product.id)}>🔥</button><label className="btn-secondary cursor-pointer"><ImagePlus className="w-3.5 h-3.5" /><input type="file" accept={ACCEPTED_IMAGE_TYPES} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onUpload(product, file); }} /></label></div></div>)}</div>{products.every((product) => !product.isPopular && !product.isFlashPromo && !product.isCaldinhoDoDia) && <Empty text="Nenhuma promoção ativa." />}</div>;
+
+const CouponCatalog: React.FC<{ coupons: Coupon[]; onSave: (coupon: Coupon) => Promise<void>; onDelete: (code: string) => Promise<void> }> = ({ coupons, onSave, onDelete }) => {
+  const [form, setForm] = useState({ code: '', percent: '', fixed: '', min: '', description: '' });
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.code.trim()) return; void onSave({ code: form.code.trim().toUpperCase(), discountPercent: form.percent ? Number(form.percent) : undefined, discountFixed: form.fixed ? Number(form.fixed) : undefined, minOrderValue: Number(form.min) || 0, description: form.description.trim() || 'Cupom de desconto' }); setForm({ code: '', percent: '', fixed: '', min: '', description: '' }); };
+  return <div className="space-y-4"><Header icon={<Ticket />} title="Cupons de desconto" subtitle={`${coupons.length} ativo(s).`} /><form onSubmit={submit} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2"><input className="input" placeholder="Código" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required /><input className="input" type="number" placeholder="% desconto" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} /><input className="input" type="number" placeholder="R$ fixo" value={form.fixed} onChange={(event) => setForm({ ...form, fixed: event.target.value })} /><input className="input" type="number" placeholder="Pedido mínimo" value={form.min} onChange={(event) => setForm({ ...form, min: event.target.value })} /><input className="input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><button className="btn-primary"><PlusCircle className="w-4 h-4" />Salvar</button></form><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{coupons.map((coupon) => <div key={coupon.code} className="bg-white rounded-2xl p-4 border border-dashed border-[#B91C1C]/40"><div className="flex justify-between gap-2"><strong className="bg-[#B91C1C] text-white rounded px-2 py-1 text-xs">{coupon.code}</strong><button className="btn-danger p-1" onClick={() => { if (window.confirm(`Excluir ${coupon.code}?`)) void onDelete(coupon.code); }}><Trash2 className="w-3.5 h-3.5" /></button></div><p className="text-xs mt-2">{coupon.description}</p><span className="text-[10px] text-[#57534E]">{coupon.discountPercent ? `${coupon.discountPercent}% OFF` : coupon.discountFixed ? `-${money(coupon.discountFixed)}` : 'Sem desconto'} · mínimo {money(coupon.minOrderValue)}</span></div>)}</div></div>;
+};
+
+const ProductEditor: React.FC<{ value: Product | 'new'; categories: Category[]; onClose: () => void; onSave: (product: Product) => Promise<void> }> = ({ value, categories, onClose, onSave }) => {
+  const original = value === 'new' ? null : value;
+  const [form, setForm] = useState({ id: original?.id || `prod-${Date.now()}`, name: original?.name || '', description: original?.description || '', category: original?.category || categories[0]?.id || 'caldinhos', basePrice: String(original?.basePrice || ''), image: original?.image || '', prepTimeMinutes: String(original?.prepTimeMinutes || 15), available: original?.available ?? true, isPopular: original?.isPopular ?? false, isFlashPromo: original?.isFlashPromo ?? false, originalPrice: original?.originalPrice ? String(original.originalPrice) : '' });
+  const [extras, setExtras] = useState<ExtraOption[]>(() => original?.allowedExtras ? original.allowedExtras.map((extra) => ({ ...extra })) : []);
+  const [comboSlots, setComboSlots] = useState<ComboSlot[]>(() => original?.comboSlots ? original.comboSlots.map((slot) => ({ ...slot, options: slot.options.map((option) => ({ ...option })) })) : []);
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.basePrice) return; void onSave({ ...(original || { rating: 0, reviewsCount: 0 }), ...form, basePrice: Number(form.basePrice), prepTimeMinutes: Number(form.prepTimeMinutes) || 15, originalPrice: form.originalPrice ? Number(form.originalPrice) : undefined, image: form.image || 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&q=80&w=800', allowedExtras: extras.filter((extra) => extra.name.trim()).map((extra) => ({ ...extra, name: extra.name.trim() })), comboSlots: comboSlots.filter((slot) => slot.label.trim()).map((slot) => ({ ...slot, label: slot.label.trim(), options: slot.options.filter((option) => option.label.trim()).map((option) => ({ ...option, label: option.label.trim() })) })) }); };
+  const addExtra = () => setExtras((current) => [...current, { id: `extra-${Date.now()}`, name: '', price: 0 }]);
+  const addSlot = () => setComboSlots((current) => [...current, { id: `slot-${Date.now()}`, label: `Escolha ${current.length + 1}`, required: true, options: [] }]);
+  return <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><form onSubmit={submit} className="bg-white rounded-2xl p-5 w-full max-w-lg max-h-[92vh] overflow-y-auto space-y-3"><div className="flex justify-between"><h3 className="text-lg font-extrabold">{original ? 'Editar produto' : 'Novo produto'}</h3><button type="button" onClick={onClose}>✕</button></div><input className="input" placeholder="Nome" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /><textarea className="input min-h-20" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><div className="grid grid-cols-2 gap-2"><select className="input" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.emoji} {category.label}</option>)}</select><input className="input" type="number" step="any" placeholder="Preço" value={form.basePrice} onChange={(event) => setForm({ ...form, basePrice: event.target.value })} required /></div><div className="grid grid-cols-2 gap-2"><input className="input" type="number" min="1" placeholder="Preparo (min)" value={form.prepTimeMinutes} onChange={(event) => setForm({ ...form, prepTimeMinutes: event.target.value })} /><input className="input" type="text" placeholder="URL da imagem" value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /></div><div className="grid grid-cols-2 gap-2 text-xs"><label><input type="checkbox" checked={form.available} onChange={(event) => setForm({ ...form, available: event.target.checked })} /> Disponível</label><label><input type="checkbox" checked={form.isPopular} onChange={(event) => setForm({ ...form, isPopular: event.target.checked })} /> Popular</label><label><input type="checkbox" checked={form.isFlashPromo} onChange={(event) => setForm({ ...form, isFlashPromo: event.target.checked })} /> Flash</label><input className="input" type="number" placeholder="Preço original" value={form.originalPrice} onChange={(event) => setForm({ ...form, originalPrice: event.target.value })} /></div><fieldset className="border border-[#E7E5E4] rounded-xl p-3 space-y-2"><legend className="text-xs font-extrabold px-1">Adicionais</legend>{extras.map((extra, index) => <div key={extra.id} className="flex gap-2"><input className="input flex-1" placeholder="Nome do adicional" value={extra.name} onChange={(event) => setExtras((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} /><input className="input w-24" type="number" step="any" value={extra.price} onChange={(event) => setExtras((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: Number(event.target.value) || 0 } : item))} /><button type="button" className="btn-danger p-2" onClick={() => setExtras((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X className="w-3.5 h-3.5" /></button></div>)}<button type="button" className="btn-secondary" onClick={addExtra}><PlusCircle className="w-3.5 h-3.5" />Adicionar adicional</button></fieldset><fieldset className="border border-[#E7E5E4] rounded-xl p-3 space-y-2"><legend className="text-xs font-extrabold px-1">Escolhas do combo</legend>{comboSlots.map((slot, slotIndex) => <div key={slot.id} className="bg-[#F5F5F4] rounded-xl p-2 space-y-2"><div className="flex gap-2"><input className="input flex-1" value={slot.label} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex === slotIndex ? { ...item, label: event.target.value } : item))} /><button type="button" className="btn-danger p-2" onClick={() => setComboSlots((current) => current.filter((_, itemIndex) => itemIndex !== slotIndex))}><X className="w-3.5 h-3.5" /></button></div>{slot.options.map((option, optionIndex) => <div key={option.id} className="flex gap-2 pl-2"><input className="input flex-1" placeholder="Opção" value={option.label} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex !== slotIndex ? item : { ...item, options: item.options.map((choice, choiceIndex) => choiceIndex === optionIndex ? { ...choice, label: event.target.value } : choice) }))} /><input className="input w-20" type="number" step="any" value={option.priceDelta || 0} onChange={(event) => setComboSlots((current) => current.map((item, itemIndex) => itemIndex !== slotIndex ? item : { ...item, options: item.options.map((choice, choiceIndex) => choiceIndex === optionIndex ? { ...choice, priceDelta: Number(event.target.value) || 0 } : choice) }))} /></div>)}<button type="button" className="btn-secondary" onClick={() => setComboSlots((current) => current.map((item, itemIndex) => itemIndex === slotIndex ? { ...item, options: [...item.options, { id: `option-${Date.now()}`, label: '', priceDelta: 0 }] } : item))}>Adicionar opção</button></div>)}<button type="button" className="btn-secondary" onClick={addSlot}><PlusCircle className="w-3.5 h-3.5" />Adicionar escolha</button></fieldset><div className="flex gap-2"><button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-primary flex-1"><Check className="w-4 h-4" />Salvar</button></div></form></div>;
+};
+
+const Header: React.FC<{ title: string; subtitle?: string; icon: React.ReactNode; action?: React.ReactNode }> = ({ title, subtitle, icon, action }) => <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl bg-[#B91C1C] text-white flex items-center justify-center">{icon}</div><div><h2 className="text-lg font-extrabold">{title}</h2>{subtitle && <p className="text-xs text-[#57534E]">{subtitle}</p>}</div></div>{action}</div>;
+const Empty: React.FC<{ text: string }> = ({ text }) => <p className="text-xs text-[#A8A29E] italic py-8 text-center">{text}</p>;

@@ -1,21 +1,10 @@
-import { api } from './api';
+import { useEffect, useState } from 'react';
+import { api, readRoleTokens, writeRoleTokens, UNAUTHORIZED_EVENT } from './api';
+import type { ApiRole } from './api';
 import { Driver } from '../types';
 
-type AuthRole = 'kitchen' | 'driver';
-const STORAGE_KEY = 'ce_role_token';
+type AuthRole = ApiRole;
 const PROFILE_KEY = 'ce_driver_profile';
-
-function readTokens(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function writeTokens(tokens: Record<string, string>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
-}
 
 export async function login(
   role: AuthRole,
@@ -28,9 +17,9 @@ export async function login(
       pin,
       name,
     });
-    const tokens = readTokens();
+    const tokens = readRoleTokens();
     tokens[role] = res.token;
-    writeTokens(tokens);
+    writeRoleTokens(tokens);
     if (role === 'driver' && res.driver) {
       localStorage.setItem(PROFILE_KEY, JSON.stringify(res.driver));
     }
@@ -51,14 +40,47 @@ export function getDriverProfile(): Driver | null {
   }
 }
 
+export function getStoredRoleToken(role: AuthRole): string {
+  return readRoleTokens()[role] || '';
+}
+
 export function isAuthenticated(role: AuthRole): boolean {
-  const tokens = readTokens();
-  return Boolean(tokens[role]);
+  return Boolean(readRoleTokens()[role]);
 }
 
 export function logout(role: AuthRole): void {
-  const tokens = readTokens();
+  const tokens = readRoleTokens();
   delete tokens[role];
-  writeTokens(tokens);
+  writeRoleTokens(tokens);
   if (role === 'driver') localStorage.removeItem(PROFILE_KEY);
+}
+
+/**
+ * Tracks the role session, including expiry detected by the api adapter on a 401,
+ * so a stale token drops the app back to the login gate instead of looping errors.
+ */
+export function useRoleSession(role: AuthRole): { authenticated: boolean; expired: boolean; refresh: () => void } {
+  const [authenticated, setAuthenticated] = useState(() => isAuthenticated(role));
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const onUnauthorized = (event: Event) => {
+      const detail = (event as CustomEvent<{ role: AuthRole }>).detail;
+      if (detail?.role !== role) return;
+      if (role === 'driver') localStorage.removeItem(PROFILE_KEY);
+      setAuthenticated(false);
+      setExpired(true);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [role]);
+
+  return {
+    authenticated,
+    expired,
+    refresh: () => {
+      setAuthenticated(isAuthenticated(role));
+      setExpired(false);
+    },
+  };
 }

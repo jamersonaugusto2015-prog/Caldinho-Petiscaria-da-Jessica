@@ -95,13 +95,25 @@ export type OrderStatus =
   | 'entregue'
   | 'cancelado';
 
+/** 'pendente' = a loja deve esse dinheiro ao cliente e ainda não devolveu. */
+export type RefundStatus = 'pendente' | 'devolvido' | 'falhou';
+
 export interface PaymentDetails {
   method: 'pix' | 'card' | 'cash';
   pixQrCode?: string;
   pixCopyPaste?: string;
+  mpPaymentId?: string;
+  mpTicketUrl?: string;
   changeForAmount?: number;
   cardBrand?: string;
   isPaid: boolean;
+  /** Quem confirmou um pagamento manual (a cozinha compartilha um PIN). */
+  confirmedBy?: string;
+  refundStatus?: RefundStatus;
+  refundedAt?: string;
+  refundedBy?: string;
+  mpRefundId?: string;
+  refundError?: string;
 }
 
 export interface DeliveryAddress {
@@ -142,8 +154,35 @@ export interface Order {
   rating?: number;
   ratingComment?: string;
   cancellationReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: CancelActor;
+  cancellationRequest?: CancellationRequest;
+  complaint?: OrderComplaint;
   loyaltyPointsEarned: number;
 }
+
+export type CancelActor = 'cliente' | 'loja';
+
+/** Minutos que a cozinha tem para responder um pedido de cancelamento. */
+export const CANCEL_REQUEST_RESPONSE_MINUTES = 5;
+
+export interface CancellationRequest {
+  reason: string;
+  requestedAt: string;
+  status: 'pendente' | 'aceito' | 'recusado';
+  respondedAt?: string;
+  responseNote?: string;
+}
+
+/** Reclamação pós-entrega. Prazo em COMPLAINT_WINDOW_HOURS a partir da criação. */
+export interface OrderComplaint {
+  text: string;
+  openedAt: string;
+  status: 'aberta' | 'resolvida';
+  resolvedAt?: string;
+}
+
+export const COMPLAINT_WINDOW_HOURS = 24;
 
 export interface ChatMessage {
   id: string;
@@ -209,6 +248,12 @@ export interface StoreSettings {
 export interface PublicStoreSettings extends StoreSettings {
   kitchenPinSet: boolean;
   isOpen: boolean;
+  pixEnabled: boolean;
+  mercadoPagoConnected: boolean;
+  mercadoPagoOAuthReady: boolean;
+  mercadoPagoTestMode: boolean;
+  mercadoPagoPublicKey: string;
+  mercadoPagoUserId: string;
   backupEnabled: boolean;
   backupFrequencyDays: number;
   backupFolderId: string;

@@ -1,18 +1,38 @@
 /** Redimensiona uma imagem de arquivo para um data URL (JPEG), evitando uploads gigantes. */
 export function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    // Em celular fraco o decode de um arquivo corrompido às vezes não dispara
+    // onload nem onerror: sem isso o upload fica girando pra sempre, sem aviso.
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Tempo esgotado ao processar a imagem. Tente outro arquivo.'));
+    }, 15000);
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+    reader.onerror = () => settle(() => reject(new Error('Não foi possível ler a imagem.')));
     reader.onload = () => {
       const img = new Image();
       img.onerror = () =>
-        reject(
-          new Error(
-            'Não foi possível processar a imagem. Se for foto do iPhone (HEIC), converta para JPG/PNG antes.'
+        settle(() =>
+          reject(
+            new Error(
+              'Não foi possível processar a imagem. Se for foto do iPhone (HEIC), converta para JPG/PNG antes.'
+            )
           )
         );
       img.onload = () => {
         try {
+          if (!img.width || !img.height) {
+            return settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
+          }
           const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
           const w = Math.round(img.width * scale);
           const h = Math.round(img.height * scale);
@@ -20,15 +40,19 @@ export function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
-          if (!ctx) return reject(new Error('Falha ao processar a imagem.'));
+          if (!ctx) return settle(() => reject(new Error('Falha ao processar a imagem.')));
+          // Fundo branco: sem isso, um PNG com transparência (ex.: logo recortada)
+          // vira JPEG com fundo preto, porque o JPEG não tem canal alfa.
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0, w, h);
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
           if (!dataUrl || dataUrl.length < 100) {
-            return reject(new Error('Falha ao processar a imagem. Tente outro arquivo.'));
+            return settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
           }
-          resolve(dataUrl);
+          settle(() => resolve(dataUrl));
         } catch {
-          reject(new Error('Falha ao processar a imagem. Tente outro arquivo.'));
+          settle(() => reject(new Error('Falha ao processar a imagem. Tente outro arquivo.')));
         }
       };
       img.src = String(reader.result);

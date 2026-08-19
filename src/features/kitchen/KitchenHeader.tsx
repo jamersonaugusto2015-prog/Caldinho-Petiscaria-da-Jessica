@@ -1,13 +1,15 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../../lib/auth';
-import { useKitchen } from './KitchenStore';
+import { useKitchenSettings } from './KitchenSettingsStore';
+import { useKitchenSound } from './KitchenSoundStore';
 import { announceNewOrder, playOrderMp3 } from '../../lib/sound';
 import { Sparkles, LogOut, Bell, BellOff } from 'lucide-react';
 
 export const KitchenHeader: React.FC = () => {
   const navigate = useNavigate();
-  const { settings, storeLogo, saveSettings, soundEnabled, toggleSound } = useKitchen();
+  const { settings, storeLogo, saveSettings } = useKitchenSettings();
+  const { soundEnabled, toggleSound } = useKitchenSound();
 
   const handleToggleSound = () => {
     const turningOn = !soundEnabled;

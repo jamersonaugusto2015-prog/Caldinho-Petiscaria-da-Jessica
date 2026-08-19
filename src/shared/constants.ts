@@ -17,3 +17,6 @@ export const STATUS_ORDER: OrderStatus[] = [
   'entregue',
   'cancelado',
 ];
+
+/** Selos para resgatar 1 caldinho grátis. */
+export const LOYALTY_STAMP_COST = 10;

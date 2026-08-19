@@ -47,8 +47,11 @@ export function computeCartTotals(
     else if (coupon.discountFixed) discount = coupon.discountFixed;
     discount = Math.min(discount, subtotal);
   }
-  let deliveryFee = computeDeliveryFee(address, settings);
-  if (deliveryFee < 0) deliveryFee = 0;
+  const rawFee = computeDeliveryFee(address, settings);
+  if (rawFee < 0) {
+    return { subtotal, discount, deliveryFee: -1, total: -1 };
+  }
+  let deliveryFee = rawFee;
   if (settings.freeDeliveryAbove > 0 && subtotal >= settings.freeDeliveryAbove) deliveryFee = 0;
   const total = Math.max(0, Math.round((subtotal - discount + deliveryFee) * 100) / 100);
   return { subtotal, discount, deliveryFee, total };
@@ -57,8 +60,4 @@ export function computeCartTotals(
 export function findCoupon(code: string, coupons: Coupon[]): Coupon | undefined {
   const formatted = code.trim().toUpperCase();
   return coupons.find((c) => c.code === formatted);
-}
-
-export function loyaltyPointsEarned(total: number): number {
-  return Math.floor(total / 10);
 }

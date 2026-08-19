@@ -26,14 +26,19 @@ export const DriverView: React.FC = () => {
     myDeliveries,
     availableOrders,
     completedToday,
+    cancelledDeliveries,
+    dismissCancellation,
     earningsToday,
     feeForOrder,
     acceptAndStart,
     confirmDelivery,
     notificationToast,
+    locationStatus,
+    retryLocation,
   } = useDriver();
 
   const activeDeliveries = [...availableOrders, ...myDeliveries];
+  const gpsDown = locationStatus === 'denied' || locationStatus === 'unavailable';
 
   return (
     <div className="space-y-6 pb-16">
@@ -41,6 +46,53 @@ export const DriverView: React.FC = () => {
         <div className="bg-[#7C3AED] text-white px-4 py-2.5 text-center text-xs font-bold flex items-center justify-center gap-2 rounded-2xl shadow-md animate-pulse">
           <Flame className="w-4 h-4 text-[#FDE68A]" />
           <span>{notificationToast}</span>
+        </div>
+      )}
+
+      {gpsDown && (isOnline || myDeliveries.length > 0) && (
+        <div className="bg-[#B91C1C] text-white px-4 py-3 rounded-2xl shadow-md flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <ShieldAlert className="w-5 h-5 shrink-0" />
+            <span>GPS desligado — o cliente não vê sua localização.</span>
+          </div>
+          <button
+            onClick={retryLocation}
+            className="bg-white text-[#B91C1C] px-3 py-1.5 rounded-full text-[11px] font-black shrink-0"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {cancelledDeliveries.length > 0 && (
+        <div className="space-y-3">
+          {cancelledDeliveries.map((ord) => (
+            <div
+              key={ord.id}
+              className="bg-[#FEF2F2] border-2 border-[#B91C1C] rounded-2xl p-4 shadow-md flex items-start justify-between gap-3"
+            >
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="w-6 h-6 text-[#B91C1C] shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-extrabold text-[#B91C1C] text-sm">
+                    Corrida cancelada — Pedido {ord.id}
+                  </div>
+                  <p className="text-xs text-[#7C2D12] mt-0.5">
+                    {ord.cancellationReason || 'Motivo não informado'}
+                  </p>
+                  <p className="text-[11px] text-[#57534E] mt-1">
+                    Não siga para o endereço. Se já estiver a caminho, volte para a loja.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => dismissCancellation(ord.id)}
+                className="bg-white text-[#B91C1C] border border-[#FECACA] px-3 py-1.5 rounded-full text-[11px] font-black shrink-0"
+              >
+                OK, ciente
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -144,6 +196,9 @@ export const DriverView: React.FC = () => {
           activeDeliveries.map((ord) => {
             const isMine = ord.driverId === profile?.id;
             const fee = feeForOrder(ord);
+            const customerLat = ord.address.lat ?? settings?.storeLat;
+            const customerLng = ord.address.lng ?? settings?.storeLng;
+            const hasCustomerLocation = customerLat != null && customerLng != null;
             return (
               <div key={ord.id} className="bg-white border-2 border-[#121214] rounded-2xl p-5 shadow-md space-y-4">
                 <div className="flex items-center justify-between border-b border-[#E7E5E4] pb-3">
@@ -173,23 +228,27 @@ export const DriverView: React.FC = () => {
                   </a>
                 </div>
 
-                <LiveMap
-                  store={
-                    settings
-                      ? { lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }
-                      : null
-                  }
-                  customer={{
-                    lat: ord.address.lat || settings?.storeLat || 0,
-                    lng: ord.address.lng || settings?.storeLng || 0,
-                  }}
-                  driver={
-                    ord.driverLat != null && ord.driverLng != null
-                      ? { lat: ord.driverLat, lng: ord.driverLng, name: ord.driverName }
-                      : null
-                  }
-                  heightClass="h-56"
-                />
+                {hasCustomerLocation ? (
+                  <LiveMap
+                    store={
+                      settings
+                        ? { lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }
+                        : null
+                    }
+                    customer={{ lat: customerLat as number, lng: customerLng as number }}
+                    driver={
+                      ord.driverLat != null && ord.driverLng != null
+                        ? { lat: ord.driverLat, lng: ord.driverLng, name: ord.driverName }
+                        : null
+                    }
+                    heightClass="h-56"
+                  />
+                ) : (
+                  <div className="h-56 rounded-2xl border border-[#E7E5E4] bg-[#F5F5F4] flex flex-col items-center justify-center gap-1.5 text-center text-[#57534E]">
+                    <MapPin className="w-6 h-6 text-[#A8A29E]" />
+                    <p className="text-xs font-bold">Sem localização do cliente</p>
+                  </div>
+                )}
 
                 <div className="bg-[#F5F5F4] p-3.5 rounded-2xl border border-[#E7E5E4] flex items-start justify-between gap-3 text-xs">
                   <div className="flex items-start gap-3">

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { useClient } from './ClientStore';
+import { useCart } from './CartStore';
+import { useCheckout } from './CheckoutStore';
+import { useClientShell } from './ClientStore';
 import { api } from '../../lib/api';
 import { LiveMap } from '../../components/common/LiveMap';
-import { effectiveDistanceKm, formatKm } from '../../shared/geo';
+import { computeDeliveryFee, effectiveDistanceKm, formatKm } from '../../shared/geo';
 import {
   ShoppingBag,
   MapPin,
@@ -20,7 +22,8 @@ import {
   LocateFixed,
   Trash2,
 } from 'lucide-react';
-import { DeliveryAddress } from '../../types';
+import { formatAddressLine, isUsableAddress } from '../../shared/address';
+import { LOYALTY_STAMP_COST } from '../../shared/constants';
 
 interface CepResult {
   cep: string;
@@ -38,21 +41,13 @@ export const ClientHeader: React.FC = () => {
     setSelectedAddress,
     addAddress,
     removeAddress,
-    searchQuery,
-    setSearchQuery,
-    loyaltyPoints,
-    orders,
-    setTrackingOrderId,
-    storeLogo,
-    storeName,
-    city,
-    settings,
-    notificationToast,
     isAddressModalOpen,
     isAddressFormOpen,
     setAddressModalOpen,
     setAddressFormOpen,
-  } = useClient();
+  } = useCart();
+  const { loyaltyPoints, orders, setTrackingOrderId } = useCheckout();
+  const { searchQuery, setSearchQuery, storeLogo, storeName, city, settings, notificationToast } = useClientShell();
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -75,21 +70,23 @@ export const ClientHeader: React.FC = () => {
     [orders]
   );
 
-  const distancePreview =
+  const previewAddress =
     newLat != null && newLng != null
-      ? effectiveDistanceKm(
-          { lat: newLat, lng: newLng, distanceKm: 0 } as DeliveryAddress,
-          settings
-        )
-      : 0;
-
-  const feePreview =
-    distancePreview > 0
-      ? Math.max(
-          settings.deliveryMinFee,
-          settings.deliveryBaseFee + settings.deliveryPricePerKm * distancePreview
-        )
+      ? {
+          id: '',
+          label: '',
+          street: '',
+          number: '',
+          neighborhood: '',
+          city: '',
+          lat: newLat,
+          lng: newLng,
+          distanceKm: 0,
+        }
       : null;
+
+  const distancePreview = previewAddress ? effectiveDistanceKm(previewAddress, settings) : 0;
+  const feePreview = previewAddress ? computeDeliveryFee(previewAddress, settings) : null;
 
   const handleCepLookup = async () => {
     const cep = newCep.replace(/\D/g, '');
@@ -212,7 +209,7 @@ export const ClientHeader: React.FC = () => {
                 title="Fidelidade"
               >
                 <Award className="w-3.5 h-3.5 text-[#FDE68A]" />
-                <span>{loyaltyPoints}/10</span>
+                <span>{loyaltyPoints}/{LOYALTY_STAMP_COST}</span>
               </div>
             )}
 
@@ -259,8 +256,8 @@ export const ClientHeader: React.FC = () => {
                   Entregar em
                 </span>
                 <span className="text-[12px] font-bold text-[#1C1917] truncate block">
-                  {selectedAddress.label
-                    ? `${selectedAddress.label}: ${selectedAddress.street}, ${selectedAddress.number}`
+                  {isUsableAddress(selectedAddress)
+                    ? formatAddressLine(selectedAddress)
                     : 'Selecione seu endereço'}
                 </span>
               </div>
@@ -340,7 +337,7 @@ export const ClientHeader: React.FC = () => {
                         setAddressModalOpen(false);
                       }}
                       className={`p-3.5 rounded-2xl border cursor-pointer transition flex items-center justify-between gap-2 ${
-                        selectedAddress.id === addr.id
+                        selectedAddress?.id === addr.id
                           ? 'bg-[#FEF2F2] border-[#B91C1C] ring-2 ring-[#B91C1C]/20 shadow-xs'
                           : 'bg-[#F5F5F4]/70 border-[#E7E5E4] hover:bg-[#F5F5F4]'
                       }`}
@@ -353,14 +350,14 @@ export const ClientHeader: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-xs text-[#57534E] mt-0.5 truncate">
-                          {addr.street}, {addr.number} - {addr.neighborhood}
+                          {formatAddressLine(addr)}
                         </p>
                         {addr.complement && (
                           <p className="text-[11px] text-[#A8A29E] italic truncate">{addr.complement}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {selectedAddress.id === addr.id && (
+                        {selectedAddress?.id === addr.id && (
                           <div className="w-6 h-6 rounded-full bg-[#B91C1C] text-white flex items-center justify-center">
                             <Check className="w-4 h-4" />
                           </div>
@@ -499,13 +496,13 @@ export const ClientHeader: React.FC = () => {
                     <div className="flex items-center justify-between bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl p-2.5 text-[11px] font-bold text-[#065F46]">
                       <span>
                         Distância da loja: {formatKm(distancePreview)}
-                        {settings.maxDeliveryKm > 0 && distancePreview > settings.maxDeliveryKm && (
+                        {feePreview != null && feePreview < 0 && (
                           <span className="block text-[#B91C1C]">
                             Fora da área de entrega (máx. {settings.maxDeliveryKm} km)
                           </span>
                         )}
                       </span>
-                      {feePreview != null && distancePreview <= settings.maxDeliveryKm && (
+                      {feePreview != null && feePreview >= 0 && (
                         <span>Entrega: R$ {feePreview.toFixed(2)}</span>
                       )}
                     </div>

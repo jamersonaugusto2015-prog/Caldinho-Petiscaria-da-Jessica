@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { useClient } from './ClientStore';
+import { useCheckout } from './CheckoutStore';
+import { useClientShell } from './ClientStore';
 import { Award, Gift, Loader2 } from 'lucide-react';
 import { Product } from '../../types';
+import { LOYALTY_STAMP_COST } from '../../shared/constants';
 
 export const LoyaltySection: React.FC = () => {
-  const { loyaltyPoints, redeemLoyaltyReward, products, triggerToast } = useClient();
+  const { loyaltyPoints, redeemLoyaltyReward } = useCheckout();
+  const { products, triggerToast, settings } = useClientShell();
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [showPick, setShowPick] = useState(false);
 
-  const totalNeeded = 10;
+  const totalNeeded = LOYALTY_STAMP_COST;
   const isEligible = loyaltyPoints >= totalNeeded;
+  const canRedeem = isEligible && settings.isOpen;
   const filled = Math.min(loyaltyPoints, totalNeeded);
 
   const redeemOptions: Product[] = products.filter((p) => p.category === 'caldinhos' && p.available);
@@ -62,17 +66,25 @@ export const LoyaltySection: React.FC = () => {
 
       <div className="w-full space-y-2">
         <button
-          disabled={!isEligible || isRedeeming}
+          disabled={!canRedeem || isRedeeming}
           onClick={() => setShowPick(true)}
           className={`px-5 py-2.5 rounded-full font-extrabold text-[11px] flex items-center justify-center gap-2 shadow-md transition shrink-0 w-full ${
-            isEligible
+            canRedeem
               ? 'bg-[#B91C1C] hover:bg-[#991B1B] text-white animate-bounce'
               : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed'
           }`}
         >
           {isRedeeming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
-          <span>{isEligible ? 'Resgatar Caldinho Grátis!' : 'Faltam Selos'}</span>
+          <span>
+            {!isEligible ? 'Faltam Selos' : settings.isOpen ? 'Resgatar Caldinho Grátis!' : 'Loja fechada'}
+          </span>
         </button>
+
+        {isEligible && !settings.isOpen && (
+          <p className="text-[10px] text-[#B45309] font-bold text-center px-1">
+            A loja está fechada agora. Volte quando reabrirmos para resgatar seu caldinho grátis.
+          </p>
+        )}
 
         {showPick && (
           <div className="bg-white/80 border border-[#FCD34D] rounded-2xl p-2 space-y-1.5">

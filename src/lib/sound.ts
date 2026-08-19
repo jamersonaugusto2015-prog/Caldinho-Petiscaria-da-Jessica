@@ -96,24 +96,38 @@ export function announceNewOrder(orderId?: string): void {
     const synth = window.speechSynthesis;
     const phrase = orderId ? `Novo pedido ${orderId} chegou!` : 'Um novo pedido chegou!';
 
-    // Fala vozes que ainda estão carregando
-    let voices = synth.getVoices();
-    if (!voices.length) {
-      synth.onvoiceschanged = () => {
-        voices = synth.getVoices();
-      };
+    const speak = (voices: SpeechSynthesisVoice[]) => {
+      synth.cancel();
+      for (let i = 0; i < 2; i++) {
+        const u = new SpeechSynthesisUtterance(phrase);
+        u.lang = 'pt-BR';
+        u.rate = 1.05;
+        u.pitch = 1.15;
+        const voice = pickFemalePtVoice(voices);
+        if (voice) u.voice = voice;
+        synth.speak(u);
+      }
+    };
+
+    const initialVoices = synth.getVoices();
+    if (initialVoices.length) {
+      speak(initialVoices);
+      return;
     }
 
-    synth.cancel();
-    for (let i = 0; i < 2; i++) {
-      const u = new SpeechSynthesisUtterance(phrase);
-      u.lang = 'pt-BR';
-      u.rate = 1.05;
-      u.pitch = 1.15;
-      const voice = pickFemalePtVoice(voices);
-      if (voice) u.voice = voice;
-      synth.speak(u);
-    }
+    // 1ª chamada da sessão: as vozes ainda não carregaram, então espera o
+    // evento (com um fallback por tempo, caso o navegador nunca o dispare).
+    let spoken = false;
+    const speakOnce = () => {
+      if (spoken) return;
+      spoken = true;
+      speak(synth.getVoices());
+    };
+    synth.onvoiceschanged = () => {
+      synth.onvoiceschanged = null;
+      speakOnce();
+    };
+    setTimeout(speakOnce, 300);
   } catch {
     /* fala indisponível — silencioso */
   }

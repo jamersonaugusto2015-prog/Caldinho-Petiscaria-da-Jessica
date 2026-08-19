@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { DriverProvider } from './DriverStore';
 import { DriverHeader } from './DriverHeader';
 import { DriverView } from './DriverView';
 import { LoginGate } from '../../components/LoginGate';
-import { isAuthenticated } from '../../lib/auth';
+import { useRoleSession } from '../../lib/auth';
 import { Bike } from 'lucide-react';
 
 export const DriverApp: React.FC = () => {
-  const [authenticated, setAuthenticated] = useState(() => isAuthenticated('driver'));
+  const { authenticated, expired, refresh } = useRoleSession('driver');
 
   if (!authenticated) {
     return (
@@ -16,9 +16,13 @@ export const DriverApp: React.FC = () => {
         title="App do Entregador"
         icon={<Bike className="w-8 h-8" />}
         accentClass="bg-[#121214]"
-        onLogin={() => setAuthenticated(true)}
+        onLogin={refresh}
         showNameField
-        hint="Use seu nome e a senha criada no painel da cozinha."
+        hint={
+          expired
+            ? 'Sua sessão expirou. Faça login novamente para continuar.'
+            : 'Use seu nome e a senha criada no painel da cozinha.'
+        }
       />
     );
   }

@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { useClient, useCartTotals } from './ClientStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { useCart } from './CartStore';
+import { useCheckout } from './CheckoutStore';
+import { useClientShell, useCartTotals } from './ClientStore';
 import { formatKm } from '../../shared/geo';
+import { formatAddressLine, isUsableAddress } from '../../shared/address';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
@@ -21,6 +24,9 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { Order } from '../../types';
+import { CardPaymentForm, CardPaymentHandle } from './CardPaymentForm';
+import { usePixPaymentPoll } from './usePixPoll';
+import { copyToClipboard, selectElementText } from './clipboard';
 
 interface CheckoutModalProps {
   onClose: () => void;
@@ -28,9 +34,12 @@ interface CheckoutModalProps {
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPlaced }) => {
-  const { cart, addresses, selectedAddress, setSelectedAddress, placeOrder, settings, openAddressForm } =
-    useClient();
+  const { cart, addresses, selectedAddress, setSelectedAddress, openAddressForm } = useCart();
+  const { placeOrder, customerId, applyOrderUpdate } = useCheckout();
+  const { settings } = useClientShell();
+  const pixOk = !!(settings.pixEnabled || settings.pixKey || settings.mercadoPagoConnected);
   const { subtotal, discount, deliveryFee, total } = useCartTotals();
+  const outOfRange = deliveryFee < 0;
 
   const [step, setStep] = useState<'dados' | 'pagamento'>('dados');
   const [customerName, setCustomerName] = useState('');
@@ -43,6 +52,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const [showAddressList, setShowAddressList] = useState(false);
   const [pendingPix, setPendingPix] = useState<Order | null>(null);
   const [confirmError, setConfirmError] = useState('');
+  const [pixCopyFailed, setPixCopyFailed] = useState(false);
+  const cardRef = React.useRef<CardPaymentHandle>(null);
+  const pixCodeRef = useRef<HTMLDivElement>(null);
+  const cardOnline = !!(settings.mercadoPagoConnected && settings.mercadoPagoPublicKey);
 
   const nameValid = customerName.trim().length >= 3;
   const phoneValid = customerPhone.replace(/\D/g, '').length >= 10;
@@ -54,24 +67,66 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCopyPixKey = () => {
-    if (!settings.pixKey) return;
-    navigator.clipboard
-      .writeText(settings.pixKey)
-      .then(() => {
-        setPixCopied(true);
-        setTimeout(() => setPixCopied(false), 3000);
-      })
-      .catch(() => {});
+  const { failed: pixPollFailed, retry: retryPixPoll } = usePixPaymentPoll({
+    orderId: pendingPix?.id,
+    customerId,
+    mpPaymentId: pendingPix?.payment.mpPaymentId,
+    isPaid: pendingPix?.payment.isPaid ?? false,
+    onUpdate: (updated) => {
+      applyOrderUpdate(updated);
+      setPendingPix(updated);
+      if (updated.payment.isPaid) onOrderPlaced();
+    },
+  });
+
+  const handleCopyPix = async (text?: string) => {
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setPixCopyFailed(false);
+      setPixCopied(true);
+      setTimeout(() => setPixCopied(false), 3000);
+      return;
+    }
+    setPixCopied(false);
+    setPixCopyFailed(true);
+    if (pixCodeRef.current) selectElementText(pixCodeRef.current);
+    setTimeout(() => setPixCopyFailed(false), 5000);
   };
 
   const placeAndHandle = async (method: 'pix' | 'card' | 'cash') => {
+    if (!isUsableAddress(selectedAddress)) {
+      setConfirmError('Informe um endereço com localização no mapa.');
+      openAddressForm();
+      return;
+    }
+    if (outOfRange) {
+      setConfirmError('Este endereço está fora da área de entrega.');
+      return;
+    }
     setConfirmError('');
     setIsProcessing(true);
+    let card;
+    if (method === 'card' && settings.mercadoPagoConnected) {
+      if (!settings.mercadoPagoPublicKey) {
+        setIsProcessing(false);
+        setConfirmError('Falta a chave pública do Mercado Pago na cozinha.');
+        return;
+      }
+      try {
+        card = await cardRef.current?.tokenize();
+        if (!card) throw new Error('Preencha os dados do cartão.');
+      } catch (err) {
+        setIsProcessing(false);
+        setConfirmError(err instanceof Error ? err.message : 'Confira os dados do cartão.');
+        return;
+      }
+    }
     const res = await placeOrder(
       method,
       method === 'cash' && changeForAmount ? Number(changeForAmount) : undefined,
-      { name: customerName.trim(), phone: customerPhone.trim() }
+      { name: customerName.trim(), phone: customerPhone.trim() },
+      card
     );
     setIsProcessing(false);
     if (!res) return;
@@ -81,7 +136,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     }
     const order = res.order;
     if (method === 'pix' && order.payment.pixCopyPaste) {
-      setPendingPix(order); // mostra o PIX real para pagamento
+      setPendingPix(order);
     } else {
       onOrderPlaced();
     }
@@ -89,6 +144,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isUsableAddress(selectedAddress)) {
+      setConfirmError('Informe um endereço com localização no mapa.');
+      openAddressForm();
+      return;
+    }
+    if (outOfRange) {
+      setConfirmError('Este endereço está fora da área de entrega.');
+      return;
+    }
     if (!dadosValid) {
       setStep('dados');
       return;
@@ -107,7 +171,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   };
 
   const deliveryLabel =
-    selectedAddress.distanceKm > 0
+    selectedAddress && selectedAddress.distanceKm > 0
       ? `Entrega (${formatKm(selectedAddress.distanceKm)})`
       : 'Entrega';
 
@@ -147,26 +211,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
 
               <div>
                 <p className="text-[11px] text-[#57534E] mb-1.5">
-                  Pague <strong>R$ {pendingPix.total.toFixed(2)}</strong> para a chave PIX abaixo e envie o
-                  comprovante no WhatsApp:
+                  Pague <strong>R$ {pendingPix.total.toFixed(2)}</strong> no app do banco.
+                  {pendingPix.payment.mpPaymentId
+                    ? ' Esta tela confirma sozinha quando o PIX cair.'
+                    : ' Envie o comprovante no WhatsApp.'}
                 </p>
+                {pendingPix.payment.pixQrCode && (
+                  <img
+                    src={`data:image/png;base64,${pendingPix.payment.pixQrCode}`}
+                    alt="QR Code PIX"
+                    className="w-44 h-44 mx-auto rounded-xl border border-[#E7E5E4] bg-white p-1"
+                  />
+                )}
                 <div className="bg-[#F5F5F4] border-2 border-dashed border-[#B91C1C]/40 rounded-2xl p-3.5">
                   <div className="text-[9px] font-extrabold text-[#57534E] uppercase tracking-wider mb-1">
-                    Chave PIX da loja
+                    PIX copia e cola
                   </div>
-                  <div className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
-                    {settings.pixKey}
+                  <div ref={pixCodeRef} className="font-mono text-xs font-bold text-[#1C1917] break-all select-all">
+                    {pendingPix.payment.pixCopyPaste || settings.pixKey}
                   </div>
                   <button
                     type="button"
-                    onClick={handleCopyPixKey}
+                    onClick={() => void handleCopyPix(pendingPix.payment.pixCopyPaste || settings.pixKey)}
                     className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
                   >
                     {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{pixCopied ? 'Chave copiada!' : 'Copiar chave PIX'}</span>
+                    <span>{pixCopied ? 'PIX copiado!' : 'Copiar PIX'}</span>
                   </button>
+                  {pixCopyFailed && (
+                    <p className="mt-2 text-[10px] text-[#B91C1C] font-bold">
+                      Não conseguimos copiar automaticamente. Selecionamos o código acima — copie manualmente.
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {pixPollFailed && (
+                <button
+                  type="button"
+                  onClick={retryPixPoll}
+                  className="w-full bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-3.5 text-xs text-[#B91C1C] font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>Não conseguimos confirmar o pagamento. Toque para tentar de novo.</span>
+                </button>
+              )}
 
               {settings.storeWhatsApp ? (
                 <a
@@ -315,10 +404,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="text-xs font-extrabold text-[#1C1917]">{selectedAddress.label || 'Selecione'}</div>
+                            <div className="text-xs font-extrabold text-[#1C1917]">
+                              {isUsableAddress(selectedAddress)
+                                ? selectedAddress?.label || 'Endereço'
+                                : 'Selecione'}
+                            </div>
                             <div className="text-[11px] text-[#57534E] truncate">
-                              {selectedAddress.street
-                                ? `${selectedAddress.street}, ${selectedAddress.number} - ${selectedAddress.neighborhood}`
+                              {isUsableAddress(selectedAddress)
+                                ? formatAddressLine(selectedAddress)
                                 : 'Selecione um endereço'}
                             </div>
                           </div>
@@ -338,7 +431,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                               setShowAddressList(false);
                             }}
                             className={`w-full p-3 rounded-2xl border text-left transition flex items-center justify-between gap-2 ${
-                              selectedAddress.id === addr.id
+                              selectedAddress?.id === addr.id
                                 ? 'bg-[#FEF2F2] border-[#B91C1C] ring-2 ring-[#B91C1C]/15'
                                 : 'bg-white border-[#E7E5E4] hover:bg-[#F5F5F4]'
                             }`}
@@ -346,11 +439,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                             <div className="min-w-0">
                               <div className="text-xs font-extrabold text-[#1C1917]">{addr.label}</div>
                               <div className="text-[11px] text-[#57534E] truncate">
-                                {addr.street}, {addr.number} - {addr.neighborhood} (
-                                {addr.distanceKm > 0 ? formatKm(addr.distanceKm) : 'sem localização'})
+                                {formatAddressLine(addr) || `${addr.street || ''}, ${addr.number || ''}`}
                               </div>
                             </div>
-                            {selectedAddress.id === addr.id && (
+                            {selectedAddress?.id === addr.id && (
                               <span className="w-5 h-5 rounded-full bg-[#B91C1C] text-white flex items-center justify-center shrink-0">
                                 <Check className="w-3 h-3" />
                               </span>
@@ -374,8 +466,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     )}
                     <div className="flex justify-between text-[#57534E]">
                       <span>{deliveryLabel}</span>
-                      <span className="text-[#1C1917] font-semibold">
-                        {deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
+                      <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
                       </span>
                     </div>
                     <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">
@@ -394,10 +486,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     <p className="text-xs font-extrabold text-[#1C1917]">{customerName}</p>
                     <p className="text-xs text-[#57534E]">{customerPhone}</p>
                     <p className="text-xs text-[#57534E] border-t border-[#E7E5E4] pt-1.5 mt-1.5">
-                      {selectedAddress.street}, {selectedAddress.number} - {selectedAddress.neighborhood}
-                      {selectedAddress.distanceKm > 0 && (
-                        <span className="text-[#B91C1C] font-bold"> ({formatKm(selectedAddress.distanceKm)})</span>
-                      )}
+                      {isUsableAddress(selectedAddress)
+                        ? formatAddressLine(selectedAddress)
+                        : 'Endereço não informado'}
                     </p>
                   </div>
 
@@ -407,8 +498,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     </label>
                     <div className="grid grid-cols-3 gap-2.5">
                       {[
-                        { id: 'pix' as const, label: 'PIX', icon: QrCode, enabled: !!settings.pixKey },
-                        { id: 'card' as const, label: 'Cartão', icon: CreditCard, enabled: true },
+                        { id: 'pix' as const, label: 'PIX', icon: QrCode, enabled: pixOk },
+                        { id: 'card' as const, label: 'Cartão', icon: CreditCard, enabled: cardOnline },
                         { id: 'cash' as const, label: 'Dinheiro', icon: Banknote, enabled: true },
                       ].map((method) => {
                         const Icon = method.icon;
@@ -431,37 +522,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                         );
                       })}
                     </div>
-                    {paymentMethod === 'pix' && !settings.pixKey && (
+                    {paymentMethod === 'pix' && !pixOk && (
                       <p className="text-[10px] text-[#B91C1C] font-bold mt-2">
-                        PIX indisponível: a loja ainda não cadastrou a chave PIX.
+                        PIX indisponível: a loja ainda não conectou o Mercado Pago nem cadastrou a chave.
+                      </p>
+                    )}
+                    {!cardOnline && (
+                      <p className="text-[10px] text-[#57534E] mt-2">
+                        Cartão pela internet indisponível. Pague no PIX ou em dinheiro na entrega.
                       </p>
                     )}
                   </div>
 
-                  {paymentMethod === 'pix' && settings.pixKey && (
+                  {paymentMethod === 'pix' && pixOk && (
                     <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 text-center space-y-2">
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-[#059669]">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>PIX de R$ {total.toFixed(2)} — chave da loja na próxima tela</span>
+                        <span>PIX de R$ {total.toFixed(2)} — QR na próxima tela</span>
                       </div>
                       <p className="text-[11px] text-[#57534E]">
-                        Após confirmar, você copia a chave PIX da loja, paga no seu banco e envia o
-                        comprovante pelo WhatsApp. A cozinha confirma o pedido.
+                        {settings.mercadoPagoConnected
+                          ? 'Após confirmar, pague o PIX. O pedido libera sozinho quando o dinheiro cair.'
+                          : 'Após confirmar, copie o PIX, pague no banco e envie o comprovante no WhatsApp.'}
                       </p>
                     </div>
                   )}
 
-                  {paymentMethod === 'card' && (
+                  {paymentMethod === 'card' && settings.mercadoPagoConnected && settings.mercadoPagoPublicKey && (
+                    <CardPaymentForm
+                      ref={cardRef}
+                      publicKey={settings.mercadoPagoPublicKey}
+                      amount={total > 0 ? total : 1}
+                    />
+                  )}
+
+                  {paymentMethod === 'card' && settings.mercadoPagoConnected && !settings.mercadoPagoPublicKey && (
+                    <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3 text-[11px] text-[#92400E] font-bold">
+                      Falta a chave pública na cozinha. Sem ela o cartão não abre nesta tela.
+                    </div>
+                  )}
+
+                  {paymentMethod === 'card' && !settings.mercadoPagoConnected && (
                     <div className="bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-4 space-y-3">
                       <div className="flex items-start gap-2.5 text-xs text-[#57534E]">
                         <CreditCard className="w-4 h-4 text-[#B91C1C] shrink-0 mt-0.5" />
                         <p>
-                          <strong className="text-[#1C1917]">Cartão pago na entrega.</strong> O entregador leva a
-                          maquininha (débito ou crédito) e você paga ao receber o pedido.
+                          <strong className="text-[#1C1917]">Cartão na entrega.</strong> Sem Mercado Pago
+                          conectado, o motoboy leva a maquininha.
                         </p>
-                      </div>
-                      <div className="bg-white border border-[#E7E5E4] rounded-xl p-2.5 text-[11px] text-[#57534E]">
-                        Taxa da maquininha: a loja pode aplicar uma taxa adicional na entrega, se aplicável.
                       </div>
                     </div>
                   )}
@@ -516,8 +624,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     )}
                     <div className="flex justify-between text-[#57534E]">
                       <span>{deliveryLabel}</span>
-                      <span className="text-[#1C1917] font-semibold">
-                        {deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
+                      <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
                       </span>
                     </div>
                     <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">

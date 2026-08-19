@@ -31,13 +31,20 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const res = await login(role, pin, showNameField ? name : undefined);
-    setLoading(false);
-    if (!res.ok) {
-      setError(res.error || (showNameField ? 'Nome ou senha incorretos.' : 'PIN incorreto.'));
-      return;
+    try {
+      const res = await login(role, pin, showNameField ? name : undefined);
+      if (!res.ok) {
+        setError(res.error || (showNameField ? 'Nome ou senha incorretos.' : 'PIN incorreto.'));
+        return;
+      }
+      onLogin?.();
+    } catch {
+      // login() já trata erros de rede internamente, mas isto evita um
+      // botão travado em "Validando..." para sempre caso isso mude.
+      setError('Não foi possível entrar. Verifique sua internet e tente de novo.');
+    } finally {
+      setLoading(false);
     }
-    onLogin?.();
   };
 
   return (
@@ -63,8 +70,13 @@ export const LoginGate: React.FC<LoginGateProps> = ({
         <form onSubmit={handleSubmit} className="space-y-3">
           {showNameField && (
             <div className="relative">
+              <label htmlFor="login-name" className="sr-only">
+                Seu nome completo
+              </label>
               <UserRound className="w-4 h-4 text-[#57534E] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                id="login-name"
+                name="username"
                 type="text"
                 autoComplete="username"
                 autoFocus
@@ -77,11 +89,17 @@ export const LoginGate: React.FC<LoginGateProps> = ({
           )}
 
           <div className="relative">
+            <label htmlFor="login-pin" className="sr-only">
+              Senha (PIN)
+            </label>
             <KeyRound className="w-4 h-4 text-[#57534E] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
+              id="login-pin"
+              name="password"
               type="password"
               inputMode="numeric"
               autoComplete="current-password"
+              autoFocus={!showNameField}
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               placeholder="Senha (PIN)"
@@ -90,7 +108,10 @@ export const LoginGate: React.FC<LoginGateProps> = ({
           </div>
 
           {error && (
-            <p className="text-[11px] text-[#B91C1C] font-bold bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl py-2">
+            <p
+              role="alert"
+              className="text-[11px] text-[#B91C1C] font-bold bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl py-2"
+            >
               {error}
             </p>
           )}
