@@ -57,37 +57,40 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.25 }}
       onClick={() => setIsCartOpen(false)}
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-center"
+      className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-xs h-dscreen"
     >
-      {/* Efeito lâmpada mágica: cortina que desce do topo */}
+      {/* Sem clip-path: no Safari iOS a cortina deixava o cabeçalho cortado
+          (título e X sumiam atrás da barra de status). */}
       <motion.div
-        initial={{ clipPath: 'inset(0 0 100% 0)', y: -40, opacity: 0.5 }}
-        animate={{ clipPath: 'inset(0 0 0% 0)', y: 0, opacity: 1 }}
-        exit={{ clipPath: 'inset(0 0 100% 0)', y: -40, opacity: 0.5 }}
-        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        initial={{ y: 28, opacity: 0.6 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 28, opacity: 0 }}
+        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-white text-[#1C1917] w-full max-w-[430px] h-full shadow-2xl flex flex-col justify-between overflow-hidden"
+        className="flex h-dscreen w-full max-w-[430px] flex-col overflow-hidden bg-white text-[#1C1917] shadow-2xl"
       >
-        <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-[#B91C1C]" />
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#E7E5E4] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+          <div className="flex min-w-0 items-center gap-2">
+            <ShoppingBag className="h-5 w-5 shrink-0 text-[#B91C1C]" />
             <h2 className="text-lg font-extrabold text-[#1C1917]">Seu Carrinho</h2>
-            <span className="bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold px-2.5 py-0.5 rounded-full border border-[#FCA5A5]">
+            <span className="rounded-full border border-[#FCA5A5] bg-[#FEF2F2] px-2.5 py-0.5 text-xs font-bold text-[#B91C1C]">
               {cart.reduce((sum, i) => sum + i.quantity, 0)} itens
             </span>
           </div>
 
           <button
+            type="button"
             onClick={() => setIsCartOpen(false)}
-            className="p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition"
+            className="rounded-full p-2 text-[#57534E] transition hover:bg-[#F5F5F4] hover:text-[#1C1917]"
+            aria-label="Fechar sacola"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-4 flex-1 overflow-y-auto space-y-3 bg-[#F5F5F4]/40">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F5F5F4]/40 p-4">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#57534E]">
               <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] flex items-center justify-center text-3xl mb-3 text-[#B91C1C]">
@@ -175,7 +178,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
         </div>
 
         {cart.length > 0 && (
-          <div className="p-4 bg-white border-t border-[#E7E5E4] space-y-3 shrink-0">
+          <div className="shrink-0 space-y-3 border-t border-[#E7E5E4] bg-white p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
             {settings.pickupEnabled && <FulfillmentPicker />}
 
             {!isPickupMode && (

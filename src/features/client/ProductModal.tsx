@@ -201,7 +201,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
               type="button"
               onClick={() => setZoomed(true)}
               aria-label="Ver a foto em tela cheia"
-              className="absolute top-3 right-14 md:right-3 flex items-center gap-1.5 rounded-full bg-black/45 hover:bg-black/65 text-white px-3 py-1.5 text-[11px] font-bold backdrop-blur-sm transition"
+              className="absolute top-[max(12px,env(safe-area-inset-top))] right-14 md:right-3 flex items-center gap-1.5 rounded-full bg-black/45 hover:bg-black/65 text-white px-3 py-2 text-[11px] font-bold backdrop-blur-sm transition"
             >
               <Expand className="w-3.5 h-3.5" />
               Ver foto
@@ -258,7 +258,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
           <button
             onClick={onClose}
             aria-label="Fechar"
-            className="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-[#1C1917] border border-[#E7E5E4] shadow-md backdrop-blur-sm flex items-center justify-center transition"
+            className="absolute top-[max(12px,env(safe-area-inset-top))] right-3 z-20 w-11 h-11 rounded-full bg-white/90 hover:bg-white text-[#1C1917] border border-[#E7E5E4] shadow-md backdrop-blur-sm flex items-center justify-center transition"
           >
             <X className="w-4.5 h-4.5" />
           </button>
@@ -538,33 +538,35 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
             role="dialog"
-            aria-label={`Foto de ${product.name}`}
-            className="fixed inset-0 z-[60] bg-black/95 flex flex-col"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setZoomed(false);
+            aria-modal="true"
+            aria-label={`Foto de ${product.name}. Toque para fechar.`}
+            className="fixed inset-0 z-[60] flex h-dscreen cursor-zoom-out flex-col bg-black/95"
+            onClick={() => setZoomed(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setZoomed(false);
             }}
           >
-            <div className="flex items-center justify-between gap-3 px-4 py-3 text-white shrink-0">
-              <p className="text-sm font-extrabold truncate">{product.name}</p>
+            <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-3 pt-safe text-white">
+              <p className="truncate pt-3 text-sm font-extrabold">{product.name}</p>
               <button
                 type="button"
                 onClick={() => setZoomed(false)}
                 aria-label="Fechar a foto"
-                className="w-9 h-9 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition"
+                className="mt-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-white"
               >
-                <X className="w-4.5 h-4.5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
             <motion.img
               src={product.image}
-              alt={product.name}
+              alt=""
               initial={reduceMotion ? false : { scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="flex-1 min-h-0 w-full object-contain px-4 pb-4"
+              className="min-h-0 w-full flex-1 object-contain px-4 pb-2"
             />
-            <p className="text-center text-[11px] text-white/50 pb-4 shrink-0">
-              Toque fora da foto para voltar
+            <p className="shrink-0 pb-safe px-4 pt-1 text-center text-[11px] font-bold text-white/70">
+              Toque em qualquer lugar para fechar
             </p>
           </motion.div>
         )}

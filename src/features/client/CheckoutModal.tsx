@@ -203,8 +203,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
-      <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
-        <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between shrink-0">
+      <div className="relative flex h-dscreen w-full max-w-[430px] flex-col overflow-hidden rounded-t-3xl border border-[#E7E5E4] bg-white text-[#1C1917] shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-[#E7E5E4] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
           <button
             onClick={pendingPix ? () => setPendingPix(null) : step === 'pagamento' ? () => setStep('dados') : onClose}
             className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition flex items-center gap-1 text-xs font-bold"
