@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useCart } from './CartStore';
 import { useClientShell, useCartTotals } from './ClientStore';
@@ -52,14 +53,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
     }
   };
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
       onClick={() => setIsCartOpen(false)}
-      className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-xs h-dscreen"
+      className="fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-xs"
     >
       {/* Sem clip-path: no Safari iOS a cortina deixava o cabeçalho cortado
           (título e X sumiam atrás da barra de status). */}
@@ -69,7 +70,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
         exit={{ y: 28, opacity: 0 }}
         transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="flex h-dscreen w-full max-w-[430px] flex-col overflow-hidden bg-white text-[#1C1917] shadow-2xl"
+        className="flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white text-[#1C1917] shadow-2xl"
       >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#E7E5E4] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
           <div className="flex min-w-0 items-center gap-2">
@@ -309,6 +310,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
           </div>
         )}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };

@@ -46,22 +46,23 @@ const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
     if (!splashDone) return;
 
     const ctx = gsap.context(() => {
+      // Só opacity: `transform` no header sticky (e no main que envolve
+      // overlays `fixed`) faz o Safari recortar o topo no iPhone.
       gsap.fromTo(
         '.client-header',
-        { y: -48, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.65, ease: 'power3.out', clearProps: 'transform,opacity' }
+        { opacity: 0 },
+        { opacity: 1, duration: 0.45, ease: 'power2.out', clearProps: 'opacity' }
       );
       gsap.fromTo(
         '.client-main > *',
-        { y: 34, opacity: 0 },
+        { opacity: 0 },
         {
-          y: 0,
           opacity: 1,
-          duration: 0.6,
-          stagger: 0.09,
-          ease: 'power3.out',
-          delay: 0.12,
-          clearProps: 'transform,opacity',
+          duration: 0.45,
+          stagger: 0.06,
+          ease: 'power2.out',
+          delay: 0.08,
+          clearProps: 'opacity',
         }
       );
     }, contentRef);

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Product, CartItemExtra, ComboSlotOption } from '../../types';
 import { useCart } from './CartStore';
@@ -148,7 +149,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
     if (added) onClose();
   };
 
-  return (
+  return createPortal(
     <>
       <motion.div
         initial={{ opacity: 0 }}
@@ -156,7 +157,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
         className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm p-0 md:p-6"
-        onMouseDown={(event) => {
+        onClick={(event) => {
           if (event.target === event.currentTarget) onClose();
         }}
       >
@@ -571,7 +572,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </>,
+    document.body
   );
 };
 

@@ -201,6 +201,18 @@ function upsertMeta(name: string, content: string): void {
   if (!existing) document.head.appendChild(meta);
 }
 
+/**
+ * No Safari instalado, o segundo toque numa tecla vira zoom da página inteira.
+ * No navegador o pinch continua livre (acessibilidade). Só o casco iOS trava.
+ */
+function lockIosStandaloneZoom(): void {
+  if (!isIos() || !isStandalone()) return;
+  const viewport = document.head.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if (!viewport) return;
+  viewport.content =
+    'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+}
+
 interface ViteEnv {
   readonly PROD?: boolean;
 }
@@ -259,6 +271,7 @@ export function installAppShell(): void {
     upsertLink('apple-touch-icon', shell.appleTouchIcon, { sizes: '180x180' });
     upsertMeta('theme-color', shell.themeColor);
     upsertMeta('apple-mobile-web-app-title', shell.title);
+    lockIosStandaloneZoom();
   } catch {
     /* DOM indisponível ou head bloqueado: segue sem manifesto */
   }

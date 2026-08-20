@@ -69,14 +69,33 @@ html {
   /* O Safari aumenta a fonte sozinho quando o aparelho gira, e a barra de
      status do modo standalone passa a cobrir o cabeçalho. */
   -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
 }
 
-body {
+body,
+#root {
   /* O retângulo cinza que o Chrome pisca em cima de cada toque suja um app
      que quer parecer nativo. Os estados de :active já são desenhados por nós. */
   -webkit-tap-highlight-color: transparent;
-  /* Sem isto o navegador espera 300 ms em cada toque para ver se vira zoom. */
+  /* Sem isto o iOS espera 300 ms (e o 2º toque vira zoom) em cada clique. */
   touch-action: manipulation;
+}
+
+button,
+a,
+input,
+textarea,
+select,
+label,
+summary,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+.leaflet-container,
+.leaflet-container * {
+  /* O mapa precisa de pan e pinça; o restante da UI não. */
+  touch-action: pan-x pan-y pinch-zoom;
 }
 
 #root {
@@ -91,7 +110,8 @@ body {
    o cabeçalho fica atrás do relógio do sistema. Aplique em cabeçalhos fixos
    (`.pt-safe`) e em barras inferiores fixas (`.pb-safe`). */
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+  /* Piso mesmo quando o inset ainda é 0 no 1º paint do Safari. */
+  padding-top: max(env(safe-area-inset-top, 0px), 12px);
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -102,13 +122,13 @@ body {
 }
 @media (display-mode: standalone) {
   html,
-  body {
+  body,
+  #root {
     overscroll-behavior-y: contain;
+    touch-action: manipulation;
   }
-  /* Aparelho sem notch reporta inset 0, mas a barra de status continua lá em
-     cima: um respiro mínimo evita o título colado no relógio. */
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
   }
 }
 

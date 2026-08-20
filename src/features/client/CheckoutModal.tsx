@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useCart } from './CartStore';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell, useCartTotals } from './ClientStore';
@@ -201,9 +202,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
     ? `Entrega (${formatKm(selectedAddress.distanceKm)})`
     : 'Entrega';
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
-      <div className="relative flex h-dscreen w-full max-w-[430px] flex-col overflow-hidden rounded-t-3xl border border-[#E7E5E4] bg-white text-[#1C1917] shadow-2xl">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+      <div className="relative flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white text-[#1C1917] shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-[#E7E5E4] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
           <button
             onClick={pendingPix ? () => setPendingPix(null) : step === 'pagamento' ? () => setStep('dados') : onClose}
@@ -800,6 +801,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

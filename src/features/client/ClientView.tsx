@@ -13,7 +13,8 @@ import { LoyaltySection } from './LoyaltySection';
 import { ClosedStoreModal } from './ClosedStoreModal';
 import { ClientFloatingNav, ClientTab } from './ClientFloatingNav';
 import { Category, OpeningHour, Order, Product } from '../../types';
-import { Flame, Sparkles, ShoppingBag, ClipboardList, Search, ChevronRight, Clock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Flame, Sparkles, ShoppingBag, ClipboardList, Search, ChevronRight, Clock, Store, Bike } from 'lucide-react';
 
 function formatTodayHours(hours: OpeningHour | null): string {
   if (!hours) return 'Fechado hoje';
@@ -427,6 +428,26 @@ export const ClientView: React.FC = () => {
       )}
 
       {isClosedModalOpen && <ClosedStoreModal onClose={() => setClosedModalOpen(false)} />}
+
+      <nav
+        aria-label="Acesso rápido da equipe"
+        className="flex items-center justify-center gap-2 pt-4 pb-2 text-[11px] font-bold text-[#A8A29E]"
+      >
+        <Link
+          to="/cozinha"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#E7E5E4] bg-white px-3 py-2 text-[#57534E] shadow-sm active:scale-95"
+        >
+          <Store className="h-3.5 w-3.5 text-[#B91C1C]" />
+          Cozinha
+        </Link>
+        <Link
+          to="/entregador"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#E7E5E4] bg-white px-3 py-2 text-[#57534E] shadow-sm active:scale-95"
+        >
+          <Bike className="h-3.5 w-3.5 text-[#B91C1C]" />
+          Motoboy
+        </Link>
+      </nav>
 
       <ClientFloatingNav
         view={view}
