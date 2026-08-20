@@ -61,7 +61,7 @@ export const KitchenRefundsPanel: React.FC = () => {
               className="flex items-center gap-2 py-2 border-b last:border-0 border-[#F5F5F4] text-xs"
             >
               <span className="font-extrabold">{order.id}</span>
-              <span className="flex-1 truncate text-[#57534E]">{order.customerName}</span>
+              <span className="min-w-0 flex-1 truncate text-[#57534E]">{order.customerName}</span>
               <span className="text-[10px] text-[#57534E]">
                 {order.payment.refundedAt ? `em ${shortDate(order.payment.refundedAt)}` : '—'}
               </span>

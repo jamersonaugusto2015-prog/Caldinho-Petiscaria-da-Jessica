@@ -377,7 +377,7 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
           onPointerDown={locked ? undefined : onGrab}
           disabled={locked}
           aria-label={locked ? 'Arrastar indisponível na busca' : `Arrastar ${category.label}`}
-          className="shrink-0 w-7 h-9 rounded-lg text-[#A8A29E] hover:text-[#1C1917] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-transparent touch-none cursor-grab active:cursor-grabbing disabled:cursor-not-allowed"
+          className="shrink-0 w-7 h-9 rounded-lg text-[#A8A29E] hover:text-[#1C1917] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-transparent touch-none cursor-grab active:cursor-grabbing disabled:cursor-not-allowed pointer-coarse:w-11 pointer-coarse:h-11"
         >
           <GripVertical className="w-4 h-4" />
         </button>
@@ -402,13 +402,17 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
           </p>
         </div>
 
+        {/* As duas setas empilhadas davam 28x20 cada: no dedo, subir uma
+            categoria descia a de baixo. Ficam com 44px de largura e 36 de
+            altura em ponteiro grosso — 44 de altura nas duas dobraria a linha,
+            e quem reordena no dedo usa a alça de arrastar ao lado. */}
         <div className="flex flex-col shrink-0">
           <button
             type="button"
             aria-label={`Subir ${category.label}`}
             disabled={position <= 1}
             onClick={() => onMove(category.id, -1)}
-            className="w-7 h-5 rounded-md text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-25"
+            className="w-7 h-5 rounded-md text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-25 pointer-coarse:w-11 pointer-coarse:h-9"
           >
             <ArrowUp className="w-3.5 h-3.5" />
           </button>
@@ -417,18 +421,18 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
             aria-label={`Descer ${category.label}`}
             disabled={position >= total}
             onClick={() => onMove(category.id, 1)}
-            className="w-7 h-5 rounded-md text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-25"
+            className="w-7 h-5 rounded-md text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition disabled:opacity-25 pointer-coarse:w-11 pointer-coarse:h-9"
           >
             <ArrowDown className="w-3.5 h-3.5" />
           </button>
         </div>
 
         <div className="flex gap-1.5 shrink-0">
-          <button className="btn-secondary p-2" title="Editar" aria-label={`Editar ${category.label}`} onClick={onEdit}>
+          <button className="btn-secondary p-2 pointer-coarse:min-w-11" title="Editar" aria-label={`Editar ${category.label}`} onClick={onEdit}>
             <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
-            className="btn-danger p-2"
+            className="btn-danger p-2 pointer-coarse:min-w-11"
             title={blocked ? `${count} produto(s) usam esta categoria` : 'Excluir'}
             aria-label={`Excluir ${category.label}`}
             disabled={blocked || removing}
@@ -602,7 +606,7 @@ const CategoryEditor: React.FC<{
             type="button"
             onClick={tryClose}
             aria-label="Fechar"
-            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
+            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition pointer-coarse:w-11 pointer-coarse:h-11"
           >
             <X className="w-4 h-4" />
           </button>
@@ -701,30 +705,36 @@ const CategoryEditor: React.FC<{
           </div>
         </div>
 
-        <footer className="px-5 py-4 border-t border-[#E7E5E4] bg-[#FAFAF9]">
-          {discarding ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-bold text-[#1C1917]">Descartar as mudanças?</p>
-              <div className="flex gap-2">
-                <button type="button" className="btn-secondary" onClick={() => setDiscarding(false)}>
-                  Continuar editando
+        {/* No celular a folha encosta no rodapé da tela: a barra de gestos do iOS
+            cobria estes botões. `pb-safe` vai num invólucro porque a classe
+            (que é CSS solto, fora das camadas do Tailwind) sobrescreveria o
+            `py-4` do rodapé e colaria os botões na borda no desktop. */}
+        <footer className="pb-safe border-t border-[#E7E5E4] bg-[#FAFAF9]">
+          <div className="px-5 py-4">
+            {discarding ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-bold text-[#1C1917]">Descartar as mudanças?</p>
+                <div className="flex gap-2">
+                  <button type="button" className="btn-secondary" onClick={() => setDiscarding(false)}>
+                    Continuar editando
+                  </button>
+                  <button type="button" className="btn-danger" onClick={onClose}>
+                    Descartar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <button type="button" className="btn-secondary" onClick={tryClose}>
+                  Cancelar
                 </button>
-                <button type="button" className="btn-danger" onClick={onClose}>
-                  Descartar
+                <button type="submit" className="btn-primary px-5" disabled={!canSave}>
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {saving ? 'Salvando...' : original ? 'Salvar mudanças' : 'Criar categoria'}
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <button type="button" className="btn-secondary" onClick={tryClose}>
-                Cancelar
-              </button>
-              <button type="submit" className="btn-primary px-5" disabled={!canSave}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {saving ? 'Salvando...' : original ? 'Salvar mudanças' : 'Criar categoria'}
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </footer>
       </motion.form>
     </motion.div>

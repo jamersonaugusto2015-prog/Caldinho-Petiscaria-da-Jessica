@@ -61,14 +61,18 @@ export const KitchenDriverPanel: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><Heading icon={<Bike />} title="Motoboys" subtitle="Acessos e disponibilidade dos entregadores." /><button onClick={() => openDriver()} className="btn-primary">Novo motoboy</button></div>
+      {/* `flex-wrap` + `shrink-0`: em 360px o subtítulo longo espremia "Novo
+          motoboy" até o texto do botão quebrar no meio. */}
+      <div className="flex flex-wrap items-center justify-between gap-2"><Heading icon={<Bike />} title="Motoboys" subtitle="Acessos e disponibilidade dos entregadores." /><button onClick={() => openDriver()} className="btn-primary shrink-0">Novo motoboy</button></div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-3">
         {drivers.map((driver) => (
           <Panel key={driver.id}>
             <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1C1917] text-white flex items-center justify-center"><Bike className="w-5 h-5" /></div><div className="min-w-0 flex-1"><strong className="block truncate">{driver.name}</strong><span className="text-[11px] text-[#57534E]">{driver.phone || 'Sem telefone'}</span></div><DriverBadge driver={driver} now={now} /></div>
             <div className="text-xs text-[#57534E] mt-3">{driver.bikeModel || 'Modelo não informado'} · {driver.plate || 'Sem placa'}</div>
             <DriverLocationLine driver={driver} now={now} />
-            <div className="flex gap-2 mt-4"><button className="btn-secondary flex-1" onClick={() => openDriver(driver)}>Editar</button><button className="btn-secondary" onClick={() => void updateDriver(driver.id, { active: !driver.active })}>{driver.active ? 'Desativar' : 'Ativar'}</button><button className="btn-danger" onClick={() => setDriverToDelete(driver)}>Excluir</button></div>
+            {/* Três botões numa linha só cabem no card de 300px; abaixo disso
+                (celular em pé) eles quebram em vez de espremer o texto. */}
+            <div className="flex flex-wrap gap-2 mt-4"><button className="btn-secondary flex-1" onClick={() => openDriver(driver)}>Editar</button><button className="btn-secondary" onClick={() => void updateDriver(driver.id, { active: !driver.active })}>{driver.active ? 'Desativar' : 'Ativar'}</button><button className="btn-danger" onClick={() => setDriverToDelete(driver)}>Excluir</button></div>
           </Panel>
         ))}
         {drivers.length === 0 && <Empty text="Nenhum motoboy cadastrado." />}
@@ -131,6 +135,12 @@ const DriverLocationLine: React.FC<{ driver: Driver; now: number }> = ({ driver,
   );
 };
 
-const DriverModal: React.FC<{ editing: Driver | null; form: DriverFormState; setForm: React.Dispatch<React.SetStateAction<DriverFormState>>; onClose: () => void; onSubmit: (event: React.FormEvent) => void }> = ({ editing, form, setForm, onClose, onSubmit }) => <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><form onSubmit={onSubmit} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3"><h3 className="font-extrabold text-lg">{editing ? 'Editar motoboy' : 'Novo motoboy'}</h3>{(['name', 'phone', 'password', 'bikeModel', 'plate'] as const).map((key) => <input key={key} type={key === 'password' ? 'password' : 'text'} required={key === 'name' || (!editing && key === 'password')} value={form[key]} onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))} placeholder={{ name: 'Nome', phone: 'Telefone', password: 'Senha', bikeModel: 'Modelo da moto', plate: 'Placa' }[key]} className="input" />)}<div className="flex gap-2"><button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-primary flex-1">Salvar</button></div></form></div>;
+/**
+ * Os cinco campos com 44px de altura no dedo somam mais que os 390px de altura
+ * de um iPhone deitado: sem `max-h-full` o modal crescia para fora da tela e o
+ * botão "Salvar" ficava inalcançável. `max-h-full` mede a caixa `fixed inset-0`
+ * de verdade, sem depender de `vh` (que ignora a barra do Safari).
+ */
+const DriverModal: React.FC<{ editing: Driver | null; form: DriverFormState; setForm: React.Dispatch<React.SetStateAction<DriverFormState>>; onClose: () => void; onSubmit: (event: React.FormEvent) => void }> = ({ editing, form, setForm, onClose, onSubmit }) => <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><form onSubmit={onSubmit} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-full overflow-y-auto overscroll-contain"><h3 className="font-extrabold text-lg">{editing ? 'Editar motoboy' : 'Novo motoboy'}</h3>{(['name', 'phone', 'password', 'bikeModel', 'plate'] as const).map((key) => <input key={key} type={key === 'password' ? 'password' : 'text'} required={key === 'name' || (!editing && key === 'password')} value={form[key]} onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))} placeholder={{ name: 'Nome', phone: 'Telefone', password: 'Senha', bikeModel: 'Modelo da moto', plate: 'Placa' }[key]} className="input" />)}<div className="flex gap-2"><button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-primary flex-1">Salvar</button></div></form></div>;
 
-const Confirm: React.FC<{ title: string; text: string; onClose: () => void; onConfirm: () => void }> = ({ title, text, onClose, onConfirm }) => <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3"><h3 className="font-extrabold">{title}</h3><p className="text-xs text-[#57534E]">{text}</p><div className="flex gap-2"><button className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-danger flex-1" onClick={onConfirm}>Excluir</button></div></div></div>;
+const Confirm: React.FC<{ title: string; text: string; onClose: () => void; onConfirm: () => void }> = ({ title, text, onClose, onConfirm }) => <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3 max-h-full overflow-y-auto overscroll-contain"><h3 className="font-extrabold">{title}</h3><p className="text-xs text-[#57534E]">{text}</p><div className="flex gap-2"><button className="btn-secondary flex-1" onClick={onClose}>Cancelar</button><button className="btn-danger flex-1" onClick={onConfirm}>Excluir</button></div></div></div>;

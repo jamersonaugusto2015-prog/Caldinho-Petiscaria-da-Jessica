@@ -92,10 +92,39 @@ const DEMAND: AlertChannels = {
   banner: true,
   sound: true,
   voice: false,
-  vibrate: [0, 160, 90, 160, 90, 320],
+  // Começa em vibrar (não em pausa): no Chrome Android um 0 na frente some
+  // ou cancela o padrão. Cada número ≤ 1000 ms — motor barato sente melhor.
+  vibrate: [180, 90, 180, 90, 320],
   system: true,
   repeat: 2,
 };
+
+/** Corrida no capacete: três voltas. O motoboy está no trânsito, não na tela. */
+const DRIVER_DEMAND: Partial<AlertChannels> = {
+  repeat: 3,
+  vibrate: [220, 90, 220, 90, 380, 140, 520],
+};
+
+/**
+ * Uma lista só, sem `setTimeout`. O Chrome no Android exige ativação do
+ * usuário e perde essa ativação em timer — três `vibrate()` atrasados viram
+ * silêncio. Concatenar cabe num único chamado.
+ */
+export function expandVibratePattern(pattern: number[], repeat = 1, gapMs = 280): number[] {
+  const times = Math.max(1, Math.min(Math.round(repeat) || 1, 5));
+  const clean = pattern
+    .map((ms) => Math.max(0, Math.min(Math.round(ms), 1000)))
+    .filter((ms, i) => i > 0 || ms > 0);
+  if (clean.length === 0) return [200];
+  if (times === 1) return clean.slice(0, 99);
+  const out = [...clean];
+  for (let i = 1; i < times; i++) {
+    if (out.length % 2 === 1) out.push(gapMs);
+    else out[out.length - 1] += gapMs;
+    out.push(...clean);
+  }
+  return out.slice(0, 99);
+}
 
 export const URGENCY_CHANNELS: Record<AlertUrgency, AlertChannels> = {
   silent: SILENT,
@@ -212,6 +241,7 @@ function driverAlert(order: Order, ctx: AlertContext): OrderAlert | null {
       title: 'Nova corrida disponível',
       body: `${order.address?.neighborhood || 'Bairro não informado'} · ${order.distanceKm.toFixed(1)} km · ${money(order.deliveryFee)}`,
       urgency: 'demand',
+      channels: DRIVER_DEMAND,
       tag: `driver:offer:${order.id}`,
     });
   }
@@ -224,6 +254,7 @@ function driverAlert(order: Order, ctx: AlertContext): OrderAlert | null {
       title: `Corrida ${order.id} cancelada`,
       body: order.cancelledBy === 'cliente' ? 'O cliente cancelou o pedido.' : 'A loja cancelou o pedido.',
       urgency: 'demand',
+      channels: DRIVER_DEMAND,
     });
   }
 

@@ -71,9 +71,11 @@ const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
   }, [splashDone]);
 
   return (
+    // `px-safe`: deitado, o iPhone joga o notch para um dos lados e o casco de
+    // 430 px ficava com a borda esquerda por baixo dele.
     <div
       ref={contentRef}
-      className="min-h-dscreen bg-[#121214] text-[#1C1917] font-sans antialiased flex justify-center selection:bg-[#B91C1C] selection:text-white"
+      className="px-safe min-h-dscreen bg-[#121214] text-[#1C1917] font-sans antialiased flex justify-center selection:bg-[#B91C1C] selection:text-white"
     >
       <div className="w-full max-w-[430px] min-h-dscreen bg-[#F5F5F4] flex flex-col shadow-2xl shadow-black/40">
         {loadError ? (

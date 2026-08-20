@@ -33,7 +33,12 @@ const KitchenShell: React.FC = () => {
   }, [searchParams, setSearchParams, triggerToast]);
 
   return (
-    <div className="k-shell min-h-dscreen bg-[#F5F5F4] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
+    // `px-safe`: o painel roda em tablet deitado, e nessa posição o notch come a
+    // borda esquerda ou direita — sem o recuo o quadro de pedidos nascia meio
+    // escondido atrás dele. `overflow-x-clip` (e não `hidden`, que viraria um
+    // contêiner de rolagem e quebraria o cabeçalho `sticky`) garante que nada
+    // dentro do painel faça a PÁGINA inteira rolar para o lado no celular.
+    <div className="k-shell min-h-dscreen overflow-x-clip px-safe bg-[#F5F5F4] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
       <KitchenSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       <div
         className={`flex min-h-dscreen flex-col transition-[padding-left] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${

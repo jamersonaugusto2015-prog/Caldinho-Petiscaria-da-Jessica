@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ChatMessage, Order, OrderStatus } from '../types';
-import { chatAlertFor, isRideOffered, orderAlertFor, URGENCY_CHANNELS } from './orderAlerts';
+import {
+  chatAlertFor,
+  expandVibratePattern,
+  isRideOffered,
+  orderAlertFor,
+  URGENCY_CHANNELS,
+} from './orderAlerts';
 
 const order = (patch: Partial<Order> = {}): Order =>
   ({
@@ -67,7 +73,8 @@ test('corrida oferecida grita para o motoboy e vibra', () => {
   const alert = orderAlertFor('driver', 'order:updated', order({ status: 'pronto' }), { driverId: 'd1' });
   assert.ok(alert);
   assert.equal(alert.urgency, 'demand');
-  assert.deepEqual(alert.channels.vibrate, URGENCY_CHANNELS.demand.vibrate);
+  assert.ok(alert.channels.vibrate);
+  assert.equal(alert.channels.repeat, 3);
   assert.match(alert.body, /Boa Viagem/);
 });
 
@@ -179,6 +186,16 @@ test('o motoboy não recebe o chat do pedido', () => {
 });
 
 // ---------------------------------------------------------------- a escala
+
+test('o padrão de vibração do Android cabe num chamado só, sem timer', () => {
+  const once = expandVibratePattern([220, 90, 400], 1);
+  assert.deepEqual(once, [220, 90, 400]);
+  const triple = expandVibratePattern([220, 90, 400], 3);
+  assert.equal(triple[0], 220);
+  assert.ok(triple.length > once.length);
+  assert.ok(triple.length <= 99);
+  assert.equal(expandVibratePattern([0, 200], 1)[0], 200);
+});
 
 test('a escala só sobe: silent < notice < demand', () => {
   assert.equal(URGENCY_CHANNELS.silent.system, false);

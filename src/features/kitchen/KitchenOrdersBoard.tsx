@@ -275,7 +275,10 @@ export const KitchenOrdersBoard: React.FC = () => {
               aria-pressed={selected}
               title={wide ? (selected ? 'Recolher coluna' : 'Mostrar coluna') : 'Ver esta etapa'}
               onClick={() => (wide ? toggleCollapsed(column.id) : setTab(column.id))}
-              className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold transition-colors duration-200 active:scale-[0.98] ${
+              // No celular esta tira É a navegação entre etapas do pedido, e com
+              // `py-2` ela dava ~30px de altura — abaixo do mínimo de 44px do dedo.
+              // Só sobe em ponteiro grosso: no desktop ela recolhe colunas e continua fina.
+              className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold transition-colors duration-200 active:scale-[0.98] pointer-coarse:min-h-11 ${
                 isTarget
                   ? 'border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C]'
                   : selected
@@ -583,7 +586,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
               event.preventDefault(); // sem isto o arrasto vira seleção de texto na página
               dragControls.start(event);
             }}
-            className="-ml-1 touch-none cursor-grab rounded-lg py-1 text-[#D6D3D1] transition-colors duration-200 hover:text-[#78716C] active:cursor-grabbing"
+            // A alça tinha ~16px de largura: no dedo, pegar o card para arrastar
+            // de coluna quase sempre virava um toque no card (que só expande).
+            className="-ml-1 flex touch-none cursor-grab items-center justify-center rounded-lg py-1 text-[#D6D3D1] transition-colors duration-200 hover:text-[#78716C] active:cursor-grabbing pointer-coarse:min-h-11 pointer-coarse:min-w-11"
           >
             <GripVertical className="h-4 w-4" />
           </button>
@@ -591,7 +596,10 @@ const OrderCard: React.FC<OrderCardProps> = ({
 
         <button type="button" onClick={onToggle} aria-expanded={expanded} className="min-w-0 flex-1 text-left">
           <div className="flex items-baseline justify-between gap-2">
-            <strong className="truncate text-[11px] font-black tracking-tight text-[#1C1917]">{order.id}</strong>
+            {/* `min-w-0`: sem ele o item flex nunca encolhe abaixo do texto e o
+                `truncate` não corta nada — o código do pedido empurrava o valor
+                para fora do card em vez de virar reticências. */}
+            <strong className="min-w-0 truncate text-[11px] font-black tracking-tight text-[#1C1917]">{order.id}</strong>
             <span className="shrink-0 text-sm font-extrabold tabular-nums text-[#B91C1C]">{money(order.total)}</span>
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#78716C]">
@@ -602,7 +610,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
           </div>
           <div className="mt-1 flex items-center gap-1 text-[10px] text-[#A8A29E]">
             {pickup ? <Store className="h-3 w-3 shrink-0" /> : <Bike className="h-3 w-3 shrink-0" />}
-            <span className="truncate">{destinationOf(order)}</span>
+            {/* Bairro comprido ("Conjunto Habitacional...") alargava o card e,
+                com ele, a coluna inteira. `min-w-0` deixa o `truncate` agir. */}
+            <span className="min-w-0 truncate">{destinationOf(order)}</span>
             <span className="shrink-0">· {itemLabel}</span>
           </div>
         </button>
@@ -714,14 +724,19 @@ const OrderCard: React.FC<OrderCardProps> = ({
         </div>
       )}
 
+      {/* Os três ícones (conversa, comanda, cancelar) tinham 32x32: no tablet da
+          cozinha, cancelar acertava imprimir. 44x44 só em ponteiro grosso — no
+          mouse a barra do card continua tão densa quanto era. */}
       <div className="flex items-center gap-1 border-t border-[#F5F5F4] p-2">
         {next ? (
           <button
             onClick={() => onAdvance(next)}
             disabled={busy}
-            className="h-8 min-w-0 flex-1 rounded-lg bg-[#B91C1C] px-2 text-[11px] font-bold text-white transition-colors duration-200 hover:bg-[#991B1B] active:scale-[0.98] disabled:opacity-40"
+            className="h-8 min-w-0 flex-1 rounded-lg bg-[#B91C1C] px-2 text-[11px] font-bold text-white transition-colors duration-200 hover:bg-[#991B1B] active:scale-[0.98] disabled:opacity-40 pointer-coarse:h-11"
           >
-            <span className="truncate">{nextLabel}</span>
+            {/* `truncate` em elemento inline não corta nada: "Saiu para entrega"
+                escapava do botão no card estreito. Em bloco, as reticências valem. */}
+            <span className="block truncate">{nextLabel}</span>
           </button>
         ) : (
           <span className="min-w-0 flex-1 truncate px-1 text-[10px] font-bold uppercase tracking-wide text-[#A8A29E]">
@@ -733,7 +748,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
           onClick={onChat}
           title="Conversar com o cliente"
           aria-label="Conversar com o cliente"
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#57534E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917]"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#57534E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917] pointer-coarse:h-11 pointer-coarse:w-11"
         >
           <MessagesSquare className="h-3.5 w-3.5" />
           {unreadCount > 0 && (
@@ -747,7 +762,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
           onClick={onPrint}
           title="Ver a comanda"
           aria-label="Ver a comanda"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#57534E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#57534E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917] pointer-coarse:h-11 pointer-coarse:w-11"
         >
           <Printer className="h-3.5 w-3.5" />
         </button>
@@ -758,7 +773,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
             disabled={busy}
             title="Cancelar pedido"
             aria-label="Cancelar pedido"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#78716C] transition-colors duration-200 hover:border-[#FCA5A5] hover:bg-[#FEF2F2] hover:text-[#B91C1C] disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] text-[#78716C] transition-colors duration-200 hover:border-[#FCA5A5] hover:bg-[#FEF2F2] hover:text-[#B91C1C] disabled:opacity-40 pointer-coarse:h-11 pointer-coarse:w-11"
           >
             <Ban className="h-3.5 w-3.5" />
           </button>

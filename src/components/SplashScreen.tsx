@@ -108,7 +108,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 z-[100] bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#B91C1C] flex flex-col items-center justify-center overflow-hidden"
+      /* Só `px-safe`: no eixo vertical o conteúdo é centrado e sobra tela de
+         sobra até em iPhone SE, então nada chega perto do relógio do sistema.
+         Deitado é outra história — aí o notch fica na lateral e comia a borda
+         do nome da loja. O fundo continua sangrando até a borda porque ele é
+         gradiente do próprio elemento, que o padding não recorta. */
+      className="fixed inset-0 z-[100] bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#B91C1C] px-safe flex flex-col items-center justify-center overflow-hidden"
     >
       {/* Logo da empresa (ou tigela padrão) com vapor saindo do topo */}
       <div ref={logoWrapRef} className="relative flex items-center justify-center select-none">

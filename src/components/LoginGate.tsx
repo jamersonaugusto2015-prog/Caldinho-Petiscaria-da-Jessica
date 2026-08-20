@@ -48,10 +48,17 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F5F4] text-[#1C1917] font-sans antialiased flex flex-col items-center justify-center p-4">
+    /* O inset lateral entra por lado, com piso de 1rem, em vez de `px-safe`:
+       `px-safe` fica fora das camadas do Tailwind e zerava o `p-4` deste mesmo
+       elemento — no celular estreito o cartão de login encostava nas duas
+       bordas da tela. */
+    <div className="min-h-dscreen bg-[#F5F5F4] text-[#1C1917] font-sans antialiased flex flex-col items-center justify-center p-4 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+      {/* O link vivia a 20 px do topo — no app instalado isso é debaixo do
+          relógio do iPhone, que desenha sobre a página. Agora ele desce o inset
+          da barra de status e nunca sobe menos que os 20 px do desenho. */}
       <Link
         to="/"
-        className="absolute top-5 left-5 flex items-center gap-1.5 text-xs font-bold text-[#57534E] hover:text-[#B91C1C] transition"
+        className="absolute top-[calc(env(safe-area-inset-top,0px)+1.25rem)] left-[calc(env(safe-area-inset-left,0px)+1.25rem)] flex items-center gap-1.5 text-xs font-bold text-[#57534E] hover:text-[#B91C1C] transition"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Voltar ao site do Cliente</span>

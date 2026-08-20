@@ -29,8 +29,11 @@ export const DriverApp: React.FC = () => {
 
   return (
     <DriverProvider>
-      <div className="flex min-h-screen justify-center bg-[#121214] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
-        <div className="flex min-h-screen w-full max-w-[430px] flex-col bg-[#F5F5F4] shadow-2xl shadow-black/40">
+      {/* `px-safe`: com o celular deitado no suporte do guidão o notch fica na
+          lateral e comia a borda do cartão — o botão "Sair" do cabeçalho caía
+          debaixo dele. Em pé o inset lateral é 0 e nada muda. */}
+      <div className="flex min-h-dscreen justify-center bg-[#121214] px-safe font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
+        <div className="flex min-h-dscreen w-full max-w-[430px] flex-col bg-[#F5F5F4] shadow-2xl shadow-black/40">
           <DriverHeader />
           <main className="flex-1 px-3 pb-8 pt-4">
             <DriverView />

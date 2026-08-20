@@ -39,7 +39,7 @@ export type TriggerAlertBanner = (message: string, urgency?: AlertUrgency) => vo
 const DWELL_MS: Record<AlertUrgency, number> = {
   silent: 4000,
   notice: 5500,
-  demand: 9000,
+  demand: 12000,
 };
 
 /** O texto e o gatilho moram em contextos separados: toda loja precisa do
@@ -101,6 +101,12 @@ interface VariantSkin {
    * no motoboy ele some do fluxo quando está vazio (`empty:hidden`), senão a
    * região viva — que fica na página mesmo sem texto — abriria um buraco
    * permanente no topo da tela.
+   *
+   * O cliente não pode usar `empty:hidden`: a faixa é fixa e o `pt-safe` desce
+   * ela para baixo do relógio do sistema. Em troca ela é `pointer-events-none`
+   * — vazia, ela continua sendo um retângulo de 12 px (ou a altura do notch)
+   * grudado no topo com z-80, e sem isso ele comia o toque na primeira faixa do
+   * cabeçalho do cardápio. A faixa não tem botão nenhum, então nada se perde.
    */
   wrapper: string;
   bar: string;
@@ -116,7 +122,7 @@ const SKINS: Record<AlertBannerVariant, VariantSkin> = {
     animated: false,
   },
   client: {
-    wrapper: 'fixed left-0 right-0 top-0 z-[80]',
+    wrapper: 'pointer-events-none pt-safe fixed left-0 right-0 top-0 z-[80]',
     bar: 'flex items-center justify-center gap-2 bg-[#7F1D1D] px-4 py-2 text-center text-[11px] font-bold text-white shadow-lg',
     // Sem `animate-bounce`: um ícone de 14px quicando ao lado do texto é ruído,
     // não sinal. A faixa é fixa no topo e já entra deslizando — quem chama a

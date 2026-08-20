@@ -189,7 +189,12 @@ export const KitchenStoreSettings: React.FC = () => {
         {/* Celular: trilha de pílulas grudada abaixo do cabeçalho. */}
         <nav
           aria-label="Seções das configurações"
-          className="no-scrollbar sticky top-[68px] z-10 -mx-4 flex gap-2 overflow-x-auto bg-[#F5F5F4]/95 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:hidden"
+          className="no-scrollbar sticky z-10 -mx-4 flex gap-2 overflow-x-auto bg-[#F5F5F4]/95 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:hidden"
+          // 68px é a altura da barra do painel, mas no app instalado ela ainda
+          // carrega o recuo do notch (`pt-safe`): com `top-[68px]` fixo estas
+          // pílulas deslizavam para DENTRO do cabeçalho e sumiam pela metade.
+          // A conta repete a do `.pt-safe` porque não existe utilitário de `top`.
+          style={{ top: 'calc(68px + max(env(safe-area-inset-top, 0px), 12px))' }}
         >
           {SECTIONS.map((item) => (
             <button
@@ -287,7 +292,9 @@ export const KitchenStoreSettings: React.FC = () => {
           </div>
 
           {/* Barra de salvar: acompanha a rolagem, então nunca some da tela. */}
-          <div className="sticky bottom-3 z-10 mt-4">
+          {/* `pb-safe`: colada a 12px do fim da tela, a barra caía debaixo da
+              barra de gestos do iOS e "Salvar alterações" não recebia o toque. */}
+          <div className="sticky bottom-3 z-10 mt-4 pb-safe">
             <div
               className={`flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2.5 backdrop-blur-md sm:gap-3 sm:px-4 ${
                 dirty ? 'border-[#FCA5A5] bg-white/95 shadow-lg' : 'border-[#E7E5E4] bg-white/90 shadow-xs'

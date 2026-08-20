@@ -113,7 +113,7 @@ export const KitchenRequestsPanel: React.FC = () => {
               className="w-full flex items-center gap-2 py-2 border-b last:border-0 border-[#F5F5F4] text-xs text-left"
             >
               <span className="font-extrabold">{order.id}</span>
-              <span className="flex-1 truncate text-[#57534E]">{order.customerName}</span>
+              <span className="min-w-0 flex-1 truncate text-[#57534E]">{order.customerName}</span>
               <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#B91C1C] text-white">
                 {unread[order.id]}
               </span>
@@ -233,7 +233,11 @@ const ResolveRequestModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <form onSubmit={submit} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3">
+      {/* Nada limitava a altura: com o teclado aberto num iPhone deitado o modal
+          crescia para fora da tela e "Aceitar e cancelar" ficava inalcançável.
+          `max-h-full` mede a caixa `fixed inset-0` de verdade, sem o `vh` que
+          ignora a barra do Safari. */}
+      <form onSubmit={submit} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-full overflow-y-auto overscroll-contain">
         <div>
           <h3 className="font-extrabold text-lg">
             {accepting ? 'Aceitar o cancelamento?' : 'Recusar o cancelamento?'}

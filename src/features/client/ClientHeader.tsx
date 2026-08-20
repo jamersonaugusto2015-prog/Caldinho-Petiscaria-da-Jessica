@@ -43,8 +43,17 @@ const LiveMap = lazy(() =>
 /** Mesma faixa fina do convite de notificação: um vocabulário só no topo vermelho. */
 const CLIENT_STRIP =
   'flex items-center gap-2 bg-[#991B1B] px-3 py-1.5 text-[11px] font-semibold text-white/90';
+/**
+ * Alvo de toque de ~44 px sem mexer no desenho: a área clicável cresce por um
+ * `::before` invisível. Subir o padding esticaria a faixa vermelha de 26 px
+ * para 44 px e empurraria o cardápio inteiro tela abaixo. A folga horizontal é
+ * curta de propósito — a faixa tem dois botões colados e alvos sobrepostos
+ * fariam o cliente descartar o convite querendo instalar o app.
+ */
+const STRIP_TAP_TARGET = "relative before:absolute before:-inset-y-3 before:-inset-x-1 before:content-['']";
+
 const CLIENT_STRIP_ACTION =
-  'shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold text-white active:bg-white/25';
+  `shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold text-white active:bg-white/25 ${STRIP_TAP_TARGET}`;
 
 /** Do tamanho exato do mapa, para a ficha do endereço não pular ao carregar. */
 const MapPlaceholder: React.FC<{ heightClass: string }> = ({ heightClass }) => (
@@ -259,7 +268,7 @@ export const ClientHeader: React.FC = () => {
             type="button"
             onClick={install.dismiss}
             aria-label="Agora não"
-            className="shrink-0 rounded-lg p-1 text-white/60 active:bg-white/15"
+            className={`shrink-0 rounded-lg p-1 text-white/60 active:bg-white/15 ${STRIP_TAP_TARGET}`}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -349,12 +358,15 @@ export const ClientHeader: React.FC = () => {
               placeholder="Buscar no cardápio"
               className="w-full h-10 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] pl-9 pr-10 text-[13px] font-medium text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:bg-white focus:border-[#B91C1C] focus:ring-2 focus:ring-[#B91C1C]/15 transition-colors"
             />
+            {/* 32 px é menos que o dedo: quem quer limpar a busca acerta o
+                campo e o teclado sobe de novo. O ícone fica no mesmo lugar
+                (right-0 + 40 px = right-1 + 32 px), só a área cresce. */}
             <button
               onClick={() => {
                 setSearchQuery('');
                 setIsSearchOpen(false);
               }}
-              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-[#78716C] active:bg-[#E7E5E4]"
+              className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg flex items-center justify-center text-[#78716C] active:bg-[#E7E5E4]"
               aria-label="Fechar busca"
             >
               <X className="w-4 h-4" />
@@ -421,13 +433,20 @@ export const ClientHeader: React.FC = () => {
                 setAddressFormOpen(false);
               }}
             />
-            <div className="bg-white text-[#1C1917] rounded-t-3xl sm:rounded-2xl p-6 w-full max-w-[430px] max-h-[90vh] sm:max-h-[85vh] shadow-2xl relative flex flex-col overflow-hidden z-10">
+            {/* `dvh` e não `vh`: com `vh` a folha nascia mais alta que a tela do
+                iPhone (o `vh` ignora a barra do Safari) e o botão "Salvar
+                Endereço" ficava abaixo do fim da tela, sem rolagem que o
+                alcançasse. O `pb` extra tira o rodapé de cima da barra de
+                gestos. */}
+            <div className="bg-white text-[#1C1917] rounded-t-3xl sm:rounded-2xl p-6 pb-[calc(env(safe-area-inset-bottom)+24px)] w-full max-w-[430px] max-h-[90dvh] sm:max-h-[85dvh] shadow-2xl relative flex flex-col overflow-hidden z-10">
+              {/* 36 px → 44 px sem mexer no ícone: top-3/right-3 + 44 px deixa o
+                  X exatamente onde top-4/right-4 + 36 px deixava. */}
               <button
                 onClick={() => {
                   setAddressModalOpen(false);
                   setAddressFormOpen(false);
                 }}
-                className="absolute top-4 right-4 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E] z-20"
+                className="absolute top-3 right-3 min-h-11 min-w-11 flex items-center justify-center rounded-full hover:bg-[#F5F5F4] text-[#57534E] z-20"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -441,7 +460,7 @@ export const ClientHeader: React.FC = () => {
               </p>
 
               {!isAddressFormOpen ? (
-                <div className="space-y-3 overflow-y-auto pr-1 flex-1 min-h-0 pb-2">
+                <div className="space-y-3 overflow-y-auto overscroll-contain pr-1 flex-1 min-h-0 pb-2">
                   {addresses.length === 0 && (
                     <div className="text-center text-xs text-[#A8A29E] py-6">
                       Nenhum endereço cadastrado ainda.
@@ -487,7 +506,7 @@ export const ClientHeader: React.FC = () => {
                               removeAddress(addr.id);
                             }
                           }}
-                          className="p-2 rounded-full text-[#A8A29E] hover:text-[#B91C1C] hover:bg-[#FEF2F2] transition"
+                          className="min-h-11 min-w-11 flex items-center justify-center rounded-full text-[#A8A29E] hover:text-[#B91C1C] hover:bg-[#FEF2F2] transition"
                           title="Remover endereço"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -505,7 +524,9 @@ export const ClientHeader: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleCreateAddress} className="space-y-3 text-xs overflow-y-auto flex-1 min-h-0 pb-2">
+                // `overscroll-contain`: chegando ao fim da lista, continuar
+                // puxando arrastava a página do cardápio atrás da folha.
+                <form onSubmit={handleCreateAddress} className="space-y-3 text-xs overflow-y-auto overscroll-contain flex-1 min-h-0 pb-2">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[#1C1917] font-bold mb-1">Apelido</label>
@@ -532,7 +553,7 @@ export const ClientHeader: React.FC = () => {
                           type="button"
                           onClick={handleCepLookup}
                           disabled={isLocating}
-                          className="bg-[#FEF2F2] text-[#B91C1C] px-2.5 rounded-xl border border-[#FCA5A5] font-bold hover:bg-[#FEE2E2] disabled:opacity-50 shrink-0"
+                          className="bg-[#FEF2F2] text-[#B91C1C] px-2.5 min-h-11 min-w-11 flex items-center justify-center rounded-xl border border-[#FCA5A5] font-bold hover:bg-[#FEE2E2] disabled:opacity-50 shrink-0"
                           title="Buscar CEP novamente"
                         >
                           {isLocating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
@@ -614,7 +635,7 @@ export const ClientHeader: React.FC = () => {
 
                   {newLat != null && newLng != null && (
                     <div className="flex items-center justify-between bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl p-2.5 text-[11px] font-bold text-[#065F46]">
-                      <span>
+                      <span className="min-w-0">
                         Distância da loja: {formatKm(distancePreview)}
                         {feePreview != null && feePreview < 0 && (
                           <span className="block text-[#B91C1C]">
@@ -623,7 +644,7 @@ export const ClientHeader: React.FC = () => {
                         )}
                       </span>
                       {feePreview != null && feePreview >= 0 && (
-                        <span>Entrega: R$ {feePreview.toFixed(2)}</span>
+                        <span className="shrink-0">Entrega: R$ {feePreview.toFixed(2)}</span>
                       )}
                     </div>
                   )}

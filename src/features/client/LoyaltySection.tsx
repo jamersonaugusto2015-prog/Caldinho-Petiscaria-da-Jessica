@@ -96,9 +96,11 @@ export const LoyaltySection: React.FC = () => {
               <button
                 key={p.id}
                 onClick={() => handleRedeem(p)}
-                className="w-full flex items-center justify-between bg-white border border-[#FDE68A] rounded-xl px-3 py-2 hover:bg-[#FEF3C7] transition text-left"
+                className="w-full min-h-11 flex items-center justify-between gap-2 bg-white border border-[#FDE68A] rounded-xl px-3 py-2 hover:bg-[#FEF3C7] transition text-left"
               >
-                <span className="text-[11px] font-bold text-[#1C1917]">{p.name}</span>
+                {/* Nome de caldinho longo empurrava o selo "GRÁTIS" para fora
+                    do cartão amarelo. */}
+                <span className="min-w-0 truncate text-[11px] font-bold text-[#1C1917]">{p.name}</span>
                 <span className="text-[10px] text-[#059669] font-black shrink-0 ml-2">GRÁTIS</span>
               </button>
             ))}

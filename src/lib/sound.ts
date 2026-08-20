@@ -56,6 +56,38 @@ function beep(freq: number, start: number, duration: number, volume = 0.3): void
 
 const CHIME_SECONDS = 0.8;
 
+/**
+ * O Safari do iPhone não tem `navigator.vibrate`. Um burst grave no alto-falante
+ * é o que o aparelho consegue fazer de "haptic" na web: o motoboy sente no bolso
+ * mesmo sem a API. `start` em segundos, igual ao `beep`.
+ */
+export function playPhoneBuzz(start = 0, duration = 0.18): void {
+  const c = ensureCtx();
+  if (!c) return;
+  const osc = c.createOscillator();
+  const gain = c.createGain();
+  osc.type = 'square';
+  osc.frequency.value = 72;
+  const t0 = c.currentTime + start;
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(0.28, t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+  osc.connect(gain).connect(c.destination);
+  osc.start(t0);
+  osc.stop(t0 + duration + 0.04);
+}
+
+/** Três pancadas curtas, no ritmo de um toque de celular. */
+export function playPhoneBuzzPattern(repeat = 1): void {
+  const rounds = Math.max(1, repeat);
+  for (let round = 0; round < rounds; round++) {
+    const offset = round * 1.05;
+    playPhoneBuzz(offset, 0.16);
+    playPhoneBuzz(offset + 0.22, 0.16);
+    playPhoneBuzz(offset + 0.44, 0.28);
+  }
+}
+
 /** Alerta de NOVO PEDIDO: dois "dings" ascendentes (tipo campainha de loja). */
 export function playNewOrderSound(repeat = 1): void {
   for (let round = 0; round < Math.max(1, repeat); round++) {

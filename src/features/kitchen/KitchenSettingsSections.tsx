@@ -377,7 +377,10 @@ export const HoursSection: React.FC<BaseProps> = ({ draft, setField }) => {
               <span className={`text-sm font-bold ${hour ? 'text-[#1C1917]' : 'text-[#A8A29E]'}`}>{DAY_NAMES[index]}</span>
             </button>
             {hour ? (
-              <div className="flex min-w-[210px] flex-1 items-center gap-2">
+              /* Dois `input[type=time]` do iOS + o botão de copiar não cabiam nos 296px
+                 úteis de um celular de 360px: `min-w-0` no grupo deixa a linha
+                 encolher em vez de empurrar a página inteira para o lado. */
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:min-w-[210px]">
                 <input
                   className={`${INPUT_CLASS} flex-1 sm:max-w-[150px]`}
                   type="time"
@@ -398,7 +401,7 @@ export const HoursSection: React.FC<BaseProps> = ({ draft, setField }) => {
                   title="Aplicar este horário a todos os dias"
                   aria-label={`Aplicar o horário de ${DAY_NAMES[index]} a todos os dias`}
                   onClick={() => copyToAll(index)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] bg-white text-[#78716C] transition-colors hover:bg-[#F5F5F4] hover:text-[#1C1917]"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E7E5E4] bg-white text-[#78716C] transition-colors hover:bg-[#F5F5F4] hover:text-[#1C1917] pointer-coarse:h-11 pointer-coarse:w-11"
                 >
                   <Copy className="h-4 w-4" />
                 </button>

@@ -169,7 +169,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={reduceMotion ? { opacity: 0 } : { y: '6%', opacity: 0, scale: 0.98 }}
           transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-          className="relative bg-white text-[#1C1917] w-full md:max-w-4xl h-[94dvh] md:h-[min(86vh,720px)] rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
+          className="relative bg-white text-[#1C1917] w-full md:max-w-4xl h-[94dvh] md:h-[min(86dvh,720px)] rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
         >
           {/* ------------------------------------------------------------ foto */}
           <div className="relative shrink-0 h-56 sm:h-64 md:h-auto md:w-[42%] bg-[#F5F5F4] overflow-hidden">
@@ -265,7 +265,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
           </button>
 
           <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-slim px-4 md:px-6 py-5 space-y-6">
+            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain scroll-slim px-4 md:px-6 py-5 space-y-6">
               {slots.length > 0 && (
                 <section>
                   <SectionTitle
@@ -335,7 +335,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                                       : 'bg-[#FAFAF9] border-[#E7E5E4] hover:bg-[#F5F5F4]'
                                   }`}
                                 >
-                                  <span className="text-xs font-bold text-[#1C1917]">{option.label}</span>
+                                  {/* Sem `min-w-0` o `truncate` não vale nada num
+                                      filho de flex: "Caldinho de camarão com
+                                      queijo coalho" empurrava o preço para fora
+                                      do cartão. */}
+                                  <span className="min-w-0 truncate text-xs font-bold text-[#1C1917]">
+                                    {option.label}
+                                  </span>
                                   <span className="flex items-center gap-2 shrink-0">
                                     {option.priceDelta != null && option.priceDelta > 0 && (
                                       <span className="text-[10px] font-extrabold text-[#B91C1C]">
@@ -487,12 +493,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
               )}
 
               <div className="flex items-center gap-3">
+                {/* 32 px por botão, colados: no dedo, "3 unidades" vira "1". O
+                    `::before` invisível leva cada alvo a 44 px sem engordar a
+                    pílula nem o rodapé, que já divide a linha com o botão de
+                    adicionar. */}
                 <div className="flex items-center bg-[#F5F5F4] rounded-full border border-[#E7E5E4] p-1 shrink-0">
                   <button
                     onClick={() => setQuantity((current) => Math.max(1, current - 1))}
                     disabled={quantity <= 1}
                     aria-label="Diminuir quantidade"
-                    className="p-2 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] transition disabled:opacity-30"
+                    className="relative p-2 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] transition disabled:opacity-30 before:absolute before:-inset-1.5 before:content-['']"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
@@ -502,7 +512,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                   <button
                     onClick={() => setQuantity((current) => current + 1)}
                     aria-label="Aumentar quantidade"
-                    className="p-2 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] transition"
+                    className="relative p-2 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] transition before:absolute before:-inset-1.5 before:content-['']"
                   >
                     <Plus className="w-4 h-4" />
                   </button>

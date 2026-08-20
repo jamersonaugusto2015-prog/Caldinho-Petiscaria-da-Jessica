@@ -208,28 +208,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
         <div className="flex shrink-0 items-center justify-between border-b border-[#E7E5E4] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
           <button
             onClick={pendingPix ? () => setPendingPix(null) : step === 'pagamento' ? () => setStep('dados') : onClose}
-            className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition flex items-center gap-1 text-xs font-bold"
+            className="min-h-11 min-w-0 px-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition flex items-center gap-1 text-xs font-bold"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            {/* Num iPhone SE (320 px) "Voltar ao carrinho" + "Finalizar Pedido"
+                + o X somavam mais que a largura da tela e empurravam o X para
+                fora do cabeçalho. */}
+            <span className="truncate">
               {pendingPix ? 'Voltar' : step === 'pagamento' ? 'Voltar aos dados' : 'Voltar ao carrinho'}
             </span>
           </button>
 
-          <h2 className="text-base font-extrabold text-[#1C1917]">
+          <h2 className="truncate px-1 text-base font-extrabold text-[#1C1917]">
             {pendingPix ? 'Pagamento PIX' : step === 'dados' ? 'Seus Dados' : 'Finalizar Pedido'}
           </h2>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917]"
+            aria-label="Fechar o checkout"
+            className="min-h-11 min-w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917]"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {pendingPix ? (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F5F4]/30">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 bg-[#F5F5F4]/30">
             <div className="bg-white rounded-2xl p-4 border border-[#E7E5E4] text-center space-y-3 shadow-xs">
               <div className="inline-flex items-center gap-1 text-xs font-bold text-[#059669] bg-[#ECFDF5] px-3 py-1 rounded-full border border-[#A7F3D0]">
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -344,7 +348,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
               </div>
             </div>
 
-            <form id="checkout-form" onSubmit={handleConfirmOrder} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <form id="checkout-form" onSubmit={handleConfirmOrder} className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4">
               {!settings.isOpen && (
                 <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3.5 text-xs text-[#92400E] font-bold flex items-start gap-2">
                   <Clock className="w-4 h-4 shrink-0 mt-0.5" />
@@ -753,8 +757,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
               )}
             </form>
 
-            {/* Rodapé fixo com CTA (mobile) */}
-            <div className="shrink-0 p-4 pb-[calc(env(safe-area-inset-bottom)+12px)] bg-white border-t border-[#E7E5E4]">
+            {/* Rodapé fixo com CTA (mobile). O `pb` soma o recorte do iPhone à
+                folga normal: sem ele o botão de confirmar o pedido nasce em
+                cima da barra de gestos, e o toque vira "voltar para a tela
+                inicial". O formulário rola por dentro, então o campo em foco
+                nunca fica atrás deste rodapé. */}
+            <div className="shrink-0 p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] bg-white border-t border-[#E7E5E4]">
               {confirmError && (
                 <div className="mb-2 bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-3 text-[11px] text-[#B91C1C] font-bold flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />

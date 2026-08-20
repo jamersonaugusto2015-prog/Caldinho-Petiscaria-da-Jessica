@@ -120,7 +120,7 @@ export const KitchenPromotionEditor: React.FC<Props> = ({ value, products, categ
             type="button"
             onClick={onClose}
             aria-label="Fechar"
-            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
+            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition pointer-coarse:w-11 pointer-coarse:h-11"
           >
             <X className="w-4 h-4" />
           </button>
@@ -347,7 +347,7 @@ export const KitchenPromotionEditor: React.FC<Props> = ({ value, products, categ
                         >
                           {picked && <Check className="w-3 h-3" />}
                         </span>
-                        <span className="flex-1 truncate font-bold text-[#1C1917]">{product.name}</span>
+                        <span className="min-w-0 flex-1 truncate font-bold text-[#1C1917]">{product.name}</span>
                         <span className="shrink-0 text-[#57534E]">{money(product.basePrice)}</span>
                       </button>
                     );
@@ -483,14 +483,20 @@ export const KitchenPromotionEditor: React.FC<Props> = ({ value, products, categ
           <MarginGuard report={report} kind={form.kind} />
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-[#E7E5E4] px-5 py-4">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Cancelar
-          </button>
-          <button type="submit" className="btn-primary" disabled={saving}>
-            <Check className="w-4 h-4" />
-            {saving ? 'Salvando…' : 'Salvar promoção'}
-          </button>
+        {/* No celular a folha encosta no rodapé da tela: a barra de gestos do iOS
+            cobria estes botões. `pb-safe` vai num invólucro porque a classe
+            (que é CSS solto, fora das camadas do Tailwind) sobrescreveria o
+            `py-4` do rodapé e colaria os botões na borda no desktop. */}
+        <footer className="pb-safe border-t border-[#E7E5E4]">
+          <div className="flex items-center justify-end gap-2 px-5 py-4">
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Cancelar
+            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              <Check className="w-4 h-4" />
+              {saving ? 'Salvando…' : 'Salvar promoção'}
+            </button>
+          </div>
         </footer>
       </form>
     </div>

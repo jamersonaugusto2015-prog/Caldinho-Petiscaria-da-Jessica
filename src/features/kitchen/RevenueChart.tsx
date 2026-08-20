@@ -95,7 +95,10 @@ export const RevenueChart: React.FC<RevenueChartProps> = ({ points, periodLabel 
           {points.map((p, i) => (
             <div
               key={p.date}
-              className={`flex-1 text-center text-[8px] font-bold ${
+              // `min-w-0`: sem ele o `flex-1` respeita a largura intrínseca do
+              // rótulo, e um mês inteiro de pontos soma umas trinta datas que
+              // estouram o painel no celular em vez de se apertarem.
+              className={`min-w-0 flex-1 text-center text-[8px] font-bold ${
                 i === bestIdx && best.revenue > 0 ? 'text-[#D97706]' : 'text-[#A8A29E]'
               } ${i % labelStep === 0 ? '' : 'opacity-0 pointer-events-none'}`}
             >

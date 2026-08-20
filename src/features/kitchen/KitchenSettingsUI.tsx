@@ -8,8 +8,13 @@ import React, { useEffect, useId, useState } from 'react';
  * alvo de toque de 44px e o estado (ligado, salvo, com erro) aparece sem leitura.
  */
 
+// `min-w-0`: sem ele um `input[type=time]`/`[type=date]` do iOS nunca encolhe
+// abaixo da largura natural dele e estoura a linha em telas de 360px.
+// `pointer-coarse:min-h-11`: esta classe é uma cópia visual do `.input`, mas não
+// herda o mínimo de 44px que o `src/index.css` dá ao `.input` no dedo — sem isto
+// os campos das Configurações ficavam com 40px só aqui.
 export const INPUT_CLASS =
-  'block w-full rounded-xl border border-[#E7E5E4] bg-white px-3 py-2.5 text-sm font-semibold text-[#1C1917] outline-none transition-colors placeholder:font-medium placeholder:text-[#A8A29E] focus:border-[#B91C1C] focus:ring-2 focus:ring-[#B91C1C]/25 disabled:cursor-not-allowed disabled:bg-[#FAFAF9] disabled:text-[#A8A29E]';
+  'block w-full min-w-0 rounded-xl border border-[#E7E5E4] bg-white px-3 py-2.5 text-sm font-semibold text-[#1C1917] outline-none transition-colors placeholder:font-medium placeholder:text-[#A8A29E] focus:border-[#B91C1C] focus:ring-2 focus:ring-[#B91C1C]/25 disabled:cursor-not-allowed disabled:bg-[#FAFAF9] disabled:text-[#A8A29E] pointer-coarse:min-h-11';
 
 const INPUT_ERROR_CLASS = 'border-[#FCA5A5] bg-[#FEF2F2] focus:border-[#B91C1C]';
 

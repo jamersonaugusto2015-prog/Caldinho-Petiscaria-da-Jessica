@@ -28,7 +28,7 @@ export const DriverHeader: React.FC = () => {
     presenceState === 'online' ? 'Online' : presenceState === 'reconnecting' ? 'Reconectando' : 'Offline';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[#27272A] bg-[#121214] text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]">
+    <header className="pt-safe sticky top-0 z-40 border-b border-[#27272A] bg-[#121214] text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]">
       <div className="mx-auto flex max-w-[430px] items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#B91C1C] text-white shadow-md">
@@ -56,7 +56,7 @@ export const DriverHeader: React.FC = () => {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs font-bold text-white transition hover:bg-white/15 active:scale-95"
+          className="tap-44 flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs font-bold text-white transition hover:bg-white/15 active:scale-95"
           title="Sair do app do entregador"
         >
           <LogOut className="h-4 w-4" />

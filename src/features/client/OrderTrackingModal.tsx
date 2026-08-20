@@ -275,11 +275,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
       <>
       <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
         <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
-          <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between shrink-0">
-            <div>
+          {/* `pt-safe`: esta folha vai até o topo da tela, e sem o recorte o
+              número do pedido nascia atrás do relógio do iPhone. */}
+          <div className="p-4 pt-safe border-b border-[#E7E5E4] bg-white flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-extrabold text-[#1C1917]">Pedido {order.id}</span>
-                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full text-white bg-[#B45309]">
+                <span className="truncate text-lg font-extrabold text-[#1C1917]">Pedido {order.id}</span>
+                <span className="shrink-0 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full text-white bg-[#B45309]">
                   Aguardando pagamento
                 </span>
               </div>
@@ -287,13 +289,14 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition"
+              aria-label="Fechar o acompanhamento"
+              className="min-h-11 min-w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F5F5F4]/30">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 bg-[#F5F5F4]/30">
             <div className="bg-white rounded-2xl p-4 border border-[#E7E5E4] text-center space-y-3 shadow-xs">
               <div className="inline-flex items-center gap-1 text-xs font-bold text-[#B45309] bg-[#FEF3C7] px-3 py-1 rounded-full border border-[#FCD34D]">
                 <QrCode className="w-3.5 h-3.5" />
@@ -434,12 +437,14 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
     <>
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
       <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
-        <div className="p-4 border-b border-[#E7E5E4] bg-white flex items-center justify-between shrink-0">
-          <div>
+        {/* `pt-safe`: a folha vai até o topo da tela e o "Pedido #123" ficava
+            atrás do relógio do iPhone com o app instalado. */}
+        <div className="p-4 pt-safe border-b border-[#E7E5E4] bg-white flex items-center justify-between gap-2 shrink-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-lg font-extrabold text-[#1C1917]">Pedido {order.id}</span>
+              <span className="truncate text-lg font-extrabold text-[#1C1917]">Pedido {order.id}</span>
               <span
-                className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full text-white"
+                className="shrink-0 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full text-white"
                 style={{ backgroundColor: statusColor }}
               >
                 {order.status === 'entregue'
@@ -462,13 +467,18 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition"
+            aria-label="Fechar o acompanhamento"
+            className="min-h-11 min-w-11 shrink-0 flex items-center justify-center rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto flex-1 bg-[#F5F5F4]/30">
+        {/* O corpo rola (o cabeçalho fica), e o `pb` soma o recorte de baixo:
+            sem ele o formulário de avaliação terminava em cima da barra de
+            gestos. `overscroll-contain` impede que chegar ao fim da ficha
+            arraste o cardápio atrás dela. */}
+        <div className="p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 overflow-y-auto overscroll-contain flex-1 bg-[#F5F5F4]/30">
           {isCanceled && (
             <div className="bg-white rounded-2xl p-4 border border-[#FCA5A5] shadow-xs space-y-1.5">
               <div className="flex items-center gap-2 text-sm font-extrabold text-[#B91C1C]">
@@ -587,7 +597,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   const isCurrent = idx === currentIndex;
 
                   return (
-                    <div key={step.status} className="flex flex-col items-center text-center z-10 w-16">
+                    // Colunas de 64 px fixos: cinco etapas somam 320 px e num
+                    // iPhone de 375 px a linha do tempo estourava a ficha para
+                    // a direita. Com `flex-1` as etapas dividem a largura que
+                    // existe e o rótulo corta no lugar de empurrar.
+                    <div key={step.status} className="flex flex-1 min-w-0 flex-col items-center text-center z-10 px-0.5">
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                           isCurrent
@@ -603,7 +617,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                         {isPassed ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                       </div>
                       <span
-                        className={`text-[9px] font-bold mt-1.5 line-clamp-1 ${
+                        className={`w-full text-[9px] font-bold mt-1.5 line-clamp-1 ${
                           isCurrent ? 'text-[#1C1917]' : isPassed ? 'text-[#57534E]' : 'text-[#A8A29E]'
                         }`}
                       >
@@ -652,19 +666,22 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
 
           {/* O chat continua acessível no pedido cancelado: é a hora em que mais se precisa falar. */}
           <div className="bg-white p-3.5 rounded-2xl border border-[#E7E5E4] flex items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
+            {/* O endereço da loja é uma linha longa e o bloco não tinha
+                `min-w-0`: na retirada ele empurrava os botões Chat/Ligar para
+                fora da ficha. */}
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
                 {isCanceled ? '💬' : pickupOrder ? '🏪' : '🛵'}
               </div>
-              <div>
-                <div className="text-xs font-bold text-[#1C1917]">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-bold text-[#1C1917]">
                   {isCanceled
                     ? 'Fale com a loja'
                     : pickupOrder
                     ? 'Retirada na loja'
                     : order.driverName || (order.status === 'pronto' ? 'Aguardando motoboy' : 'A definir')}
                 </div>
-                <div className="text-[10px] text-[#57534E]">
+                <div className="truncate text-[10px] text-[#57534E]">
                   {isCanceled
                     ? 'O chat deste pedido continua aberto'
                     : pickupOrder
@@ -674,10 +691,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <button
                 onClick={onOpenChat}
-                className="bg-[#B91C1C] hover:bg-[#991B1B] text-white p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
+                className="bg-[#B91C1C] hover:bg-[#991B1B] text-white min-h-11 px-2.5 rounded-full font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition"
               >
                 <MessageSquare className="w-4 h-4" />
                 <span>Chat</span>
@@ -685,7 +702,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               {!isCanceled && order.driverPhone && (
                 <a
                   href={`tel:${order.driverPhone.replace(/\D/g, '')}`}
-                  className="bg-[#F5F5F4] hover:bg-[#E7E5E4] text-[#1C1917] p-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 border border-[#E7E5E4] transition"
+                  className="bg-[#F5F5F4] hover:bg-[#E7E5E4] text-[#1C1917] min-h-11 px-2.5 rounded-full font-bold text-xs flex items-center justify-center gap-1.5 border border-[#E7E5E4] transition"
                 >
                   <Phone className="w-4 h-4" />
                   <span>Ligar</span>
@@ -733,9 +750,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             {order.items.map((it) => (
               <div
                 key={it.id}
-                className="flex justify-between text-xs text-[#57534E] py-1 border-b border-[#F5F5F4] last:border-0"
+                className="flex justify-between gap-2 text-xs text-[#57534E] py-1 border-b border-[#F5F5F4] last:border-0"
               >
-                <div>
+                {/* Nome de produto longo (com os itens do combo embaixo) não
+                    pode empurrar o preço para fora da ficha. */}
+                <div className="min-w-0">
                   <span className="font-bold text-[#1C1917]">{it.quantity}x</span> {it.product.name}
                   {it.size && <span className="text-[10px] text-[#A8A29E]"> ({it.size})</span>}
                   {it.comboChoices && it.comboChoices.length > 0 && (
@@ -747,7 +766,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                     <span className="text-[10px] text-[#059669] font-bold ml-1">GRÁTIS</span>
                   )}
                 </div>
-                <span className="font-bold text-[#1C1917]">
+                <span className="shrink-0 font-bold text-[#1C1917]">
                   {it.isFree ? 'R$ 0,00' : `R$ ${it.itemTotalPrice.toFixed(2)}`}
                 </span>
               </div>
@@ -766,12 +785,12 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 </span>
               </div>
             </div>
-            <div className="pt-2 flex justify-between text-sm font-extrabold text-[#1C1917] border-t border-[#E7E5E4]">
-              <span>
+            <div className="pt-2 flex justify-between gap-2 text-sm font-extrabold text-[#1C1917] border-t border-[#E7E5E4]">
+              <span className="min-w-0">
                 Total · {paymentLabel(order.payment, order.fulfillment)}
                 {order.payment.isPaid ? ' · pago' : ' · a pagar'}
               </span>
-              <span className="text-[#B91C1C]">R$ {order.total.toFixed(2)}</span>
+              <span className="shrink-0 text-[#B91C1C]">R$ {order.total.toFixed(2)}</span>
             </div>
           </div>
 
@@ -790,7 +809,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                         key={star}
                         type="button"
                         onClick={() => setRatingStars(star)}
-                        className="p-1 transition transform hover:scale-125"
+                        aria-label={`Dar ${star} ${star === 1 ? 'estrela' : 'estrelas'}`}
+                        className="p-2 transition transform hover:scale-125"
                       >
                         <Star
                           className={`w-7 h-7 ${

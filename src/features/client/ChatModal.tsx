@@ -105,14 +105,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
       <div className="bg-white text-[#1C1917] w-full max-w-[430px] h-full rounded-t-3xl border border-[#E7E5E4] shadow-2xl flex flex-col overflow-hidden relative">
-        <div className="p-3.5 border-b border-[#E7E5E4] bg-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        {/* `pt-safe`: a folha ocupa a tela inteira, então o cabeçalho nascia sob
+            o relógio do iPhone — o número do pedido ficava escondido atrás da
+            barra de status. */}
+        <div className="p-3.5 pt-safe border-b border-[#E7E5E4] bg-white flex items-center justify-between">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-[#B91C1C] flex items-center justify-center text-white font-bold text-xs">
               💬
             </div>
-            <div>
-              <h3 className="text-xs font-extrabold text-[#1C1917]">Chat do Pedido {orderId}</h3>
-              <p className="text-[10px] text-[#57534E]">
+            <div className="min-w-0">
+              <h3 className="truncate text-xs font-extrabold text-[#1C1917]">Chat do Pedido {orderId}</h3>
+              <p className="truncate text-[10px] text-[#57534E]">
                 Comunicação direta com o Restaurante e Entregador
               </p>
             </div>
@@ -120,13 +123,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917]"
+            aria-label="Fechar o chat"
+            className="relative shrink-0 p-1.5 rounded-full hover:bg-[#F5F5F4] text-[#57534E] hover:text-[#1C1917] before:absolute before:-inset-2 before:content-['']"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div ref={listRef} className="p-4 flex-1 overflow-y-auto space-y-3 bg-[#F5F5F4]/40 text-xs">
+        <div ref={listRef} className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3 bg-[#F5F5F4]/40 text-xs">
           {isLoading ? (
             <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
               Carregando conversa...
@@ -176,9 +180,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
             placeholder="Escreva sua mensagem aqui..."
             className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-full px-4 py-2 text-xs text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
           />
+          {/* 36 px de alvo para enviar recado com o pedido na rua é pouco. Os
+              44 px também esticam o campo ao lado (a linha é `stretch`), que
+              tinha 30 px. */}
           <button
             type="submit"
-            className="bg-[#B91C1C] hover:bg-[#991B1B] text-white p-2.5 rounded-full font-bold shadow-xs transition"
+            aria-label="Enviar mensagem"
+            className="bg-[#B91C1C] hover:bg-[#991B1B] text-white min-h-11 min-w-11 flex items-center justify-center rounded-full font-bold shadow-xs transition"
           >
             <Send className="w-4 h-4" />
           </button>

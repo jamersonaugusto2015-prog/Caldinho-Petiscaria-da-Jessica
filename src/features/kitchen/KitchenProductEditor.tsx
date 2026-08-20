@@ -199,7 +199,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
             type="button"
             onClick={onClose}
             aria-label="Fechar"
-            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
+            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition pointer-coarse:w-11 pointer-coarse:h-11"
           >
             <X className="w-4 h-4" />
           </button>
@@ -480,7 +480,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                   <button
                     type="button"
                     aria-label="Remover adicional"
-                    className="btn-danger p-2 shrink-0"
+                    className="btn-danger p-2 shrink-0 pointer-coarse:min-w-11"
                     onClick={() => setExtras((current) => current.filter((_, itemIndex) => itemIndex !== index))}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -525,7 +525,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                     <button
                       type="button"
                       aria-label="Remover escolha"
-                      className="btn-danger p-2 shrink-0"
+                      className="btn-danger p-2 shrink-0 pointer-coarse:min-w-11"
                       onClick={() =>
                         setComboSlots((current) => current.filter((_, itemIndex) => itemIndex !== slotIndex))
                       }
@@ -584,7 +584,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                       <button
                         type="button"
                         aria-label="Remover opção"
-                        className="btn-danger p-2 shrink-0"
+                        className="btn-danger p-2 shrink-0 pointer-coarse:min-w-11"
                         onClick={() =>
                           setComboSlots((current) =>
                             current.map((item, itemIndex) =>
@@ -645,14 +645,20 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
           </Section>
         </div>
 
-        <footer className="flex gap-2 px-5 py-4 border-t border-[#E7E5E4] bg-white">
-          <button type="button" className="btn-secondary flex-1 py-3" onClick={onClose}>
-            Cancelar
-          </button>
-          <button className="btn-primary flex-1 py-3" disabled={saving || uploading}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {saving ? 'Salvando...' : original ? 'Salvar alterações' : 'Criar produto'}
-          </button>
+        {/* No celular a folha encosta no rodapé da tela: a barra de gestos do iOS
+            cobria estes botões. `pb-safe` vai num invólucro porque a classe
+            (que é CSS solto, fora das camadas do Tailwind) sobrescreveria o
+            `py-4` do rodapé e colaria os botões na borda no desktop. */}
+        <footer className="pb-safe border-t border-[#E7E5E4] bg-white">
+          <div className="flex gap-2 px-5 py-4">
+            <button type="button" className="btn-secondary flex-1 py-3" onClick={onClose}>
+              Cancelar
+            </button>
+            <button className="btn-primary flex-1 py-3" disabled={saving || uploading}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {saving ? 'Salvando...' : original ? 'Salvar alterações' : 'Criar produto'}
+            </button>
+          </div>
         </footer>
       </form>
       {framerNode}

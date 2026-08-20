@@ -108,18 +108,50 @@ summary,
 /* Área segura: no modo standalone o app desenha SOB o notch e sob a barra de
    gestos, porque o index.html usa `viewport-fit=cover`. Sem estes utilitários
    o cabeçalho fica atrás do relógio do sistema. Aplique em cabeçalhos fixos
-   (`.pt-safe`) e em barras inferiores fixas (`.pb-safe`). */
+   (`.pt-safe`) e em barras inferiores fixas (`.pb-safe`).
+
+   Duas linhas por regra, nesta ordem: a primeira é o valor que o navegador sem
+   `env()`/`max()` entende — ele descarta a segunda e fica com algo válido em
+   vez de ficar sem padding nenhum. Quem entende sobrescreve.
+
+   Atenção ao usar: estas classes ficam FORA das camadas do Tailwind, então elas
+   ganham de `p-4`/`px-4` no mesmo elemento — o elemento fica com o inset e
+   perde o próprio respiro. Onde o elemento também precisa do padding dele,
+   escreva o lado inteiro (`pl-[max(1rem,env(safe-area-inset-left,0px))]`). */
 .pt-safe {
-  /* Piso mesmo quando o inset ainda é 0 no 1º paint do Safari. */
-  padding-top: max(env(safe-area-inset-top, 0px), 12px);
+  padding-top: 0px;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .pb-safe {
+  padding-bottom: 0px;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .px-safe {
+  padding-left: 0px;
   padding-left: env(safe-area-inset-left, 0px);
+  padding-right: 0px;
   padding-right: env(safe-area-inset-right, 0px);
 }
+
+/* O piso existe por um defeito conhecido do Safari: no primeiro paint ele
+   devolve inset 0 e só corrige no quadro seguinte — sem piso o cabeçalho nasce
+   colado no relógio do sistema e dá um pulo. Mas ele só faz sentido onde há
+   barra de status desenhando por cima, ou seja, no dedo: em ponteiro fino (o
+   mouse do painel da cozinha) não existe notch nem barra de gestos, e o piso
+   engordava 12 px todo cabeçalho que adota `.pt-safe` sem nada para evitar.
+   Embaixo o piso é o mesmo remédio para outro sintoma: em aparelho sem barra de
+   gestos o inset é 0 e o botão da folha inferior encostava na borda do vidro. */
+@media (pointer: coarse) {
+  .pt-safe {
+    padding-top: 12px;
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+  }
+  .pb-safe {
+    padding-bottom: 12px;
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+}
+
 @media (display-mode: standalone) {
   html,
   body,
@@ -127,8 +159,29 @@ summary,
     overscroll-behavior-y: contain;
     touch-action: manipulation;
   }
-  .pt-safe {
-    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+}
+
+/* Alvo de toque de 44 px sem mudar o desenho.
+   O `@media (pointer: coarse)` lá em cima levanta `.btn-*` e `.input`, mas não
+   alcança botão solto de ícone (o X do modal, a pílula "Maps" de 26 px). Aqui a
+   área cresce por um pseudo-elemento invisível: o botão continua do mesmo
+   tamanho na tela — nenhuma cor, fonte ou espaçamento muda — e o dedo do
+   motoboy de luva para de errar o toque. O retângulo nunca fica menor que o
+   próprio botão, então botão largo não perde área. */
+@media (pointer: coarse) {
+  .tap-44 {
+    position: relative;
+  }
+  .tap-44::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    transform: translate(-50%, -50%);
   }
 }
 

@@ -14,10 +14,17 @@ export const ClosedStoreModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   return (
     <div className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-xs flex items-end justify-center">
-      <div className="bg-white text-[#1C1917] w-full max-w-[430px] rounded-t-3xl border border-[#E7E5E4] shadow-2xl p-6 relative animate-slide-up">
+      {/* Sete dias de horário mais o botão passam da altura de um iPhone SE: sem
+          `max-h`/`overflow-y` a folha crescia para fora da tela e o "Entendi"
+          ficava inalcançável. O `pb` extra tira o botão de cima da barra de
+          gestos. */}
+      <div className="bg-white text-[#1C1917] w-full max-w-[430px] max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-3xl border border-[#E7E5E4] shadow-2xl p-6 pb-[calc(env(safe-area-inset-bottom)+24px)] relative animate-slide-up">
+        {/* 36 px → 44 px sem tirar o X do lugar: top-3/right-3 + 44 px cai no
+            mesmo ponto que top-4/right-4 + 36 px. */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E]"
+          aria-label="Fechar"
+          className="absolute top-3 right-3 min-h-11 min-w-11 flex items-center justify-center rounded-full hover:bg-[#F5F5F4] text-[#57534E]"
         >
           <X className="w-5 h-5" />
         </button>

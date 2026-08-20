@@ -33,7 +33,7 @@ export const FulfillmentPicker: React.FC<{ className?: string }> = ({ className 
           >
             <Icon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-[#B91C1C]' : 'text-[#57534E]'}`} />
             <span className="min-w-0">
-              <span className={`block text-xs font-extrabold ${isSelected ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+              <span className={`block truncate text-xs font-extrabold ${isSelected ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
                 {option.label}
               </span>
               <span className="block text-[10px] text-[#57534E] truncate">{option.hint}</span>

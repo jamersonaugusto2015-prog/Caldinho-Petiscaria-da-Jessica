@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
-import type { AlertContext, OrderAlert } from '../shared/orderAlerts';
+import { expandVibratePattern, type AlertContext, type OrderAlert } from '../shared/orderAlerts';
 import type { Order } from '../types';
-import { appRole } from './appShell';
+import { appRole, isIos } from './appShell';
 import { ensurePushSubscription, pushStatus, type PushStatus } from './pushSubscription';
-import { playNewOrderSound, playOrderMp3, primeSpeech, resumeAudio, speakPtBr } from './sound';
+import { playNewOrderSound, playOrderMp3, playPhoneBuzzPattern, primeSpeech, resumeAudio, speakPtBr } from './sound';
 
 /**
  * O canal: por onde o alerta sai.
@@ -111,6 +111,9 @@ function installUnlock(): void {
   const wake = () => {
     resumeAudio();
     primeSpeech();
+    // O Chrome no Android só vibra depois de um gesto. Este 1 ms não se sente;
+    // ele "arma" a ativação pegajosa para o próximo alerta de corrida.
+    tryVibrate([1]);
   };
   window.addEventListener('pointerdown', wake, { once: true });
   window.addEventListener('keydown', wake, { once: true });
@@ -168,25 +171,49 @@ async function askSystemPermission(): Promise<SystemPermission> {
 // Saídas
 // ---------------------------------------------------------------------------
 
-function vibrate(pattern: number[]): void {
-  if (!readCapabilities().vibrate) return;
+/**
+ * Chrome 60+ no Android exige gesto do usuário e devolve `false` se recusar.
+ * Timer (`setTimeout`) perde essa ativação: um único padrão concatenado é o
+ * único chamado que o motor aceita. `0` cancela um padrão em curso.
+ */
+function tryVibrate(pattern: number[]): boolean {
+  if (isIos()) return false;
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false;
   try {
-    navigator.vibrate(pattern);
+    return navigator.vibrate(pattern) !== false;
   } catch {
-    /* o navegador pode recusar sem aviso — nunca é motivo para quebrar o alerta */
+    return false;
   }
 }
 
+/**
+ * Android: um `vibrate()` só, padrão já expandido. Se o Chrome recusar (sem
+ * toque ainda, DND), cai no buzz do alto-falante. iPhone: só o buzz.
+ */
+function haptic(pattern: number[], repeat: number): void {
+  const rounds = Math.max(1, repeat);
+  if (tryVibrate(expandVibratePattern(pattern, rounds))) return;
+  playPhoneBuzzPattern(rounds);
+}
+
 function notificationOptions(alert: OrderAlert): NotificationOptions {
+  const demand = alert.urgency === 'demand';
+  const vibrate =
+    demand && alert.channels.vibrate
+      ? expandVibratePattern(alert.channels.vibrate, alert.channels.repeat)
+      : undefined;
+  // `vibrate` existe no Chrome Android e não no lib DOM do TypeScript.
   return {
     body: alert.body,
     // A nova substitui a anterior do mesmo pedido: cinco atualizações de uma
     // corrida viram uma linha na gaveta, não cinco.
     tag: alert.tag,
     data: { href: alert.href, orderId: alert.orderId, key: alert.key },
-    silent: alert.urgency !== 'demand',
-    requireInteraction: alert.urgency === 'demand',
-  };
+    // `silent` + `vibrate` juntos o Chrome recusa a notificação inteira.
+    silent: demand ? false : true,
+    vibrate,
+    requireInteraction: demand,
+  } as NotificationOptions;
 }
 
 async function showSystemNotification(alert: OrderAlert): Promise<void> {
@@ -258,7 +285,7 @@ export function createAlertChannel(options: AlertChannelOptions): AlertChannel {
       // quer a locutora falando por cima dele.
       if (channels.voice && audible && !custom) speakPtBr(alert.title, channels.repeat);
 
-      if (channels.vibrate) vibrate(channels.vibrate);
+      if (channels.vibrate) haptic(channels.vibrate, channels.repeat);
       if (channels.system) void showSystemNotification(alert);
     },
     unlock() {

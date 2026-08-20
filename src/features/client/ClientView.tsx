@@ -77,7 +77,7 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void; index?: number }> 
         <ChevronRight className="h-4 w-4 shrink-0 text-[#A8A29E]" />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="truncate pr-2 text-[11px] text-[#57534E]">
+        <span className="min-w-0 truncate pr-2 text-[11px] text-[#57534E]">
           {order.items.map((i) => i.product.name).join(', ')}
         </span>
         <span className="shrink-0 text-xs font-extrabold text-[#B91C1C]">
@@ -155,12 +155,15 @@ export const ClientView: React.FC = () => {
     : viewTransition;
 
   return (
-    <div className="space-y-4 pb-32">
+    // A barra flutuante fica presa acima da barra de gestos: sem somar o mesmo
+    // recorte aqui, o último produto da grade (e os atalhos da equipe) morrem
+    // debaixo dela no iPhone.
+    <div className="space-y-4 pb-[calc(env(safe-area-inset-bottom)+8rem)]">
       {!settings.isOpen && (
         <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#FCD34D] bg-[#FEF3C7] px-4 py-2.5 text-xs font-bold text-[#92400E]">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Clock className="h-4 w-4 shrink-0" />
-            <span>Loja fechada no momento</span>
+            <span className="truncate">Loja fechada no momento</span>
           </div>
           <span className="shrink-0 rounded-full border border-[#FCD34D] bg-white px-2.5 py-1 text-[10px] font-extrabold">
             Hoje: {formatTodayHours(settings.openingHours[new Date().getDay()] ?? null)}

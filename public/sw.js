@@ -217,6 +217,32 @@ self.addEventListener('fetch', (event) => {
  * mostra por conta própria um aviso genérico de "site atualizado em segundo
  * plano" — e o motoboy recebe um alerta que não diz qual corrida é.
  */
+/**
+ * Chrome no Android vibra a notificação com UM array só. `setTimeout` no SW
+ * não existe para isto: o padrão já vem repetido. Começa em pulso, nunca em 0.
+ */
+function expandPushVibrate(pattern, repeat) {
+  if (!Array.isArray(pattern) || !pattern.length) return [220, 90, 220, 90, 400];
+  var times = Math.max(1, Math.min(Number(repeat) || 1, 5));
+  var clean = [];
+  for (var i = 0; i < pattern.length; i++) {
+    var ms = Math.round(Number(pattern[i]) || 0);
+    if (ms < 0) ms = 0;
+    if (ms > 1000) ms = 1000;
+    if (i === 0 && ms === 0) continue;
+    clean.push(ms);
+  }
+  if (!clean.length) return [220, 90, 400];
+  if (times === 1) return clean.slice(0, 99);
+  var out = clean.slice();
+  for (var r = 1; r < times; r++) {
+    if (out.length % 2 === 1) out.push(280);
+    else out[out.length - 1] += 280;
+    out = out.concat(clean);
+  }
+  return out.slice(0, 99);
+}
+
 function parseAlert(event) {
   if (!event.data) return null;
   try {
@@ -250,13 +276,14 @@ self.addEventListener('push', (event) => {
       const demand = alert.urgency === 'demand';
       const channels = alert.channels && typeof alert.channels === 'object' ? alert.channels : {};
       const icon = ROLE_ICON[alert.role] || NOTIFICATION_ICON;
+      const vibrate = expandPushVibrate(channels.vibrate, channels.repeat);
 
       try {
         await self.registration.showNotification(alert.title, {
           body: typeof alert.body === 'string' ? alert.body : '',
           tag: typeof alert.tag === 'string' && alert.tag ? alert.tag : 'caldinho:geral',
           data: { href: typeof alert.href === 'string' && alert.href ? alert.href : '/', orderId: alert.orderId },
-          vibrate: Array.isArray(channels.vibrate) ? channels.vibrate : undefined,
+          vibrate: demand ? vibrate : undefined,
           badge: icon,
           icon: icon,
           // `demand` é pedido novo na cozinha e corrida oferecida ao motoboy:

@@ -392,15 +392,15 @@ const PromotionCard: React.FC<{
           {promo.enabled ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
           {promo.enabled ? 'Pausar' : 'Ligar'}
         </button>
-        <button className="btn-secondary p-2" title="Editar" aria-label="Editar" onClick={onEdit}>
+        <button className="btn-secondary p-2 pointer-coarse:min-w-11" title="Editar" aria-label="Editar" onClick={onEdit}>
           <Pencil className="w-3.5 h-3.5" />
         </button>
-        <button className="btn-secondary p-2" title="Duplicar" aria-label="Duplicar" onClick={onDuplicate}>
+        <button className="btn-secondary p-2 pointer-coarse:min-w-11" title="Duplicar" aria-label="Duplicar" onClick={onDuplicate}>
           <Copy className="w-3.5 h-3.5" />
         </button>
         {promo.maxUses > 0 && (
           <button
-            className="btn-secondary p-2"
+            className="btn-secondary p-2 pointer-coarse:min-w-11"
             title="Zerar o contador de usos"
             aria-label="Zerar o contador de usos"
             onClick={onResetUses}
@@ -408,7 +408,7 @@ const PromotionCard: React.FC<{
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
         )}
-        <button className="btn-danger p-2" title="Excluir" aria-label="Excluir" onClick={onDelete}>
+        <button className="btn-danger p-2 pointer-coarse:min-w-11" title="Excluir" aria-label="Excluir" onClick={onDelete}>
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -419,7 +419,7 @@ const PromotionCard: React.FC<{
 const Row: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="flex justify-between gap-2">
     <dt className="shrink-0 font-bold text-[#78716C]">{label}</dt>
-    <dd className="truncate text-right text-[#1C1917]" title={value}>
+    <dd className="min-w-0 truncate text-right text-[#1C1917]" title={value}>
       {value}
     </dd>
   </div>

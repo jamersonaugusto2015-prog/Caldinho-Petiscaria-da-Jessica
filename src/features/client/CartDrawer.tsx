@@ -84,14 +84,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
           <button
             type="button"
             onClick={() => setIsCartOpen(false)}
-            className="rounded-full p-2 text-[#57534E] transition hover:bg-[#F5F5F4] hover:text-[#1C1917]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-[#57534E] transition hover:bg-[#F5F5F4] hover:text-[#1C1917]"
             aria-label="Fechar sacola"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F5F5F4]/40 p-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[#F5F5F4]/40 p-4">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#57534E]">
               <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] flex items-center justify-center text-3xl mb-3 text-[#B91C1C]">
@@ -119,9 +119,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                     <h4 className="text-xs font-bold text-[#1C1917] line-clamp-1">
                       {item.product.name}
                     </h4>
+                    {/* O ícone tem 14 px de área clicável — menos de um terço do
+                        dedo, num botão que APAGA o item. O `::before` invisível
+                        leva o alvo a 44 px sem inchar a linha do carrinho. */}
                     <button
                       onClick={() => removeFromCart(item.id)}
-                      className="text-[#A8A29E] hover:text-[#B91C1C] transition"
+                      aria-label={`Remover ${item.product.name} da sacola`}
+                      className="relative text-[#A8A29E] transition before:absolute before:-inset-4 before:content-[''] hover:text-[#B91C1C]"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -156,17 +160,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                       R$ {computeCartItemTotal(item, settings.sizeOptions).toFixed(2)}
                     </span>
 
+                    {/* A pílula de quantidade tem 20 px por botão: no dedo, tirar
+                        um item vira acertar dois. O `::before` leva cada um a
+                        44 px sem esticar a pílula — a folga de 12 px por lado é
+                        menor que os 32 px do número no meio, então − e + nunca
+                        dividem o mesmo pedaço de tela. */}
                     <div className="flex items-center bg-[#F5F5F4] rounded-full border border-[#E7E5E4] p-0.5">
                       <button
                         onClick={() => updateCartQuantity(item.id, -1)}
-                        className="p-1 hover:bg-[#E7E5E4] rounded-full text-[#1C1917]"
+                        aria-label="Diminuir quantidade"
+                        className="relative p-1 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] before:absolute before:-inset-3 before:content-['']"
                       >
                         <Minus className="w-3 h-3" />
                       </button>
                       <span className="px-2 text-xs font-extrabold text-[#1C1917]">{item.quantity}</span>
                       <button
                         onClick={() => updateCartQuantity(item.id, 1)}
-                        className="p-1 hover:bg-[#E7E5E4] rounded-full text-[#1C1917]"
+                        aria-label="Aumentar quantidade"
+                        className="relative p-1 hover:bg-[#E7E5E4] rounded-full text-[#1C1917] before:absolute before:-inset-3 before:content-['']"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
@@ -179,7 +190,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
         </div>
 
         {cart.length > 0 && (
-          <div className="shrink-0 space-y-3 border-t border-[#E7E5E4] bg-white p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+          // `calc(inset + 16px)` e não `max(16px, inset)`: com `max`, o recorte
+          // do iPhone COMIA a folga de 16 px e o botão "Continuar" encostava na
+          // barra de gestos — subir a sacola cancelava o toque.
+          <div className="shrink-0 space-y-3 border-t border-[#E7E5E4] bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
             {settings.pickupEnabled && <FulfillmentPicker />}
 
             {!isPickupMode && (

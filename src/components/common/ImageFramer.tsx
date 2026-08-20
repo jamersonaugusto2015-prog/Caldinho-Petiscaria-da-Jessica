@@ -49,6 +49,8 @@ export function useImageFramer() {
   return { frameImage, framerNode };
 }
 
+/** Largura desejada da moldura. Numa tela estreita ela não cabe e a moldura
+ *  encolhe — daí ser um teto, e não a medida usada na conta do recorte. */
 const FRAME_WIDTH = 320;
 const MAX_ZOOM = 4;
 
@@ -66,6 +68,16 @@ const ImageFramerModal: React.FC<{
   );
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  /**
+   * Largura real da moldura na tela.
+   *
+   * Num celular de 360 px sobram ~288 px para a moldura, e o `max-w-full`
+   * encolhia só o que aparecia: a conta do corte continuava usando os 320 px
+   * fixos. O usuário enquadrava uma coisa e salvava outra, mais larga do que a
+   * que ele viu. Agora a medida vem do elemento.
+   */
+  const [frameWidth, setFrameWidth] = useState(FRAME_WIDTH);
+  const frameSlotRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
@@ -91,24 +103,36 @@ const ImageFramerModal: React.FC<{
     };
   }, [onCancel]);
 
-  const frameHeight = Math.round(FRAME_WIDTH / aspect);
+  // Acompanha o giro do aparelho e o teclado abrindo, não só a montagem.
+  useEffect(() => {
+    const slot = frameSlotRef.current;
+    if (!slot) return;
+    const measure = () =>
+      setFrameWidth(Math.max(1, Math.min(FRAME_WIDTH, Math.floor(slot.clientWidth))));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(slot);
+    return () => observer.disconnect();
+  }, []);
+
+  const frameHeight = Math.round(frameWidth / aspect);
 
   // "cover": a menor escala em que a imagem ainda preenche a moldura inteira.
-  const baseScale = img ? Math.max(FRAME_WIDTH / img.width, frameHeight / img.height) : 1;
+  const baseScale = img ? Math.max(frameWidth / img.width, frameHeight / img.height) : 1;
   const scale = baseScale * zoom;
   const displayWidth = img ? img.width * scale : 0;
   const displayHeight = img ? img.height * scale : 0;
 
   const clamp = useCallback(
     (next: { x: number; y: number }) => {
-      const limitX = Math.max(0, (displayWidth - FRAME_WIDTH) / 2);
+      const limitX = Math.max(0, (displayWidth - frameWidth) / 2);
       const limitY = Math.max(0, (displayHeight - frameHeight) / 2);
       return {
         x: Math.min(limitX, Math.max(-limitX, next.x)),
         y: Math.min(limitY, Math.max(-limitY, next.y)),
       };
     },
-    [displayWidth, displayHeight, frameHeight]
+    [displayWidth, displayHeight, frameWidth, frameHeight]
   );
 
   // Zoom ou troca de proporção pode deixar uma borda vazia: reencaixa o recorte.
@@ -144,7 +168,7 @@ const ImageFramerModal: React.FC<{
   const confirm = () => {
     if (!img) return;
     try {
-      const sw = FRAME_WIDTH / scale;
+      const sw = frameWidth / scale;
       const sh = frameHeight / scale;
       const centerX = img.width / 2 - offset.x / scale;
       const centerY = img.height / 2 - offset.y / scale;
@@ -164,8 +188,14 @@ const ImageFramerModal: React.FC<{
   const preview = useMemo(() => (img ? img.src : ''), [img]);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-3xl border border-[#E7E5E4] shadow-xl overflow-hidden flex flex-col max-h-[92vh]">
+    /* O `p-4` do fundo vira inset da barra de status em cima e da barra de
+       gestos embaixo (com piso de 1rem, que é o desenho original). E a caixa
+       passa a medir `max-h-full` — a altura da caixa preta já descontada dos
+       insets — no lugar de `92vh`: no Safari `vh` conta a janela SEM a barra de
+       endereço, então o rodapé com "Usar imagem" caía abaixo da dobra e o
+       recorte não tinha como ser confirmado. */
+    <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+      <div className="bg-white w-full max-w-md rounded-3xl border border-[#E7E5E4] shadow-xl overflow-hidden flex flex-col max-h-full">
         <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[#E7E5E4]">
           <div>
             <h2 className="text-sm font-extrabold text-[#1C1917]">{title || 'Enquadrar imagem'}</h2>
@@ -175,21 +205,21 @@ const ImageFramerModal: React.FC<{
             type="button"
             onClick={onCancel}
             aria-label="Cancelar"
-            className="shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
+            className="tap-44 shrink-0 w-9 h-9 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
           >
             <X className="w-4 h-4" />
           </button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div className="flex justify-center">
+          <div ref={frameSlotRef} className="flex justify-center">
             <div
               onPointerDown={startDrag}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
-              style={{ width: FRAME_WIDTH, height: frameHeight, touchAction: 'none' }}
-              className="relative max-w-full overflow-hidden rounded-2xl border border-[#E7E5E4] bg-[#F5F5F4] cursor-grab active:cursor-grabbing select-none"
+              style={{ width: frameWidth, height: frameHeight, touchAction: 'none' }}
+              className="relative overflow-hidden rounded-2xl border border-[#E7E5E4] bg-[#F5F5F4] cursor-grab active:cursor-grabbing select-none"
             >
               {img ? (
                 <img

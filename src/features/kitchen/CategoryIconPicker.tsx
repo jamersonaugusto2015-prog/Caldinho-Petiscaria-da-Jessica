@@ -43,21 +43,37 @@ interface Props {
  * inteira no celular, porque uma grade de 8 colunas não cabe num popover de
  * 260px em tela pequena.
  */
+/** Altura aproximada do popover, usada só para escolher abrir para cima ou para baixo. */
+const POPOVER_HEIGHT = 400;
+
 export const CategoryIconPicker: React.FC<Props> = ({ value, color, onChange }) => {
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const reduceMotion = useReducedMotion();
   const open = anchor !== null;
 
-  // O popover é `fixed`: o corpo do modal rola e cortaria um popover `absolute`.
+  /**
+   * O popover é `fixed`: o corpo do modal rola e cortaria um popover `absolute`.
+   *
+   * A conta usa o `visualViewport` e não o `window.innerHeight` porque no iOS,
+   * com o teclado aberto, `innerHeight` continua contando a tela toda: o popover
+   * era colocado "dentro da tela" num ponto que o teclado já cobria, e a grade de
+   * ícones ficava escondida atrás dele. O `clamp` no fim garante que ele nunca
+   * saia por cima nem por baixo, mesmo quando não cabe em lugar nenhum — nesse
+   * caso o `max-h` do próprio painel corta e a lista rola por dentro.
+   */
   const place = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const width = Math.min(window.innerWidth * 0.92, 360);
-    const height = 400;
-    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+    const viewport = window.visualViewport;
+    const viewWidth = viewport?.width ?? window.innerWidth;
+    const viewHeight = viewport?.height ?? window.innerHeight;
+    const width = Math.min(viewWidth * 0.92, 360);
+    const height = Math.min(POPOVER_HEIGHT, viewHeight - 16);
+    const left = Math.min(Math.max(8, rect.left), viewWidth - width - 8);
     const below = rect.bottom + 8;
-    const top = below + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 8) : below;
+    const preferred = below + height > viewHeight - 8 ? rect.top - height - 8 : below;
+    const top = Math.min(Math.max(8, preferred), Math.max(8, viewHeight - height - 8));
     setAnchor({ left, top });
   };
 
@@ -66,9 +82,15 @@ export const CategoryIconPicker: React.FC<Props> = ({ value, color, onChange }) 
     const reposition = () => place();
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);
+    // No iOS abrir/fechar o teclado e recolher a barra do Safari não disparam
+    // `resize` na janela — só no `visualViewport`.
+    window.visualViewport?.addEventListener('resize', reposition);
+    window.visualViewport?.addEventListener('scroll', reposition);
     return () => {
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
+      window.visualViewport?.removeEventListener('resize', reposition);
+      window.visualViewport?.removeEventListener('scroll', reposition);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -189,7 +211,7 @@ const IconPopover: React.FC<{
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 460, damping: 32 }}
       style={{ left: anchor.left, top: anchor.top }}
-      className="fixed z-[60] w-[min(92vw,360px)] origin-top-left rounded-2xl border border-[#E7E5E4] bg-white shadow-2xl overflow-hidden"
+      className="fixed z-[60] flex max-h-[calc(100dvh-16px)] w-[min(92vw,360px)] origin-top-left flex-col overflow-hidden rounded-2xl border border-[#E7E5E4] bg-white shadow-2xl"
     >
       <div className="p-3 pb-2 border-b border-[#F5F5F4]">
         <div className="flex items-center gap-2">
@@ -207,7 +229,7 @@ const IconPopover: React.FC<{
             type="button"
             onClick={onClose}
             aria-label="Fechar seletor"
-            className="w-8 h-8 shrink-0 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition"
+            className="w-8 h-8 shrink-0 rounded-full border border-[#E7E5E4] text-[#57534E] hover:bg-[#F5F5F4] flex items-center justify-center transition pointer-coarse:w-11 pointer-coarse:h-11"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -228,7 +250,7 @@ const IconPopover: React.FC<{
         )}
       </div>
 
-      <div className="max-h-[300px] overflow-y-auto px-3 py-3 space-y-3">
+      <div className="min-h-0 max-h-[300px] flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-3">
         {isCustomEmoji && (
           <section>
             <GroupTitle>Usar este</GroupTitle>

@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useDriver } from './DriverStore';
 import { AlertBanner, AlertPermissionPrompt } from '../../lib/alertBanner';
 import { locationFreshness } from '../../shared/driverFreshness';
+import { hapticTap } from '../../lib/haptic';
 import { formatKm } from '../../shared/geo';
 import { needsCardMachine, paymentLabel } from '../../shared/payment';
 import { Order } from '../../types';
@@ -108,6 +109,7 @@ export const DriverView: React.FC = () => {
 
   const handleToggle = async () => {
     if (toggling) return;
+    hapticTap();
     setToggling(true);
     try {
       await toggleOnline();
@@ -119,6 +121,7 @@ export const DriverView: React.FC = () => {
   const runAction = async (orderId: string, kind: 'accept' | 'pickup' | 'deliver') => {
     if (busy) return;
     if (kind === 'accept' && !isOnline) return;
+    hapticTap();
     setBusy({ orderId, kind });
     try {
       if (kind === 'accept') await acceptAndStart(orderId);
@@ -169,14 +172,16 @@ export const DriverView: React.FC = () => {
               className="overflow-hidden"
             >
               <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#B91C1C] px-4 py-3 text-white shadow-md">
-                <div className="flex items-center gap-2 text-xs font-bold">
+                {/* `min-w-0`: sem ele o texto não encolhe e empurra o botão para
+                    fora da faixa numa tela de 360 px. */}
+                <div className="flex min-w-0 items-center gap-2 text-xs font-bold">
                   <ShieldAlert className="h-5 w-5 shrink-0" />
-                  <span>GPS desligado — o cliente não vê você.</span>
+                  <span className="min-w-0">GPS desligado — o cliente não vê você.</span>
                 </div>
                 <button
                   type="button"
                   onClick={retryLocation}
-                  className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#B91C1C] active:scale-95"
+                  className="tap-44 shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#B91C1C] active:scale-95"
                 >
                   Ligar GPS
                 </button>
@@ -193,9 +198,9 @@ export const DriverView: React.FC = () => {
               className="overflow-hidden"
             >
               <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#B45309] px-4 py-3 text-white shadow-md">
-                <div className="flex items-center gap-2 text-xs font-bold">
+                <div className="flex min-w-0 items-center gap-2 text-xs font-bold">
                   <ShieldAlert className="h-5 w-5 shrink-0" />
-                  <span>
+                  <span className="min-w-0">
                     GPS sem sinal{quietFor ? ` ${quietFor}` : ''} — o cliente está vendo você no último
                     ponto. Deixe a tela ligada.
                   </span>
@@ -203,7 +208,7 @@ export const DriverView: React.FC = () => {
                 <button
                   type="button"
                   onClick={retryLocation}
-                  className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#B45309] active:scale-95"
+                  className="tap-44 shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#B45309] active:scale-95"
                 >
                   Reativar
                 </button>
@@ -219,11 +224,14 @@ export const DriverView: React.FC = () => {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-start justify-between gap-3 rounded-2xl border border-[#FECACA] bg-[#FEF2F2] p-4 shadow-sm"
           >
-            <div className="flex items-start gap-3">
+            <div className="flex min-w-0 items-start gap-3">
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-[#B91C1C]" />
-              <div>
+              {/* `min-w-0` + `break-words`: o motivo do cancelamento é texto
+                  livre digitado pela cozinha, e uma palavra comprida estourava
+                  o cartão para fora da tela. */}
+              <div className="min-w-0">
                 <div className="text-sm font-extrabold text-[#B91C1C]">Pare — corrida cancelada</div>
-                <p className="mt-0.5 text-xs text-[#7C2D12]">
+                <p className="mt-0.5 break-words text-xs text-[#7C2D12]">
                   {ord.id} · {ord.cancellationReason || 'Motivo não informado'}
                 </p>
                 <p className="mt-1 text-[11px] text-[#57534E]">Não vá ao endereço. Volte para a loja se já saiu.</p>
@@ -232,7 +240,7 @@ export const DriverView: React.FC = () => {
             <button
               type="button"
               onClick={() => dismissCancellation(ord.id)}
-              className="shrink-0 rounded-full border border-[#FECACA] bg-white px-3 py-1.5 text-[11px] font-black text-[#B91C1C]"
+              className="tap-44 shrink-0 rounded-full border border-[#FECACA] bg-white px-3 py-1.5 text-[11px] font-black text-[#B91C1C]"
             >
               Entendi
             </button>
@@ -291,7 +299,7 @@ export const DriverView: React.FC = () => {
               disabled={toggling}
               aria-pressed={isOnline}
               whileTap={reduceMotion || toggling ? undefined : { scale: 0.94 }}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2.5 text-[11px] font-extrabold disabled:opacity-70 ${
+              className={`tap-44 flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2.5 text-[11px] font-extrabold disabled:opacity-70 ${
                 isOnline ? 'bg-[#3F3F46] text-white' : 'bg-[#B91C1C] text-white'
               }`}
             >
@@ -435,7 +443,14 @@ export const DriverView: React.FC = () => {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 64, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-              className="fixed bottom-[calc(env(safe-area-inset-bottom)+12px)] left-1/2 z-40 w-[calc(100%-28px)] max-w-[402px] -translate-x-1/2"
+              // O botão mais tocado do app: ele sobe o inset da barra de gestos
+              // mais 12 px. Sem o `env()` ele encostaria na barra do iPhone, que
+              // rouba o toque e joga o motoboy para a tela de início; sem os
+              // 12 px, em aparelho sem barra de gestos (inset 0) ele encostaria
+              // na borda do vidro. O `0px` dentro do `env()` é para o navegador
+              // que conhece a função mas não a variável — sem ele o `calc()`
+              // inteiro cai e o botão perde a posição.
+              className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-1/2 z-40 w-[calc(100%-28px)] max-w-[402px] -translate-x-1/2"
             >
               <StickyAction
                 stage={sticky.stage}
@@ -510,7 +525,7 @@ const RideCard: React.FC<{
         {customerPhone && (
           <a
             href={`tel:${customerPhone}`}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#E7E5E4] bg-[#F5F5F4] px-3 py-2 text-[11px] font-bold text-[#1C1917] active:scale-95"
+            className="tap-44 flex shrink-0 items-center gap-1.5 rounded-full border border-[#E7E5E4] bg-[#F5F5F4] px-3 py-2 text-[11px] font-bold text-[#1C1917] active:scale-95"
           >
             <Phone className="h-3.5 w-3.5 text-[#B91C1C]" />
             Ligar
@@ -521,14 +536,18 @@ const RideCard: React.FC<{
       {/* Decision scan line */}
       <div className="mx-4 mb-3 flex items-start gap-2.5 rounded-2xl border border-[#E7E5E4] bg-[#FAFAF9] px-3 py-2.5">
         <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
+        {/* `min-w-0` no filho + `break-words`: bairro, cidade e distância vêm
+            numa linha só e o endereço é texto livre do cliente. Sem isto uma
+            palavra comprida ("Loteamento...") empurrava a pílula "Maps" para
+            fora do cartão numa tela de 360 px. */}
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-extrabold text-[#1C1917]">
+          <p className="break-words text-[11px] font-extrabold text-[#1C1917]">
             {ord.address.neighborhood || 'Bairro'}
             {ord.address.city ? ` · ${ord.address.city}` : ''}
             {distanceLabel ? ` · ${distanceLabel}` : ''}
           </p>
           {hasFullAddress ? (
-            <p className="mt-0.5 text-xs text-[#57534E]">
+            <p className="mt-0.5 break-words text-xs text-[#57534E]">
               {ord.address.street}, {ord.address.number}
               {ord.address.complement ? ` · ${ord.address.complement}` : ''}
             </p>
@@ -546,7 +565,7 @@ const RideCard: React.FC<{
             )}`}
             target="_blank"
             rel="noreferrer"
-            className="flex shrink-0 items-center gap-1 rounded-full bg-[#1C1917] px-2.5 py-1.5 text-[10px] font-bold text-white"
+            className="tap-44 flex shrink-0 items-center gap-1 rounded-full bg-[#1C1917] px-2.5 py-1.5 text-[10px] font-bold text-white"
           >
             <ExternalLink className="h-3 w-3" />
             Maps

@@ -115,7 +115,10 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
             onClick={install.dismiss}
             aria-label="Agora não"
             title="Agora não"
-            className="shrink-0 rounded-lg p-1 text-[#A8A29E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#57534E]"
+            // Só o ícone de 14px com `p-1` dá um alvo de ~22px: no dedo o toque
+            // caía no texto do aviso e a faixa nunca sumia. O mínimo entra só em
+            // ponteiro grosso para a faixa fina não engordar no desktop.
+            className="flex shrink-0 items-center justify-center rounded-lg p-1 text-[#A8A29E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#57534E] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -128,7 +131,9 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
           onClick={openNav}
           title="Abrir menu"
           aria-label="Abrir menu"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E7E5E4] bg-white text-[#57534E] outline-none transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917] focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 lg:hidden"
+          // 40px é o alvo do mouse; o dedo precisa de 44px. Os três botões da
+          // barra sobem juntos em ponteiro grosso para continuarem alinhados.
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E7E5E4] bg-white text-[#57534E] outline-none transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#1C1917] focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 pointer-coarse:h-11 pointer-coarse:w-11 lg:hidden"
         >
           <Menu className="h-[18px] w-[18px]" />
         </button>
@@ -151,7 +156,7 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
           onClick={toggleStore}
           aria-pressed={settings.orderEnabled}
           title={settings.orderEnabled ? 'Clique para fechar a loja' : 'Clique para abrir a loja'}
-          className={`group flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-bold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 active:scale-[0.98] ${skin.pill}`}
+          className={`group flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-bold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 active:scale-[0.98] pointer-coarse:h-11 ${skin.pill}`}
         >
           <span className="relative flex h-2 w-2 shrink-0">
             {state === 'open' && (
@@ -185,7 +190,7 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
               : 'Alerta sonoro desligado — clique para ligar e testar a voz'
           }
           aria-label={soundEnabled ? 'Desligar alerta sonoro' : 'Ligar alerta sonoro'}
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 active:scale-[0.98] ${
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 active:scale-[0.98] pointer-coarse:h-11 pointer-coarse:w-11 ${
             soundEnabled
               ? 'border-[#FDE68A] bg-[#FFFBEB] text-[#B45309] hover:bg-[#FEF3C7]'
               : 'border-[#E7E5E4] bg-white text-[#78716C] hover:bg-[#F5F5F4] hover:text-[#1C1917]'

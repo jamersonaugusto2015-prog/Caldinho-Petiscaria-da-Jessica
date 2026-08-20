@@ -103,6 +103,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
           )}
         </div>
 
+        {/* O "+" desenhado tem 36 px. O `::before` invisível leva o alvo a 44 px
+            sem engordar o botão vermelho, que é o que dá leveza ao cartão. */}
         {product.available && (
           <motion.button
             type="button"
@@ -114,7 +116,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
               e.stopPropagation();
               if (product.available) onSelect(product);
             }}
-            className="absolute bottom-2.5 right-2.5 flex h-9 w-9 items-center justify-center rounded-full bg-[#B91C1C] text-white shadow-[0_8px_18px_rgba(185,28,28,0.4)] ring-2 ring-white"
+            className="absolute bottom-2.5 right-2.5 flex h-9 w-9 items-center justify-center rounded-full bg-[#B91C1C] text-white shadow-[0_8px_18px_rgba(185,28,28,0.4)] ring-2 ring-white before:absolute before:-inset-1 before:content-['']"
             aria-label={`Adicionar ${product.name} ao carrinho`}
           >
             <Plus className="h-4 w-4" strokeWidth={2.6} />

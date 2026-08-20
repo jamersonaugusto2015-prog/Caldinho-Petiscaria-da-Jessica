@@ -52,7 +52,12 @@ export const KitchenSidebar: React.FC<{
         onFocusCapture={() => setFocusInside(true)}
         onBlurCapture={() => setFocusInside(false)}
         className={[
-          'k-rail fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col overflow-hidden',
+          // A gaveta é `fixed inset-y-0`: no app instalado ela desenha sob o
+          // relógio do sistema e sob a barra de gestos. Sem `pt-safe`/`pb-safe`
+          // o logo da loja ficava atrás do relógio e "Sair do painel" atrás da
+          // barra de gestos. `px-safe` é para o tablet deitado, em que o notch
+          // cobre a coluna de ícones do lado esquerdo.
+          'k-rail fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col overflow-hidden pt-safe pb-safe px-safe',
           'border-r border-white/[0.07] bg-[#131110] text-white',
           'transition-[width,transform,box-shadow] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
           navOpen ? 'translate-x-0 shadow-[0_32px_80px_-24px_rgba(0,0,0,0.85)]' : '-translate-x-full',
@@ -105,7 +110,11 @@ export const KitchenSidebar: React.FC<{
             type="button"
             onClick={closeNav}
             title="Fechar menu"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#A8A29E] transition-colors duration-200 hover:bg-white/[0.07] hover:text-white lg:hidden"
+            // 32x32 é alvo de mouse, não de dedo: fechar a gaveta com a mão
+            // suja da cozinha errava e escolhia o item de menu embaixo. O
+            // mínimo de 44px só entra em ponteiro grosso — no desktop a barra
+            // continua exatamente com a mesma densidade.
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#A8A29E] transition-colors duration-200 hover:bg-white/[0.07] hover:text-white pointer-coarse:h-11 pointer-coarse:w-11 lg:hidden"
           >
             <X className="h-4 w-4" />
           </button>

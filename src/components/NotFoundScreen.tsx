@@ -195,7 +195,12 @@ export const NotFoundScreen: React.FC = () => {
   );
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#5B1212] text-white">
+    /* `pt-safe`/`px-safe` no casco: a tela é `fixed inset-0` e, no app
+       instalado, isso começa embaixo do relógio do iPhone. Os fundos são filhos
+       `absolute inset-0`, que se medem pela caixa de padding — então eles
+       continuam sangrando até a borda e só a cena e o texto entram na área
+       segura. Embaixo o bloco de botões já tem o inset dele. */
+    <div className="pt-safe px-safe fixed inset-0 flex flex-col overflow-hidden bg-[#5B1212] text-white">
       {/* ---------- Fundo ---------- */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#4C0F0F]" />
       <div

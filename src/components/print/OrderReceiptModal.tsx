@@ -378,13 +378,21 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({
   }, [onClose]);
 
   return createPortal(
-    <div className="receipt-print-root fixed inset-0 z-[90] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+    /* Inset em cima e embaixo com piso de 1rem (o `p-4` do desenho): no tablet
+       da cozinha em modo instalado o cabeçalho do modal nascia debaixo do
+       relógio e o botão "Imprimir" ficava sob a barra de gestos.
+       Nada disto chega ao papel: a regra de impressão zera o padding deste
+       elemento com `!important` e solta a altura do modal. */
+    <div className="receipt-print-root fixed inset-0 z-[90] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
       {/* @page não lê variável CSS, então a regra da largura do rolo é injetada
           aqui e trocada junto com o seletor 58/80mm. `size: <w> auto` deixa o
           rolo cortar no fim do conteúdo em vez de cuspir uma folha inteira. */}
       <style>{`@media print { @page { size: ${paperWidth}mm auto; margin: 0; } html, body { width: ${paperWidth}mm !important; } }`}</style>
 
-      <div className="receipt-modal bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col w-full max-w-md">
+      {/* `max-h-full` (a caixa preta já sem os insets) no lugar de `92vh`: no
+          Safari `vh` mede a janela sem a barra de endereço, e a barra de botões
+          do rodapé caía abaixo da dobra. Na impressão vira `none !important`. */}
+      <div className="receipt-modal bg-white rounded-2xl overflow-hidden max-h-full flex flex-col w-full max-w-md">
         <div className="receipt-no-print flex items-start justify-between gap-3 px-4 py-3 border-b border-[#E7E5E4] shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -400,7 +408,7 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Fechar"
-            className="shrink-0 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E]"
+            className="tap-44 shrink-0 p-2 rounded-full hover:bg-[#F5F5F4] text-[#57534E]"
           >
             <X className="w-5 h-5" />
           </button>

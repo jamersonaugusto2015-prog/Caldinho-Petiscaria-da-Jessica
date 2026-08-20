@@ -246,7 +246,7 @@ const ProductCard: React.FC<{
           {product.available ? 'Pausar' : 'Reativar'}
         </button>
         <button
-          className={product.isCaldinhoDoDia ? 'btn-primary p-2' : 'btn-secondary p-2'}
+          className={product.isCaldinhoDoDia ? 'btn-primary p-2 pointer-coarse:min-w-11' : 'btn-secondary p-2 pointer-coarse:min-w-11'}
           title={product.isCaldinhoDoDia ? 'Tirar da promoção do dia' : 'Marcar como promoção do dia'}
           aria-pressed={product.isCaldinhoDoDia}
           aria-label={product.isCaldinhoDoDia ? 'Tirar da promoção do dia' : 'Marcar como promoção do dia'}
@@ -254,7 +254,7 @@ const ProductCard: React.FC<{
         >
           <Flame className="w-3.5 h-3.5" />
         </button>
-        <label className="btn-secondary p-2 cursor-pointer" title="Trocar a foto">
+        <label className="btn-secondary p-2 cursor-pointer pointer-coarse:min-w-11" title="Trocar a foto">
           <Upload className="w-3.5 h-3.5" />
           <span className="sr-only">Trocar a foto</span>
           <input
@@ -268,10 +268,10 @@ const ProductCard: React.FC<{
             }}
           />
         </label>
-        <button className="btn-secondary p-2" title="Editar" aria-label="Editar" onClick={() => onEdit(product)}>
+        <button className="btn-secondary p-2 pointer-coarse:min-w-11" title="Editar" aria-label="Editar" onClick={() => onEdit(product)}>
           <Pencil className="w-3.5 h-3.5" />
         </button>
-        <button className="btn-danger p-2" title="Excluir" aria-label="Excluir" onClick={() => onDelete(product)}>
+        <button className="btn-danger p-2 pointer-coarse:min-w-11" title="Excluir" aria-label="Excluir" onClick={() => onDelete(product)}>
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -309,7 +309,7 @@ const PriceInput: React.FC<{ product: Product; onSave: (id: string, price: numbe
 const CouponCatalog: React.FC<{ coupons: Coupon[]; onSave: (coupon: Coupon) => Promise<void>; onDelete: (code: string) => Promise<void> }> = ({ coupons, onSave, onDelete }) => {
   const [form, setForm] = useState({ code: '', percent: '', fixed: '', min: '', description: '' });
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.code.trim()) return; void onSave({ code: form.code.trim().toUpperCase(), discountPercent: form.percent ? Number(form.percent) : undefined, discountFixed: form.fixed ? Number(form.fixed) : undefined, minOrderValue: Number(form.min) || 0, description: form.description.trim() || 'Cupom de desconto' }); setForm({ code: '', percent: '', fixed: '', min: '', description: '' }); };
-  return <div className="space-y-4"><Header icon={<Ticket />} title="Cupons de desconto" subtitle={`${coupons.length} ativo(s).`} /><form onSubmit={submit} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2"><input className="input" placeholder="Código" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required /><input className="input" type="number" placeholder="% desconto" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} /><input className="input" type="number" placeholder="R$ fixo" value={form.fixed} onChange={(event) => setForm({ ...form, fixed: event.target.value })} /><input className="input" type="number" placeholder="Pedido mínimo" value={form.min} onChange={(event) => setForm({ ...form, min: event.target.value })} /><input className="input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><button className="btn-primary"><PlusCircle className="w-4 h-4" />Salvar</button></form><div className="grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3">{coupons.map((coupon) => <div key={coupon.code} className="bg-white rounded-2xl p-4 border border-dashed border-[#B91C1C]/40"><div className="flex justify-between gap-2"><strong className="bg-[#B91C1C] text-white rounded px-2 py-1 text-xs">{coupon.code}</strong><button className="btn-danger p-1" onClick={() => { if (window.confirm(`Excluir ${coupon.code}?`)) void onDelete(coupon.code); }}><Trash2 className="w-3.5 h-3.5" /></button></div><p className="text-xs mt-2">{coupon.description}</p><span className="text-[10px] text-[#57534E]">{coupon.discountPercent ? `${coupon.discountPercent}% OFF` : coupon.discountFixed ? `-${money(coupon.discountFixed)}` : 'Sem desconto'} · mínimo {money(coupon.minOrderValue)}</span></div>)}</div></div>;
+  return <div className="space-y-4"><Header icon={<Ticket />} title="Cupons de desconto" subtitle={`${coupons.length} ativo(s).`} /><form onSubmit={submit} className="bg-white rounded-2xl p-4 border border-[#E7E5E4] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2"><input className="input" placeholder="Código" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required /><input className="input" type="number" placeholder="% desconto" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} /><input className="input" type="number" placeholder="R$ fixo" value={form.fixed} onChange={(event) => setForm({ ...form, fixed: event.target.value })} /><input className="input" type="number" placeholder="Pedido mínimo" value={form.min} onChange={(event) => setForm({ ...form, min: event.target.value })} /><input className="input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><button className="btn-primary"><PlusCircle className="w-4 h-4" />Salvar</button></form><div className="grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3">{coupons.map((coupon) => <div key={coupon.code} className="bg-white rounded-2xl p-4 border border-dashed border-[#B91C1C]/40"><div className="flex justify-between gap-2"><strong className="bg-[#B91C1C] text-white rounded px-2 py-1 text-xs">{coupon.code}</strong><button className="btn-danger p-1 pointer-coarse:min-w-11" onClick={() => { if (window.confirm(`Excluir ${coupon.code}?`)) void onDelete(coupon.code); }}><Trash2 className="w-3.5 h-3.5" /></button></div><p className="text-xs mt-2">{coupon.description}</p><span className="text-[10px] text-[#57534E]">{coupon.discountPercent ? `${coupon.discountPercent}% OFF` : coupon.discountFixed ? `-${money(coupon.discountFixed)}` : 'Sem desconto'} · mínimo {money(coupon.minOrderValue)}</span></div>)}</div></div>;
 };
 
 const Header: React.FC<{ title: string; subtitle?: string; icon: React.ReactNode; action?: React.ReactNode }> = ({ title, subtitle, icon, action }) => <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="w-10 h-10 rounded-2xl bg-[#B91C1C] text-white flex items-center justify-center shrink-0">{icon}</div><div className="min-w-0"><h2 className="text-lg font-extrabold text-[#1C1917] truncate">{title}</h2>{subtitle && <p className="text-xs text-[#57534E]">{subtitle}</p>}</div></div>{action}</div>;

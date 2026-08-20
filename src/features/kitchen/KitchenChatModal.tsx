@@ -33,8 +33,11 @@ export const KitchenChatModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col h-[85vh] sm:h-[75vh]">
-        <div className="flex items-center gap-2 p-4 border-b border-[#E7E5E4]">
+      {/* No celular esta é uma folha colada no rodapé: `pb-safe` para o campo de
+          escrever não ficar atrás da barra de gestos do iOS, e `dvh` no lugar de
+          `vh` porque `vh` ignora a barra do Safari e a folha nascia alta demais. */}
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col h-[85dvh] sm:h-[75dvh] pb-safe">
+        <div className="flex shrink-0 items-center gap-2 p-4 border-b border-[#E7E5E4]">
           <div className="w-9 h-9 rounded-2xl bg-[#B91C1C] text-white flex items-center justify-center shrink-0">
             <MessageCircle className="w-4 h-4" />
           </div>
@@ -44,12 +47,19 @@ export const KitchenChatModal: React.FC = () => {
               {order ? order.customerName : 'Pedido não está mais na lista'}
             </span>
           </div>
-          <button onClick={closeThread} className="p-1.5 rounded-full hover:bg-[#F5F5F4]" title="Fechar">
+          <button
+            onClick={closeThread}
+            // 28px de alvo: fechar a conversa com o dedo acertava o nome do cliente.
+            className="flex shrink-0 items-center justify-center rounded-full p-1.5 hover:bg-[#F5F5F4] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            title="Fechar"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#F5F5F4]">
+        {/* `overscroll-contain`: chegar ao fim da conversa e continuar puxando
+            arrastava a página atrás da folha (e disparava o recarregar do Safari). */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-2 bg-[#F5F5F4]">
           {loadingThread && messages.length === 0 && <Empty text="Carregando a conversa..." />}
           {!loadingThread && messages.length === 0 && <Empty text="Nenhuma mensagem ainda." />}
           {messages.map((message) => {
@@ -74,16 +84,16 @@ export const KitchenChatModal: React.FC = () => {
           <div ref={endRef} />
         </div>
 
-        <form onSubmit={submit} className="flex gap-2 p-3 border-t border-[#E7E5E4]">
+        <form onSubmit={submit} className="flex shrink-0 gap-2 p-3 border-t border-[#E7E5E4]">
           <input
             autoFocus
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Escreva para o cliente"
             maxLength={500}
-            className="input flex-1"
+            className="input min-w-0 flex-1"
           />
-          <button className="btn-primary" disabled={!draft.trim() || sending}>
+          <button className="btn-primary shrink-0" disabled={!draft.trim() || sending}>
             {sending ? 'Enviando...' : 'Enviar'}
           </button>
         </form>
