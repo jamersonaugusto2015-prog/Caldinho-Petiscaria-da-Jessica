@@ -48,14 +48,6 @@ export function redeemFreeCaldinho(
   return { points: newPoints, token };
 }
 
-export function assertFreeItemsValid(items: CartItem[]): void {
-  for (const it of items) {
-    if (!it.isFree) continue;
-    if (!it.freeToken || !peekFreeRedeem(it.freeToken, it.product.id)) {
-      throw new DomainError(400, 'Item grátis de fidelidade inválido. Verifique seus selos.');
-    }
-  }
-}
 
 export function consumeFreeItems(items: CartItem[]): void {
   for (const it of items) {

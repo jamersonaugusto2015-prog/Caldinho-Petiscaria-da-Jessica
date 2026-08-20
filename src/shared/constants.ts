@@ -15,21 +15,25 @@ const PICKUP_STATUS_MESSAGES: Partial<Record<OrderStatus, string>> = {
   entregue: 'Pedido Retirado! Bom apetite! ⭐',
 };
 
-export function statusMessageFor(status: OrderStatus, fulfillment?: Fulfillment): string {
+/**
+ * Aceitar a corrida não é sair para entrega: o motoboy ainda precisa buscar o
+ * pedido na loja. Enquanto isso o status continua `pronto`, e dizer "aguardando
+ * entregador" a quem já tem motoboy a caminho da loja seria mentir para menos.
+ */
+export function statusMessageFor(
+  status: OrderStatus,
+  fulfillment?: Fulfillment,
+  driverAssigned?: boolean
+): string {
   if (fulfillment === 'pickup' && PICKUP_STATUS_MESSAGES[status]) {
     return PICKUP_STATUS_MESSAGES[status] as string;
+  }
+  if (status === 'pronto' && driverAssigned) {
+    return 'Pedido Pronto! O Motoboy está indo buscar na loja 🛵';
   }
   return STATUS_MESSAGES[status];
 }
 
-export const STATUS_ORDER: OrderStatus[] = [
-  'recebido',
-  'em_preparo',
-  'pronto',
-  'saiu_entrega',
-  'entregue',
-  'cancelado',
-];
 
 /** Selos para resgatar 1 caldinho grátis. */
 export const LOYALTY_STAMP_COST = 10;

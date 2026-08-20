@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Order, OrderStatus } from '../../types';
 import { kitchenApi as api } from '../../lib/api';
 import { mergeById } from '../../lib/liveSession';
+import { useAlertMemory } from '../../lib/alertChannel';
+import { orderAlertFor } from '../../shared/orderAlerts';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { useKitchenSoundAlert } from './KitchenSoundStore';
 import { useKitchenReportsSync } from './KitchenReportsStore';
@@ -28,70 +30,55 @@ interface KitchenOrdersSyncContextType {
 const KitchenOrdersContext = createContext<KitchenOrdersContextType | undefined>(undefined);
 const KitchenOrdersSyncContext = createContext<KitchenOrdersSyncContextType | undefined>(undefined);
 
-const pendingRequestIds = (list: Order[]) =>
-  new Set(list.filter((order) => order.cancellationRequest?.status === 'pendente').map((order) => order.id));
-
 export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const triggerToast = useKitchenToast();
-  const { announceOrder } = useKitchenSoundAlert();
+  const { deliver } = useKitchenSoundAlert();
+  const memory = useAlertMemory();
   const { loadReport, loadTrends } = useKitchenReportsSync();
   const [orders, setOrders] = useState<Order[]>([]);
   const [newOrderFlashId, setNewOrderFlashId] = useState<string | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Pedidos cujo cancelamento pendente a cozinha já viu, para o alerta tocar
-  // uma única vez por solicitação e não a cada `order:updated`.
-  const knownRequestsRef = useRef<Set<string>>(new Set());
 
   const refetch = useCallback(() => {
     api
       .get<Order[]>('/orders')
       .then((list) => {
-        knownRequestsRef.current = pendingRequestIds(list);
+        // A lista recarregada é o "já sabíamos disso": sem semear a memória, a
+        // reconexão faria todo cancelamento pendente gritar de novo.
+        memory.seed(list);
         setOrders(list);
       })
       .catch(() => {});
-  }, []);
+  }, [memory]);
 
   useEffect(() => {
     refetch();
   }, [refetch]);
 
-  const noticeCancelRequest = useCallback(
-    (order: Order) => {
-      const known = knownRequestsRef.current;
-      if (order.cancellationRequest?.status !== 'pendente') {
-        known.delete(order.id);
-        return;
-      }
-      if (known.has(order.id)) return;
-      known.add(order.id);
-      triggerToast(`⚠️ ${order.id}: o cliente pediu o cancelamento. Você tem 5 minutos.`);
-      announceOrder(order.id);
-    },
-    [announceOrder, triggerToast]
-  );
-
   const applyOrder = useCallback(
     (order: Order) => {
-      noticeCancelRequest(order);
+      deliver(orderAlertFor('kitchen', 'order:updated', order, memory.contextFor(order)));
+      memory.remember(order);
       setOrders((previous) => mergeById(previous, order));
     },
-    [noticeCancelRequest]
+    [deliver, memory]
   );
 
   const receiveNewOrder = useCallback(
     (order: Order) => {
       setOrders((previous) => mergeById(previous, order));
-      triggerToast(`🆕 Novo pedido ${order.id} chegou na cozinha! R$ ${order.total.toFixed(2)}`);
-      announceOrder(order.id);
+      deliver(orderAlertFor('kitchen', 'order:new', order, memory.contextFor(order)));
+      memory.remember(order);
+      // A piscada do card e a atualização dos relatórios não são alerta: elas
+      // não interrompem ninguém e continuam sendo assunto desta loja.
       setNewOrderFlashId(order.id);
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = setTimeout(() => setNewOrderFlashId(null), 3000);
       void loadTrends();
       void loadReport();
     },
-    [announceOrder, loadReport, loadTrends, triggerToast]
+    [deliver, loadReport, loadTrends, memory]
   );
 
   const updateOrderStatus = useCallback(

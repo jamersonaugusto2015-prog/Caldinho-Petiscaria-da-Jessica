@@ -29,11 +29,13 @@ export const DriverApp: React.FC = () => {
 
   return (
     <DriverProvider>
-      <div className="min-h-screen bg-[#F5F5F4] text-[#1C1917] font-sans antialiased selection:bg-[#B91C1C] selection:text-white">
-        <DriverHeader />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <DriverView />
-        </main>
+      <div className="flex min-h-screen justify-center bg-[#121214] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
+        <div className="flex min-h-screen w-full max-w-[430px] flex-col bg-[#F5F5F4] shadow-2xl shadow-black/40">
+          <DriverHeader />
+          <main className="flex-1 px-3 pb-8 pt-4">
+            <DriverView />
+          </main>
+        </div>
       </div>
     </DriverProvider>
   );

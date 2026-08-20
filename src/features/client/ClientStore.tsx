@@ -1,8 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Category, CategoryId, Coupon, DeliveryAddress, Product, Promotion, PublicStoreSettings } from '../../types';
+import type { AlertUrgency } from '../../shared/orderAlerts';
 import { api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useLiveSession } from '../../lib/liveSession';
+import { AlertBannerProvider, useAlertBanner } from '../../lib/alertBanner';
 import { computeCartTotals } from '../../shared/pricing';
 import { DEFAULT_STORE_SETTINGS } from '../../shared/defaults';
 import { CartProvider, useCart } from './CartStore';
@@ -26,8 +28,7 @@ interface ClientShellValue {
   ready: boolean;
   loadError: boolean;
   retryLoad: () => void;
-  notificationToast: string | null;
-  triggerToast: (msg: string) => void;
+  triggerToast: (msg: string, urgency?: AlertUrgency) => void;
 }
 
 // Representa "nenhum endereço selecionado" só na fronteira com funções que ainda exigem
@@ -44,7 +45,16 @@ const EMPTY_ADDRESS: DeliveryAddress = {
 
 const ClientShellContext = createContext<ClientShellValue | undefined>(undefined);
 
-export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+/** A faixa de aviso é o provedor mais externo: a casca do cliente já dispara
+ *  avisos (carrinho, endereço) antes de qualquer pedido existir. */
+export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <AlertBannerProvider>
+    <ClientShell>{children}</ClientShell>
+  </AlertBannerProvider>
+);
+
+const ClientShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const triggerToast = useAlertBanner();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -71,16 +81,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     backupLastStatus: '',
     backupLastFile: '',
   });
-  const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerToast = useCallback((message: string) => {
-    setNotificationToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setNotificationToast(null), 4000);
-  }, []);
 
   useLiveSession({
     customerId,
@@ -139,7 +141,6 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     ready,
     loadError,
     retryLoad,
-    notificationToast,
     triggerToast,
   };
 

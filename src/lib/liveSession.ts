@@ -8,8 +8,6 @@ export interface LiveSessionOptions {
   role?: LiveRole;
   token?: string;
   customerId?: string;
-  /** Driver's own room: only it receives the customer's contact details. */
-  driverId?: string;
   join?: boolean;
   onOrderNew?: (order: Order) => void;
   onOrderUpdated?: (order: Order) => void;
@@ -34,7 +32,6 @@ export function useLiveSession({
   role,
   token,
   customerId,
-  driverId,
   join = true,
   onOrderNew,
   onOrderUpdated,
@@ -49,13 +46,15 @@ export function useLiveSession({
   useEffect(() => {
     if (!join) return;
     const joinSession = () => {
-      if (role) socket.emit('join', { role, token, driverId });
+      // Nada de identidade no payload: o servidor resolve o motoboy pelo token.
+      // Mandar um driverId daqui deixava qualquer um entrar na sala privada de outro.
+      if (role) socket.emit('join', { role, token });
       if (customerId) socket.emit('join', { customerId });
     };
     joinSession();
     socket.on('connect', joinSession);
     return () => socket.off('connect', joinSession);
-  }, [customerId, driverId, join, role, token]);
+  }, [customerId, join, role, token]);
 
   useEffect(() => {
     let missedEvents = !socket.connected;

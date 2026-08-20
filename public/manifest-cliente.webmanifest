@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "Caldinho Express",
+  "short_name": "Caldinho",
+  "description": "Peça caldinho quentinho e acompanhe a entrega em tempo real.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#B91C1C",
+  "background_color": "#F5F5F4",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": ["food", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/cliente-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/cliente-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/cliente-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

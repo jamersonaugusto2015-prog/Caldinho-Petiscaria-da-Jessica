@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, readRoleTokens, writeRoleTokens, UNAUTHORIZED_EVENT } from './api';
 import type { ApiRole } from './api';
 import { Driver } from '../types';
+import { dropPushSubscription } from './pushSubscription';
 
 type AuthRole = ApiRole;
 const PROFILE_KEY = 'ce_driver_profile';
@@ -57,6 +58,11 @@ export function logout(role: AuthRole): void {
   delete tokens[role];
   writeRoleTokens(tokens);
   if (role === 'driver') localStorage.removeItem(PROFILE_KEY);
+  // A inscrição de push mora no navegador e sobrevive ao logout: sem isto, o
+  // tablet da cozinha que saiu da conta continuaria acordando com cada pedido
+  // novo da loja, e o celular do motoboy demitido, com cada corrida. Sair da
+  // conta tem que apagar o endereço, não só o token.
+  void dropPushSubscription();
 }
 
 /**

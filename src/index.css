@@ -8,6 +8,24 @@
   .btn-secondary,
   .btn-danger {
     @apply inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
+    /* Tira os 300 ms que o navegador espera para ver se o toque vira zoom. */
+    touch-action: manipulation;
+  }
+
+  /* No dedo, estes botões tinham ~30 px de altura — abaixo do mínimo de 44 px,
+     e é com eles que o motoboy confirma entrega dentro do capacete e a cozinha
+     aceita pedido com a mão molhada. A altura mínima só entra em ponteiro
+     grosso: no mouse do painel a barra densa continua densa, e o tamanho da
+     fonte não muda em lugar nenhum — o peso visual é o mesmo. */
+  @media (pointer: coarse) {
+    .btn-primary,
+    .btn-secondary,
+    .btn-danger {
+      min-height: 2.75rem;
+    }
+    .input {
+      min-height: 2.75rem;
+    }
   }
   .btn-primary {
     @apply bg-[#B91C1C] text-white hover:bg-[#991B1B];
@@ -41,6 +59,100 @@
 
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/* ---------- Casco instalado (PWA no celular) ----------
+   Tudo aqui existe por causa de UM aparelho: o celular do cliente e o do
+   motoboy, com o app instalado e sem a barra de endereço do navegador. */
+
+html {
+  /* O Safari aumenta a fonte sozinho quando o aparelho gira, e a barra de
+     status do modo standalone passa a cobrir o cabeçalho. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  /* O retângulo cinza que o Chrome pisca em cima de cada toque suja um app
+     que quer parecer nativo. Os estados de :active já são desenhados por nós. */
+  -webkit-tap-highlight-color: transparent;
+  /* Sem isto o navegador espera 300 ms em cada toque para ver se vira zoom. */
+  touch-action: manipulation;
+}
+
+#root {
+  /* Rolar até o fim de uma lista e continuar puxando arrasta a PÁGINA inteira
+     (ou dispara o "puxar para atualizar", que recarrega o pedido em andamento).
+     `contain` prende o gesto na lista onde ele começou. */
+  overscroll-behavior-y: contain;
+}
+
+/* Área segura: no modo standalone o app desenha SOB o notch e sob a barra de
+   gestos, porque o index.html usa `viewport-fit=cover`. Sem estes utilitários
+   o cabeçalho fica atrás do relógio do sistema. Aplique em cabeçalhos fixos
+   (`.pt-safe`) e em barras inferiores fixas (`.pb-safe`). */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior-y: contain;
+  }
+  /* Aparelho sem notch reporta inset 0, mas a barra de status continua lá em
+     cima: um respiro mínimo evita o título colado no relógio. */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+}
+
+/* Altura de tela que não mente no celular.
+   `100vh` (que é o que `min-h-screen` gera) conta a barra de endereço do Safari
+   como se ela não existisse: a tela nasce alta demais e sobra uma faixa rolando
+   embaixo. `dvh` acompanha a barra aparecendo e sumindo. O `vh` fica como
+   reserva para navegador antigo — a ordem importa, quem entende dvh sobrescreve. */
+.min-h-dscreen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.h-dscreen {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Espera do pedaço da rota. Fica invisível nos primeiros 240 ms: num 4G
+   razoável o bundle chega antes disso, e piscar uma tela vazia entre o toque
+   no ícone e o app é pior do que não mostrar nada. */
+.shell-loading {
+  opacity: 0;
+  animation: shellLoadingIn 200ms ease-out 240ms forwards;
+}
+@keyframes shellLoadingIn {
+  to {
+    opacity: 1;
+  }
+}
+.shell-loading-bar {
+  animation: shellLoadingSlide 1.1s ease-in-out infinite;
+}
+@keyframes shellLoadingSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-loading-bar {
+    animation: none;
+  }
 }
 
 /* Google Material Symbols (ícones do splash) */
@@ -102,6 +214,20 @@
 
 .animate-slide-up {
   animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Floating blob nav: soft specular edge over the phone shell */
+.client-blob-nav {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72));
+}
+.client-blob-nav::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 /* Leaflet: pinos customizados */
@@ -226,34 +352,65 @@
    Legibilidade em impressora térmica: a cabeça queima pontos, então texto
    fino/cinza sai apagado. Tudo é preto puro, em negrito, sem antialiasing —
    a hierarquia vem do TAMANHO e das molduras, nunca do peso da fonte. */
+/* Toda a escala tipográfica sai de --receipt-base. Um modelo novo (ou um rolo
+   mais estreito) troca uma linha, não quatro — e as proporções nunca saem do
+   lugar. A variável mora no .print-area, que é quem carrega as classes. */
 .receipt {
   --receipt-w: 80mm;
   font-family: 'Roboto Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--receipt-base, 13px);
   line-height: 1.32;
   color: #000;
   font-variant-ligatures: none;
   -webkit-font-smoothing: none;
   text-rendering: geometricPrecision;
 }
-.receipt-xl { font-size: 21px; line-height: 1.15; }
-.receipt-lg { font-size: 16px; line-height: 1.2; }
-.receipt-sm { font-size: 11px; line-height: 1.3; }
+.receipt-xl { font-size: calc(var(--receipt-base, 13px) * 1.62); line-height: 1.15; }
+.receipt-lg { font-size: calc(var(--receipt-base, 13px) * 1.23); line-height: 1.2; }
+.receipt-sm { font-size: calc(var(--receipt-base, 13px) * 0.85); line-height: 1.3; }
 
-/* Rolo de 58mm: mesma escala tipográfica, um passo menor, senão nome de
-   produto longo quebra no meio da palavra. */
-.receipt-narrow .receipt { font-size: 11.5px; }
-.receipt-narrow .receipt-xl { font-size: 17px; }
-.receipt-narrow .receipt-lg { font-size: 13.5px; }
-.receipt-narrow .receipt-sm { font-size: 9.5px; }
+/* Rolo de 58mm: um passo menor, senão nome de produto longo quebra no meio
+   da palavra. Modelo Ampliado: um passo maior, para ler de longe. */
+.receipt-narrow { --receipt-base: 11.5px; }
+.receipt-airy { --receipt-base: 15px; }
+.receipt-narrow.receipt-airy { --receipt-base: 13px; }
+
+/* Modelo Ampliado respira mais: o texto cresce, os blocos também. */
+.receipt-airy .receipt-rule { margin: 6px 0; }
+.receipt-airy .receipt-rule-strong { margin: 8px 0; }
 
 /* Nome do item quebrado em 2 linhas alinha sob o nome, não sob o "2x". */
 .receipt-hang { padding-left: 1.9em; text-indent: -1.9em; }
 
-/* Separador: tracejado vira pontinhos que somem no papel térmico. */
-.receipt-rule { border-top: 1px solid #000; margin: 5px 0; }
-.receipt-rule-strong { border-top: 2px solid #000; margin: 6px 0; }
+/* Logo da loja no topo. A cabeça térmica só queima preto: imagem colorida sai
+   como um borrão cinza, então ela entra em escala de cinza com contraste alto.
+   A altura é em mm para acompanhar a largura do rolo, não a tela. */
+.receipt-logo {
+  display: block;
+  margin: 0 auto 3px;
+  max-height: 17mm;
+  max-width: 58%;
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.25);
+}
+.receipt-narrow .receipt-logo { max-height: 13mm; max-width: 62%; }
+
+/* Modelo compacto: logo pequeno à esquerda, nome ao lado. A altura em mm
+   mantém o mesmo tamanho impresso em qualquer rolo. */
+.receipt-logo-inline {
+  height: 11mm;
+  width: auto;
+  max-width: 30%;
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.25);
+}
+.receipt-narrow .receipt-logo-inline { height: 9mm; max-width: 34%; }
+
+/* Separador: tracejado vira pontinhos que somem no papel térmico.
+   Poucos e justos — cada linha a mais quebra a leitura em fatias. */
+.receipt-rule { border-top: 1px solid #000; margin: 4px 0; }
+.receipt-rule-strong { border-top: 2px solid #000; margin: 5px 0; }
 
 /* Faixa invertida (cancelado, estorno): borda grossa em vez de fundo preto
    sólido, que borra e gasta o rolo. */
@@ -318,14 +475,10 @@
     print-color-adjust: exact;
   }
   /* Em pt, não px: px depende do DPI da impressora e sai miúdo em 203dpi. */
-  .receipt { font-size: 10.5pt; }
-  .receipt-xl { font-size: 17pt; }
-  .receipt-lg { font-size: 12.5pt; }
-  .receipt-sm { font-size: 8.5pt; }
-  .receipt-narrow .receipt { font-size: 8.5pt; }
-  .receipt-narrow .receipt-xl { font-size: 13.5pt; }
-  .receipt-narrow .receipt-lg { font-size: 10pt; }
-  .receipt-narrow .receipt-sm { font-size: 7pt; }
+  .print-area { --receipt-base: 10.5pt; }
+  .receipt-narrow.print-area { --receipt-base: 8.5pt; }
+  .receipt-airy.print-area { --receipt-base: 12.5pt; }
+  .receipt-narrow.receipt-airy.print-area { --receipt-base: 10pt; }
   .receipt-narrow.print-area { padding: 4mm 2mm 8mm !important; }
 }
 

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCart } from './CartStore';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell, useCartTotals } from './ClientStore';
@@ -11,29 +11,106 @@ import { OrderTrackingModal } from './OrderTrackingModal';
 import { ChatModal } from './ChatModal';
 import { LoyaltySection } from './LoyaltySection';
 import { ClosedStoreModal } from './ClosedStoreModal';
-import { CategoryId, Category, Product, OpeningHour } from '../../types';
-import { Flame, Sparkles, History, ShoppingBag, Home, ClipboardList, Search, ChevronRight, Clock } from 'lucide-react';
+import { ClientFloatingNav, ClientTab } from './ClientFloatingNav';
+import { Category, OpeningHour, Order, Product } from '../../types';
+import { Flame, Sparkles, ShoppingBag, ClipboardList, Search, ChevronRight, Clock } from 'lucide-react';
 
 function formatTodayHours(hours: OpeningHour | null): string {
   if (!hours) return 'Fechado hoje';
   return `${hours.open} às ${hours.close}`;
 }
 
+function statusLabel(status: Order['status']): string {
+  switch (status) {
+    case 'recebido':
+      return 'Recebido';
+    case 'em_preparo':
+      return 'Em preparo';
+    case 'pronto':
+      return 'Pronto';
+    case 'saiu_entrega':
+      return 'Saiu p/ entrega';
+    case 'entregue':
+      return 'Entregue';
+    case 'cancelado':
+      return 'Cancelado';
+    default:
+      return String(status).replace('_', ' ');
+  }
+}
+
+function statusTone(status: Order['status']): string {
+  if (status === 'entregue') return 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
+  if (status === 'cancelado') return 'bg-[#F5F5F4] text-[#78716C] border-[#E7E5E4]';
+  return 'bg-[#FEF2F2] text-[#B91C1C] border-[#FCA5A5]';
+}
+
+const OrderCard: React.FC<{ order: Order; onOpen: () => void; index?: number }> = ({
+  order,
+  onOpen,
+  index = 0,
+}) => {
+  const reduceMotion = useReducedMotion();
+  const live = !['entregue', 'cancelado'].includes(order.status);
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, delay: reduceMotion ? 0 : Math.min(index, 6) * 0.05, ease: [0.16, 1, 0.3, 1] }}
+      whileTap={reduceMotion ? undefined : { scale: 0.985 }}
+      className="w-full rounded-2xl border border-[#E7E5E4] bg-white p-4 text-left shadow-sm transition hover:border-[#B91C1C]/35"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-extrabold text-[#1C1917]">{order.id}</span>
+          <span
+            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${statusTone(order.status)} ${
+              live ? 'animate-pulse' : ''
+            }`}
+          >
+            {statusLabel(order.status)}
+          </span>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-[#A8A29E]" />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="truncate pr-2 text-[11px] text-[#57534E]">
+          {order.items.map((i) => i.product.name).join(', ')}
+        </span>
+        <span className="shrink-0 text-xs font-extrabold text-[#B91C1C]">
+          R$ {order.total.toFixed(2)}
+        </span>
+      </div>
+      <div className="mt-1 text-[10px] text-[#A8A29E]">
+        {new Date(order.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+      </div>
+    </motion.button>
+  );
+};
+
+const viewTransition = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const },
+};
+
 export const ClientView: React.FC = () => {
-  const { products, categories, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, settings } = useClientShell();
+  const { products, categories, selectedCategory, setSelectedCategory, searchQuery, setSearchQuery, settings } =
+    useClientShell();
   const { orders, trackingOrderId, setTrackingOrderId } = useCheckout();
-  const { cart, isCartOpen, setIsCartOpen, addToCart, isClosedModalOpen, setClosedModalOpen } = useCart();
+  const { cart, isCartOpen, setIsCartOpen, isClosedModalOpen, setClosedModalOpen } = useCart();
   const { total } = useCartTotals();
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [view, setView] = useState<'inicio' | 'pedidos' | 'busca'>('inicio');
+  const [view, setView] = useState<ClientTab>('inicio');
 
-  // Promoção do dia: só aparece quando a cozinha marca um produto (de qualquer categoria) e ele está disponível.
   const caldinhoDoDia = products.find((p) => p.isCaldinhoDoDia && p.available) || null;
 
-  // Categorias dinâmicas (do painel da cozinha), com fallback derivado dos produtos
   const categoryList: Category[] = categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : [];
   if (categoryList.length === 0) {
     const known: Record<string, { label: string; emoji: string; color: string }> = {
@@ -66,291 +143,271 @@ export const ClientView: React.FC = () => {
     return matchesCat && matchesSearch;
   });
 
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const activeOrderCount = useMemo(
+    () => orders.filter((o) => !['entregue', 'cancelado'].includes(o.status)).length,
+    [orders]
+  );
+  const reduceMotion = useReducedMotion();
+  const vt = reduceMotion
+    ? { initial: false as const, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.12 } }
+    : viewTransition;
+
   return (
-    <div className="space-y-4 pb-28">
-      {/* Loja fechada: o cabeçalho já mostra "Aberto agora", então só o aviso de
-          fechada precisa de espaço aqui. */}
+    <div className="space-y-4 pb-32">
       {!settings.isOpen && (
-        <div className="flex items-center justify-between gap-2 bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl px-4 py-2.5 text-xs font-bold text-[#92400E]">
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#FCD34D] bg-[#FEF3C7] px-4 py-2.5 text-xs font-bold text-[#92400E]">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 shrink-0" />
+            <Clock className="h-4 w-4 shrink-0" />
             <span>Loja fechada no momento</span>
           </div>
-          <span className="shrink-0 bg-white border border-[#FCD34D] rounded-full px-2.5 py-1 text-[10px] font-extrabold">
+          <span className="shrink-0 rounded-full border border-[#FCD34D] bg-white px-2.5 py-1 text-[10px] font-extrabold">
             Hoje: {formatTodayHours(settings.openingHours[new Date().getDay()] ?? null)}
           </span>
         </div>
       )}
 
+      <AnimatePresence mode="wait">
       {view === 'inicio' && (
-        <>
+        <motion.div key="inicio" className="space-y-4" {...vt}>
           {caldinhoDoDia && !searchQuery && selectedCategory === 'all' && (
-            <article
+            <motion.article
+              layout={!reduceMotion}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
               onClick={() => setSelectedProduct(caldinhoDoDia)}
-              className="group relative w-full overflow-hidden rounded-2xl bg-[#7F1D1D] shadow-xl shadow-[#B91C1C]/15 transition-all duration-300 active:scale-[0.99]"
+              className="group relative w-full cursor-pointer overflow-hidden rounded-[22px] bg-[#7F1D1D] shadow-xl shadow-[#B91C1C]/15"
+              whileTap={reduceMotion ? undefined : { scale: 0.99 }}
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden">
                 <img
                   src={caldinhoDoDia.image}
                   alt={caldinhoDoDia.name}
-                  className="w-full h-full object-cover saturate-125 contrast-105 sepia-[0.08] transition-transform duration-700 group-hover:scale-105"
+                  className="h-full w-full object-cover saturate-125 contrast-105 sepia-[0.08] transition-transform duration-700 group-hover:scale-105"
                 />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20" />
 
-                <div className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-[#B91C1C] px-2.5 py-1 text-[8px] font-black uppercase tracking-wider text-white shadow-md">
+                <div className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-[#B91C1C] px-2.5 py-1 text-[8px] font-black uppercase tracking-wider text-white shadow-md">
                   <Flame className="h-3 w-3 fill-[#FDE68A] text-[#FDE68A]" />
                   <span>Promoção do dia</span>
                 </div>
 
-                <div className="absolute bottom-3 right-3">
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-4 py-2.5 text-[11px] font-black text-[#B91C1C] shadow-lg active:scale-95 transition">
-                    <ShoppingBag className="h-3.5 w-3.5" />
-                    <span>Adicionar</span>
-                  </span>
+                <div className="absolute inset-x-0 bottom-0 p-3.5">
+                  <p className="line-clamp-1 text-sm font-extrabold text-white drop-shadow">{caldinhoDoDia.name}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-[#FDE68A]">
+                      R$ {caldinhoDoDia.basePrice.toFixed(2)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[11px] font-black text-[#B91C1C] shadow-lg">
+                      <ShoppingBag className="h-3.5 w-3.5" />
+                      <span>Adicionar</span>
+                    </span>
+                  </div>
                 </div>
               </div>
-            </article>
+            </motion.article>
           )}
 
-      <div className="grid grid-cols-5 gap-1.5 px-0.5">
-        <button
-          key="all"
-          onClick={() => setSelectedCategory('all')}
-          aria-pressed={selectedCategory === 'all'}
-          className="flex flex-col items-center gap-1.5 py-2 transition-all active:scale-95"
-        >
-          <div
-            className={`flex h-14 w-14 items-center justify-center rounded-2xl text-xl transition-all ${
-              selectedCategory === 'all' ? 'ring-2 ring-[#B91C1C] shadow-md shadow-[#B91C1C]/15' : ''
-            }`}
-            style={{ backgroundColor: selectedCategory === 'all' ? '#FEE2E2' : '#FEF2F2' }}
-          >
-            <Sparkles
-              className="h-7 w-7"
-              style={{ color: selectedCategory === 'all' ? '#B91C1C' : '#DC2626' }}
-              strokeWidth={2}
-            />
-          </div>
-          <span
-            className={`text-center text-[10px] font-semibold leading-tight ${
-              selectedCategory === 'all' ? 'text-[#B91C1C]' : 'text-[#44403C]'
-            }`}
-          >
-            Todos
-          </span>
-        </button>
-
-        {categoryList.map((cat) => {
-          const isSelected = selectedCategory === cat.id;
-          return (
+          <div className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-1 no-scrollbar">
             <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              aria-pressed={isSelected}
-              className="flex flex-col items-center gap-1.5 py-2 transition-all active:scale-95"
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              aria-pressed={selectedCategory === 'all'}
+              className="relative flex shrink-0 flex-col items-center gap-1.5 py-1 transition-all active:scale-95"
             >
               <div
-                className={`flex h-14 w-14 items-center justify-center rounded-2xl text-2xl transition-all ${
-                  isSelected ? 'ring-2 ring-[#B91C1C] shadow-md shadow-[#B91C1C]/15' : ''
+                className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-xl transition-all ${
+                  selectedCategory === 'all' ? 'shadow-md shadow-[#B91C1C]/15' : ''
                 }`}
-                style={{ backgroundColor: isSelected ? '#FEE2E2' : `${cat.color}1A` }}
+                style={{ backgroundColor: selectedCategory === 'all' ? '#FEE2E2' : '#FEF2F2' }}
               >
-                <span>{cat.emoji}</span>
+                {selectedCategory === 'all' && !reduceMotion && (
+                  <motion.span
+                    layoutId="cat-ring"
+                    className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]"
+                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  />
+                )}
+                {selectedCategory === 'all' && reduceMotion && (
+                  <span className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]" />
+                )}
+                <Sparkles
+                  className="relative h-7 w-7"
+                  style={{ color: selectedCategory === 'all' ? '#B91C1C' : '#DC2626' }}
+                  strokeWidth={2}
+                />
               </div>
               <span
                 className={`text-center text-[10px] font-semibold leading-tight ${
-                  isSelected ? 'text-[#B91C1C]' : 'text-[#44403C]'
+                  selectedCategory === 'all' ? 'text-[#B91C1C]' : 'text-[#44403C]'
                 }`}
               >
-                {cat.label}
+                Todos
               </span>
             </button>
-          );
-        })}
-      </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-2.5">
-          <h3 className="text-base font-extrabold text-[#1C1917] flex items-center gap-2">
-            <span>
-              {selectedCategory === 'all'
-                ? '⭐ Mais Vendidos & Destaques'
-                : categoryList.find((c) => c.id === selectedCategory)?.label}
-            </span>
-            <span className="text-[11px] text-[#B91C1C] font-bold">({filteredProducts.length})</span>
-          </h3>
-        </div>
-
-        {filteredProducts.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center text-[#57534E] border border-[#E7E5E4]">
-            <p className="text-lg font-bold text-[#1C1917] mb-1">Nenhum produto encontrado</p>
-            <p className="text-xs">Tente buscar por outro termo ou escolha outra categoria.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2.5">
-            {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} onSelect={(p) => setSelectedProduct(p)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <LoyaltySection />
-
-      {orders.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 border border-[#E7E5E4] space-y-3 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-extrabold text-[#1C1917] flex items-center gap-2">
-              <History className="w-4 h-4 text-[#B91C1C]" />
-              <span>Histórico de Pedidos</span>
-            </h3>
-          </div>
-
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {orders.map((ord) => (
-              <div
-                key={ord.id}
-                onClick={() => setTrackingOrderId(ord.id)}
-                className="bg-[#F5F5F4]/70 hover:bg-[#F5F5F4] p-3.5 rounded-2xl border border-[#E7E5E4] cursor-pointer transition flex items-center justify-between"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-xs text-[#1C1917]">{ord.id}</span>
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                        ord.status === 'entregue'
-                          ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
-                          : ord.status === 'cancelado'
-                          ? 'bg-[#F5F5F4] text-[#78716C] border border-[#E7E5E4]'
-                          : 'bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5] animate-pulse'
-                      }`}
-                    >
-                      {ord.status.replace('_', ' ').toUpperCase()}
-                    </span>
+            {categoryList.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  aria-pressed={isSelected}
+                  className="relative flex shrink-0 flex-col items-center gap-1.5 py-1 transition-all active:scale-95"
+                >
+                  <div
+                    className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-2xl transition-all ${
+                      isSelected ? 'shadow-md shadow-[#B91C1C]/15' : ''
+                    }`}
+                    style={{ backgroundColor: isSelected ? '#FEE2E2' : `${cat.color}1A` }}
+                  >
+                    {isSelected && !reduceMotion && (
+                      <motion.span
+                        layoutId="cat-ring"
+                        className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]"
+                        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      />
+                    )}
+                    {isSelected && reduceMotion && (
+                      <span className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]" />
+                    )}
+                    <span className="relative">{cat.emoji}</span>
                   </div>
-                  <p className="text-[11px] text-[#57534E] mt-0.5">
-                    {ord.items.map((i) => i.product.name).join(', ')}
-                  </p>
-                </div>
+                  <span
+                    className={`max-w-[64px] truncate text-center text-[10px] font-semibold leading-tight ${
+                      isSelected ? 'text-[#B91C1C]' : 'text-[#44403C]'
+                    }`}
+                  >
+                    {cat.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-                <div className="text-right">
-                  <div className="font-extrabold text-xs text-[#B91C1C]">R$ {ord.total.toFixed(2)}</div>
-                  <div className="text-[10px] text-[#A8A29E]">
-                    {new Date(ord.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                  </div>
-                </div>
+          <div>
+            <div className="mb-3 flex items-end justify-between gap-2">
+              <h3 className="text-base font-extrabold leading-tight text-[#1C1917]">
+                {selectedCategory === 'all'
+                  ? 'Mais vendidos'
+                  : categoryList.find((c) => c.id === selectedCategory)?.label}
+              </h3>
+              <span className="text-[11px] font-bold text-[#B91C1C]">{filteredProducts.length} itens</span>
+            </div>
+
+            {filteredProducts.length === 0 ? (
+              <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">
+                <p className="mb-1 text-lg font-bold text-[#1C1917]">Nenhum produto encontrado</p>
+                <p className="text-xs">Tente buscar por outro termo ou escolha outra categoria.</p>
               </div>
-            ))}
+            ) : (
+              <motion.div layout className="grid grid-cols-2 gap-2.5" key={selectedCategory + searchQuery}>
+                <AnimatePresence mode="popLayout">
+                  {filteredProducts.map((product, i) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      index={i}
+                      onSelect={(p) => setSelectedProduct(p)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            )}
           </div>
-        </div>
-      )}
 
-      <AnimatePresence>
-        {selectedProduct && (
-          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
-        )}
-      </AnimatePresence>
-        </>
+          <LoyaltySection />
+        </motion.div>
       )}
 
       {view === 'pedidos' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-[#B91C1C]" />
-            <h2 className="text-base font-extrabold text-[#1C1917]">Meus Pedidos</h2>
+        <motion.div key="pedidos" className="space-y-4" {...vt}>
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#FEF2F2] text-[#B91C1C]">
+              <ClipboardList className="h-5 w-5" strokeWidth={2.4} />
+            </span>
+            <div>
+              <h2 className="text-base font-extrabold text-[#1C1917]">Meus pedidos</h2>
+              <p className="text-[11px] text-[#78716C]">Toque para acompanhar ou repetir</p>
+            </div>
           </div>
 
           {orders.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 text-center text-[#57534E] border border-[#E7E5E4]">
-              <p className="text-lg font-bold text-[#1C1917] mb-1">Nenhum pedido ainda</p>
-              <p className="text-xs">Seus pedidos aparecerão aqui para você acompanhar.</p>
+            <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">
+              <p className="mb-1 text-lg font-bold text-[#1C1917]">Nenhum pedido ainda</p>
+              <p className="text-xs">Seus pedidos aparecem aqui para você acompanhar.</p>
+              <button
+                type="button"
+                onClick={() => setView('inicio')}
+                className="mt-4 rounded-full bg-[#B91C1C] px-5 py-2.5 text-xs font-extrabold text-white shadow-md"
+              >
+                Ver cardápio
+              </button>
             </div>
           ) : (
-            <div className="space-y-3">
-              {orders.map((ord) => (
-                <div
-                  key={ord.id}
-                  onClick={() => setTrackingOrderId(ord.id)}
-                  className="bg-white rounded-2xl p-4 border border-[#E7E5E4] shadow-sm cursor-pointer transition hover:border-[#B91C1C]/40"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-xs text-[#1C1917]">{ord.id}</span>
-                      <span
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                          ord.status === 'entregue'
-                            ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
-                            : ord.status === 'cancelado'
-                            ? 'bg-[#F5F5F4] text-[#78716C] border border-[#E7E5E4]'
-                            : 'bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5] animate-pulse'
-                        }`}
-                      >
-                        {ord.status.replace('_', ' ').toUpperCase()}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#A8A29E] shrink-0" />
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[11px] text-[#57534E] truncate pr-2">
-                      {ord.items.map((i) => i.product.name).join(', ')}
-                    </span>
-                    <span className="font-extrabold text-xs text-[#B91C1C] shrink-0">
-                      R$ {ord.total.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-[#A8A29E] mt-1">
-                    {new Date(ord.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                  </div>
-                </div>
+            <div className="space-y-2.5">
+              {orders.map((ord, i) => (
+                <OrderCard key={ord.id} order={ord} index={i} onOpen={() => setTrackingOrderId(ord.id)} />
               ))}
             </div>
           )}
-        </div>
+        </motion.div>
       )}
 
       {view === 'busca' && (
-        <div className="space-y-4">
+        <motion.div key="busca" className="space-y-4" {...vt}>
           <div className="relative">
-            <Search className="w-4 h-4 text-[#A8A29E] absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#A8A29E]" />
             <input
               autoFocus
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar caldinho, petisco, bebida..."
-              className="w-full bg-white border border-[#E7E5E4] text-[#1C1917] placeholder-[#A8A29E] text-xs rounded-2xl pl-9 pr-8 py-3 focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+              className="w-full rounded-2xl border border-[#E7E5E4] bg-white py-3.5 pl-10 pr-4 text-sm font-medium text-[#1C1917] placeholder-[#A8A29E] shadow-sm focus:border-[#B91C1C] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]/15"
             />
           </div>
 
           {searchQuery.trim() === '' ? (
-            <div className="bg-white rounded-2xl p-8 text-center text-[#57534E] border border-[#E7E5E4]">
-              <p className="text-lg font-bold text-[#1C1917] mb-1">Digite para buscar</p>
+            <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">
+              <p className="mb-1 text-lg font-bold text-[#1C1917]">Digite para buscar</p>
               <p className="text-xs">Encontre seu caldinho preferido em segundos.</p>
             </div>
           ) : filteredProducts.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 text-center text-[#57534E] border border-[#E7E5E4]">
-              <p className="text-lg font-bold text-[#1C1917] mb-1">Nada encontrado</p>
+            <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">
+              <p className="mb-1 text-lg font-bold text-[#1C1917]">Nada encontrado</p>
               <p className="text-xs">Tente buscar por outro termo.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2.5">
-              {filteredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} onSelect={(p) => setSelectedProduct(p)} />
-              ))}
-            </div>
+            <motion.div layout className="grid grid-cols-2 gap-2.5">
+              <AnimatePresence mode="popLayout">
+                {filteredProducts.map((product, i) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    index={i}
+                    onSelect={(p) => setSelectedProduct(p)}
+                  />
+                ))}
+              </AnimatePresence>
+            </motion.div>
           )}
-        </div>
+        </motion.div>
       )}
-
-      <AnimatePresence>
-        {isCartOpen && <CartDrawer onOpenCheckout={() => setIsCheckoutOpen(true)} />}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {selectedProduct && (
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>{isCartOpen && <CartDrawer onOpenCheckout={() => setIsCheckoutOpen(true)} />}</AnimatePresence>
+
       {isCheckoutOpen && (
-        <CheckoutModal
-          onClose={() => setIsCheckoutOpen(false)}
-          onOrderPlaced={() => setIsCheckoutOpen(false)}
-        />
+        <CheckoutModal onClose={() => setIsCheckoutOpen(false)} onOrderPlaced={() => setIsCheckoutOpen(false)} />
       )}
 
       {trackingOrderId && (
@@ -371,80 +428,14 @@ export const ClientView: React.FC = () => {
 
       {isClosedModalOpen && <ClosedStoreModal onClose={() => setClosedModalOpen(false)} />}
 
-      {/* Barra flutuante Ver Sacola (mobile) — acima da bottom bar */}
-      <AnimatePresence>
-        {cart.reduce((sum, i) => sum + i.quantity, 0) > 0 && !isCartOpen && (
-          <motion.div
-            key="cart-fab"
-            initial={{ y: 90, opacity: 0, scale: 0.85 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 90, opacity: 0, scale: 0.85 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-            className="md:hidden fixed z-40 bottom-[calc(env(safe-area-inset-bottom)+88px)] left-1/2 -translate-x-1/2 w-[calc(100%-24px)] max-w-[406px]"
-          >
-            <button
-              onClick={() => setIsCartOpen(true)}
-              className="w-full flex items-center justify-between bg-[#B91C1C] hover:bg-[#991B1B] text-white rounded-full py-3.5 px-5 shadow-2xl shadow-[#B91C1C]/40 border border-white/20 transition active:scale-[0.98]"
-            >
-              <span className="flex items-center gap-2.5 text-sm font-extrabold">
-                <span className="relative">
-                  <ShoppingBag className="w-5 h-5" />
-                  <span className="absolute -top-2 -right-2.5 bg-[#D97706] text-white text-[9px] font-black w-4.5 h-4.5 min-w-[18px] px-1 rounded-full flex items-center justify-center border border-white">
-                    {cart.reduce((sum, i) => sum + i.quantity, 0)}
-                  </span>
-                </span>
-                <span>itens</span>
-              </span>
-              <span className="text-sm font-black flex items-center gap-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#FDE68A]">Ver Sacola</span>
-                <span>R$ {total.toFixed(2)}</span>
-              </span>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Barra inferior de navegação (somente mobile) */}
-      <nav className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 z-40 w-full max-w-[430px] bg-white border-t border-[#E7E5E4] pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_24px_rgba(0,0,0,0.10)]">
-        <div className="flex items-stretch">
-          {(
-            [
-              { id: 'inicio' as const, label: 'Início', icon: Home },
-              { id: 'pedidos' as const, label: 'Pedidos', icon: ClipboardList },
-              { id: 'busca' as const, label: 'Busca', icon: Search },
-            ]
-          ).map((item) => {
-            const Icon = item.icon;
-            const active = view === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setView(item.id)}
-                className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-extrabold transition-all active:scale-95 ${
-                  active ? 'text-[#B91C1C]' : 'text-[#A8A29E] hover:text-[#1C1917]'
-                }`}
-              >
-                {active && (
-                  <span className="absolute -top-0.5 h-1 w-10 rounded-full bg-[#B91C1C]" />
-                )}
-                <span
-                  className={`flex items-center justify-center rounded-2xl px-4 py-1 transition-all ${
-                    active ? 'bg-[#FEF2F2]' : ''
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 ${active ? 'scale-110' : ''}`} strokeWidth={active ? 2.5 : 2} />
-                  {item.id === 'pedidos' && orders.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-[#D97706] text-white text-[8px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border-2 border-white">
-                      {orders.length}
-                    </span>
-                  )}
-                </span>
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <ClientFloatingNav
+        view={view}
+        onChangeView={setView}
+        onOpenCart={() => setIsCartOpen(true)}
+        cartCount={cartCount}
+        cartTotal={total}
+        activeOrderCount={activeOrderCount}
+      />
     </div>
   );
 };

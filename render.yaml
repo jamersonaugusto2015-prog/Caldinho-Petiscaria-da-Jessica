@@ -32,6 +32,14 @@ services:
         sync: false # painel do Mercado Pago -> Webhooks -> assinatura secreta
       - key: BACKUP_SERVICE_ACCOUNT
         sync: false # JSON da service account; fica fora do disco que ela faz backup
+      # Push: opcional. Vazio = o servidor gera o par no primeiro boot e o guarda
+      # no banco. Nunca troque um par já em uso: invalida todos os inscritos.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
     disk:
       name: caldinho-data
       mountPath: /data

@@ -13,8 +13,11 @@ export async function verifyPassword(password: string, stored: string): Promise<
   if (!stored) return false;
   const parts = stored.split(':');
   if (parts.length !== 3 || parts[0] !== 'scrypt') {
-    // credencial legada em texto claro (migração)
-    return stored === password;
+    // Credencial que não está no formato scrypt não é comparada em texto claro:
+    // `upgradeDriverPasswords` (db.ts) converte as legadas na subida do servidor,
+    // então uma senha crua aqui só pode ser lixo ou uma gravação que escapou do
+    // caminho de hash — em nenhum dos dois casos ela deve autenticar.
+    return false;
   }
   const [, salt, hash] = parts;
   const calc = ((await scryptAsync(password, salt, 64)) as Buffer).toString('hex');

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Bell, BellOff, Menu } from 'lucide-react';
+import { Bell, BellOff, Download, Menu, RefreshCw, Share, X } from 'lucide-react';
+import { useInstallAffordance, useUpdateReady } from '../../lib/appShell';
 import { useKitchenSettings } from './KitchenSettingsStore';
 import { useKitchenSound } from './KitchenSoundStore';
 import { useKitchenShell } from './KitchenShellStore';
-import { announceNewOrder, playOrderMp3 } from '../../lib/sound';
 import { kitchenTabMeta, useKitchenNavCounts } from './useKitchenNavCounts';
 import { kitchenTabLabel, type KitchenTab } from './kitchenTabs';
 
@@ -30,11 +30,17 @@ const STORE_SKIN: Record<StoreState, { pill: string; dot: string }> = {
   },
 };
 
+/** Faixa fina do casco: mesma moldura das duas mensagens, tom diferente. */
+const SHELL_STRIP =
+  'flex items-center gap-2 border-b border-[#E7E5E4] px-3 py-1.5 text-[11px] font-bold sm:px-6 lg:px-8';
+
 export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }) => {
   const { settings, saveSettings } = useKitchenSettings();
-  const { soundEnabled, toggleSound } = useKitchenSound();
+  const { soundEnabled, toggleSound, previewSound, requestSystemPermission } = useKitchenSound();
   const { openNav } = useKitchenShell();
   const counts = useKitchenNavCounts();
+  const install = useInstallAffordance('ce_install_hint_kitchen');
+  const updateReady = useUpdateReady();
 
   const state: StoreState = !settings.orderEnabled ? 'closed' : settings.isOpen ? 'open' : 'afterHours';
   const copy = STORE_COPY[state];
@@ -44,13 +50,12 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
   const handleToggleSound = () => {
     const turningOn = !soundEnabled;
     toggleSound();
-    if (turningOn) {
-      if (settings.orderSoundUrl) {
-        playOrderMp3(settings.orderSoundUrl); // teste do áudio personalizado
-      } else {
-        announceNewOrder(); // teste da voz ao ligar
-      }
-    }
+    if (!turningOn) return;
+    previewSound(); // teste do áudio/voz configurado
+    // O gesto que liga o som é o único gesto explícito que a cozinha tem: é
+    // aqui que a permissão de notificação pode ser pedida sem o navegador
+    // recusar por não haver interação — e sem cair na cara de quem só abriu a tela.
+    void requestSystemPermission();
   };
 
   const toggleStore = () => {
@@ -60,7 +65,63 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
   };
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[#E7E5E4] bg-white/90 backdrop-blur-xl">
+    // `pt-safe`: no app instalado a página desenha sob a barra de status, e o
+    // título do painel ficava atrás do relógio do sistema.
+    <header className="pt-safe sticky top-0 z-20 border-b border-[#E7E5E4] bg-white/90 backdrop-blur-xl">
+      {/* Nunca recarrega sozinho: a cozinha atualiza no meio de um pedido e
+          perderia o que está na tela. Quem decide a hora é quem está lá. */}
+      {updateReady && (
+        <div className={`${SHELL_STRIP} bg-[#FFFBEB] text-[#B45309]`}>
+          <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Versão nova do painel pronta.</span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 rounded-lg bg-[#B45309] px-2.5 py-1 text-[11px] font-bold text-white transition-colors duration-200 hover:bg-[#92400E]"
+          >
+            Atualizar
+          </button>
+        </div>
+      )}
+
+      {install.kind !== 'none' && (
+        <div className={`${SHELL_STRIP} bg-[#FAFAF9] text-[#57534E]`}>
+          {install.kind === 'prompt' ? (
+            <>
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                Instale o painel para receber pedidos com a aba fechada.
+              </span>
+              <button
+                type="button"
+                // De dentro do clique, obrigatoriamente: o Chrome descarta o
+                // diálogo de instalação pedido fora de um gesto do usuário.
+                onClick={install.install}
+                className="shrink-0 rounded-lg bg-[#1C1917] px-2.5 py-1 text-[11px] font-bold text-white transition-colors duration-200 hover:bg-[#292524]"
+              >
+                Instalar app
+              </button>
+            </>
+          ) : (
+            <>
+              <Share className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                Para receber avisos: toque em Compartilhar → Adicionar à Tela de Início.
+              </span>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={install.dismiss}
+            aria-label="Agora não"
+            title="Agora não"
+            className="shrink-0 rounded-lg p-1 text-[#A8A29E] transition-colors duration-200 hover:bg-[#F5F5F4] hover:text-[#57534E]"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex h-[68px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
         <button
           type="button"

@@ -2,51 +2,66 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../../lib/auth';
 import { useDriver } from './DriverStore';
-import { LogOut } from 'lucide-react';
+import { Bike, LogOut } from 'lucide-react';
 
 export const DriverHeader: React.FC = () => {
   const navigate = useNavigate();
-  const { profile } = useDriver();
+  const { profile, presenceState, myDeliveries, availableOrders } = useDriver();
 
   const handleLogout = () => {
     logout('driver');
     navigate('/');
   };
 
-  return (
-    <header className="sticky top-0 z-40 bg-[#121214] text-white border-b border-[#27272A] shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 select-none">
-            <div className="w-10 h-10 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-extrabold text-xl shadow-md">
-              🛵
-            </div>
-            <div>
-              <div className="flex items-center gap-2 leading-none">
-                <span className="font-extrabold text-lg tracking-tight">Entregador Caldinho Express</span>
-                <span className="hidden sm:inline-block text-[10px] bg-[#B91C1C] text-white font-bold px-2.5 py-0.5 rounded-full">
-                  {profile?.name || 'Entregador'}
-                </span>
-              </div>
-              <span className="text-[10px] uppercase tracking-wider text-[#A1A1AA] font-extrabold mt-0.5 block">
-                {profile ? (
-                  <>{profile.bikeModel || 'Modo Entregador'} • {profile.plate || 'GPS • Recife'}</>
-                ) : (
-                  'Modo Entregador GPS • Recife'
-                )}
-              </span>
-            </div>
-          </div>
+  const activeCount = myDeliveries.length + availableOrders.length;
+  const working = myDeliveries.length > 0;
+  // Três cores para três estados. O amarelo é o que faltava: com o celular no
+  // bolso o motoboy continua de turno, e pintar isso de cinza (Offline) fazia
+  // ele achar que tinha caído do quadro e tocar o botão à toa.
+  const dotClass =
+    presenceState === 'online'
+      ? 'bg-[#4ADE80]'
+      : presenceState === 'reconnecting'
+        ? 'bg-[#FACC15]'
+        : 'bg-[#71717A]';
+  const presenceLabel =
+    presenceState === 'online' ? 'Online' : presenceState === 'reconnecting' ? 'Reconectando' : 'Offline';
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 bg-[#B91C1C] hover:bg-[#991B1B] text-white px-4 py-2 rounded-full text-xs font-bold shadow-md transition"
-            title="Sair do app do entregador"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Sair</span>
-          </button>
+  return (
+    <header className="sticky top-0 z-40 border-b border-[#27272A] bg-[#121214] text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]">
+      <div className="mx-auto flex max-w-[430px] items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#B91C1C] text-white shadow-md">
+            <Bike className="h-5 w-5" strokeWidth={2.4} />
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-[#121214] ${dotClass}`}
+              aria-hidden
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-extrabold leading-tight tracking-tight">
+              {profile?.name || 'Entregador'}
+            </p>
+            <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-wide text-[#A1A1AA]">
+              {working
+                ? `Em corrida · ${myDeliveries[0]?.id || ''}`
+                : activeCount > 0
+                  ? `${activeCount} oferta${activeCount > 1 ? 's' : ''}`
+                  : presenceLabel}
+              {!working && profile?.plate ? ` · ${profile.plate}` : ''}
+            </p>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs font-bold text-white transition hover:bg-white/15 active:scale-95"
+          title="Sair do app do entregador"
+        >
+          <LogOut className="h-4 w-4" />
+          <span>Sair</span>
+        </button>
       </div>
     </header>
   );

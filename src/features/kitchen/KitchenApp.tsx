@@ -33,10 +33,10 @@ const KitchenShell: React.FC = () => {
   }, [searchParams, setSearchParams, triggerToast]);
 
   return (
-    <div className="k-shell min-h-screen bg-[#F5F5F4] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
+    <div className="k-shell min-h-dscreen bg-[#F5F5F4] font-sans text-[#1C1917] antialiased selection:bg-[#B91C1C] selection:text-white">
       <KitchenSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       <div
-        className={`flex min-h-screen flex-col transition-[padding-left] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`flex min-h-dscreen flex-col transition-[padding-left] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
           railPinned ? 'lg:pl-[276px]' : 'lg:pl-[76px]'
         }`}
       >

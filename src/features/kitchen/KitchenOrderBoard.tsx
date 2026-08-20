@@ -31,7 +31,7 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
   const { orders } = useKitchenOrders();
   const { products, coupons, toggleProductAvailability } = useKitchenCatalog();
   const { drivers } = useKitchenDrivers();
-  const { settings } = useKitchenSettings();
+  const { settings, storeLogo } = useKitchenSettings();
   const { report, trends, loadReport, loadTrends } = useKitchenReports();
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -143,7 +143,13 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
         </div>
 
         {printOrder && (
-          <OrderReceiptModal order={printOrder} storeName={settings.storeName} onClose={() => setPrintOrder(null)} />
+          <OrderReceiptModal
+          order={printOrder}
+          storeName={settings.storeName}
+          storeCity={settings.city}
+          storeLogo={storeLogo}
+          onClose={() => setPrintOrder(null)}
+        />
         )}
       </div>
     );

@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import { CancelActor, Order } from '../src/types';
 import { getSettings } from './db';
-import { emitOrder } from './orderEvents';
+import { emitOrder, orderEventContext } from './orderEvents';
 import { applyOrderEvent } from './orderLifecycle';
 import { loadDriver, saveOrder } from './orderStore';
 import { earnStamp, releaseFreeItems } from './loyalty';
@@ -11,6 +11,13 @@ export interface CancelOrderRequest {
   order: Order;
   reason: string;
   by: CancelActor;
+  /**
+   * O pedido como estava ANTES de quem chamou mexer nele. A resposta ao pedido
+   * de cancelamento passa primeiro pelo `resolve-cancel`, que já apaga o
+   * `pendente` — sem este retrato o alerta do cliente ("Cancelamento aceito")
+   * não sabe que havia algo pendente e a notificação some.
+   */
+  before?: Order;
 }
 
 /**
@@ -50,7 +57,7 @@ export function cancelOrder(io: Server, request: CancelOrderRequest): Order {
   markRefundDue(order);
 
   saveOrder(order);
-  emitOrder(io, 'order:updated', order);
+  emitOrder(io, 'order:updated', order, orderEventContext(request.before ?? request.order));
   return order;
 }
 

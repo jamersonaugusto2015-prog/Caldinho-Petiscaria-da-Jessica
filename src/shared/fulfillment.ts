@@ -9,10 +9,6 @@ export function normalizeFulfillment(value: unknown): Fulfillment {
   return value === 'pickup' ? 'pickup' : 'delivery';
 }
 
-export const FULFILLMENT_LABEL: Record<Fulfillment, string> = {
-  delivery: 'Entrega',
-  pickup: 'Retirada na loja',
-};
 
 /** Linha de endereço da loja para quem vai retirar o pedido. */
 export function storeAddressLine(settings: Pick<StoreSettings, 'storeAddress' | 'city' | 'storeName'>): string {

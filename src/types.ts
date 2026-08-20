@@ -163,12 +163,21 @@ export interface Order {
   status: OrderStatus;
   payment: PaymentDetails;
   createdAt: string; // ISO string
+  /** Quando o pedido foi entregue. Ausente em pedidos gravados antes deste campo. */
+  deliveredAt?: string;
   estimatedDeliveryMinutes: number;
   driverId?: string;
   driverName?: string;
   driverPhone?: string;
   driverLat?: number; // latitude real (GPS do entregador)
   driverLng?: number;
+  /**
+   * Quando o ponto acima foi tirado. Sem ele o mapa do cliente não tem como
+   * separar "o motoboy está aqui" de "o motoboy estava aqui há dez minutos e o
+   * celular dele dormiu" — os dois desenham o mesmo pino. Ausente nos pedidos
+   * gravados antes do carimbo existir, e num ponto semeado, que é palpite.
+   */
+  driverLocationAt?: string;
   rating?: number;
   ratingComment?: string;
   cancellationReason?: string;
@@ -314,6 +323,8 @@ export interface Driver {
   online?: boolean;
   lat?: number;
   lng?: number;
+  /** Quando `lat`/`lng` foram tirados. Ver `locationFreshness` em `driverLocation.ts`. */
+  locationAt?: string;
   createdAt: string;
 }
 

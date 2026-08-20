@@ -13,7 +13,7 @@ import {
   Trash2,
   TrendingUp,
 } from 'lucide-react';
-import type { Category, Product, Promotion } from '../../types';
+import type { Promotion } from '../../types';
 import {
   PROMOTION_KIND_LABELS,
   PROMOTION_STATUS_LABELS,

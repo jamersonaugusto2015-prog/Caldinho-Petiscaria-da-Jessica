@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCheckout } from './CheckoutStore';
 import { api } from '../../lib/api';
 import { useLiveSession } from '../../lib/liveSession';
+import { chatAlertFor } from '../../shared/orderAlerts';
 import { X, Send } from 'lucide-react';
 import { ChatMessage } from '../../types';
 
@@ -12,7 +13,7 @@ interface ChatModalProps {
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onClose }) => {
-  const { sendChatMessage, customerId } = useCheckout();
+  const { sendChatMessage, customerId, alertChannel } = useCheckout();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -21,26 +22,33 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
   const listRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
+  const loadThread = useCallback(
+    (signal?: { cancelled: boolean }) => {
+      setIsLoading(true);
+      setLoadError(false);
+      api
+        .get<ChatMessage[]>(`/orders/${orderId}/chat?customerId=${encodeURIComponent(customerId)}`)
+        .then((data) => {
+          if (signal?.cancelled) return;
+          setMessages(Array.isArray(data) ? data : []);
+        })
+        .catch(() => {
+          if (!signal?.cancelled) setLoadError(true);
+        })
+        .finally(() => {
+          if (!signal?.cancelled) setIsLoading(false);
+        });
+    },
+    [orderId, customerId]
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(false);
-    api
-      .get<ChatMessage[]>(`/orders/${orderId}/chat?customerId=${encodeURIComponent(customerId)}`)
-      .then((data) => {
-        if (cancelled) return;
-        setMessages(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+    const signal = { cancelled: false };
+    loadThread(signal);
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
-  }, [orderId, customerId]);
+  }, [loadThread]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -54,6 +62,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
       // Ignora o eco das próprias mensagens (elas já entraram de forma otimista)
       if (msg.sender === 'client') return;
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      alertChannel.deliver(chatAlertFor('client', msg));
+    },
+    onReconnect: () => {
+      // As mensagens enviadas enquanto o socket estava fora nunca chegam por
+      // evento: sem recarregar, a loja responde e o cliente vê a tela parada.
+      loadThread();
     },
   });
 

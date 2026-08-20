@@ -8,6 +8,8 @@ import { needsCardMachine, paymentLabel } from '../../shared/payment';
 interface OrderReceiptModalProps {
   order: Order;
   storeName: string;
+  storeCity?: string;
+  storeLogo?: string;
   onClose: () => void;
 }
 
@@ -15,12 +17,68 @@ interface OrderReceiptModalProps {
 const PAPER_WIDTHS = [58, 80] as const;
 type PaperWidth = (typeof PAPER_WIDTHS)[number];
 const PAPER_STORAGE_KEY = 'caldinho:receiptPaperWidth';
+const LAYOUT_STORAGE_KEY = 'caldinho:receiptLayout';
+
+/**
+ * Três modelos de cupom. A diferença é só de forma — nenhum deles esconde
+ * dado do pedido, senão a escolha viraria uma armadilha.
+ */
+const LAYOUTS = [
+  { value: 'compacto', label: 'Compacto', hint: 'Logo pequeno ao lado do nome. Gasta menos papel.' },
+  { value: 'classico', label: 'Clássico', hint: 'Logo grande e centralizado, nome em destaque.' },
+  { value: 'ampliado', label: 'Ampliado', hint: 'Mesma forma do compacto, com letra maior.' },
+] as const;
+type ReceiptLayout = (typeof LAYOUTS)[number]['value'];
+
+const WIDTH_OPTIONS = PAPER_WIDTHS.map((width) => ({ value: String(width), label: `${width}mm` }));
+
+/** localStorage falha em modo anônimo ou cheio: a escolha só não persiste. */
+const remember = (key: string, value: string) => {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* silêncio proposital */
+  }
+};
 
 const readStoredPaper = (): PaperWidth => {
   if (typeof window === 'undefined') return 80;
   const stored = Number(window.localStorage.getItem(PAPER_STORAGE_KEY));
   return PAPER_WIDTHS.includes(stored as PaperWidth) ? (stored as PaperWidth) : 80;
 };
+
+const readStoredLayout = (): ReceiptLayout => {
+  if (typeof window === 'undefined') return 'compacto';
+  const stored = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+  return LAYOUTS.some((item) => item.value === stored) ? (stored as ReceiptLayout) : 'compacto';
+};
+
+/** Seletor em pílulas: rótulo à esquerda, opções à direita, sempre alinhados. */
+const Segmented: React.FC<{
+  label: string;
+  options: readonly { value: string; label: string; hint?: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ label, options, value, onChange }) => (
+  <div className="flex items-center gap-2">
+    <span className="w-[3.4rem] shrink-0 text-[10px] font-bold text-[#57534E]">{label}</span>
+    <div className="flex rounded-full bg-[#F5F5F4] p-0.5" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
+          title={option.hint}
+          className={`rounded-full px-3 py-1 text-[10px] font-extrabold transition ${
+            value === option.value ? 'bg-[#1C1917] text-white' : 'text-[#57534E] hover:text-[#1C1917]'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
 
 const Rule: React.FC<{ strong?: boolean }> = ({ strong }) => (
   <div className={strong ? 'receipt-rule-strong' : 'receipt-rule'} />
@@ -39,7 +97,16 @@ const Line: React.FC<{
   </div>
 );
 
-/** Bloco de dado: rótulo curto em cima, valor embaixo, sem quebra feia no meio. */
+/** Rótulo curto à esquerda, valor à direita: as colunas alinham e o olho
+    varre um campo por vez sem precisar de uma linha divisória entre eles. */
+const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex gap-1.5">
+    <span className="receipt-sm w-[5.8em] shrink-0">{label}</span>
+    <span className="min-w-0 flex-1 break-words">{children}</span>
+  </div>
+);
+
+/** Bloco de dado: rótulo curto em cima, valor embaixo — para texto longo. */
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="break-words">
     <span className="receipt-sm">{label} </span>
@@ -51,7 +118,13 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 const money = (n: unknown): string =>
   `R$ ${(typeof n === 'number' && isFinite(n) ? n : 0).toFixed(2).replace('.', ',')}`;
 
-const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, storeName }) => {
+const ReceiptBody: React.FC<{
+  order: Order;
+  storeName: string;
+  storeCity: string;
+  storeLogo: string;
+  layout: ReceiptLayout;
+}> = ({ order, storeName, storeCity, storeLogo, layout }) => {
   const date = new Date(order.createdAt);
   const fmtDate = date.toLocaleDateString('pt-BR');
   const fmtTime = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -64,25 +137,39 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
   const pickupOrder = isPickup(order);
   const cancelledAt = order.cancelledAt ? new Date(order.cancelledAt) : null;
   const amountDue = !isCancelled && !payment?.isPaid ? order.total : 0;
+  const itemCount = items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+  const headerCity = storeCity || address?.city || '';
 
   return (
     <div className="receipt">
-      {/* Cabeçalho: nome da loja é o maior bloco de texto do cupom. */}
-      <div className="receipt-lg text-center uppercase tracking-wide break-words">{storeName}</div>
-      {address?.city && <div className="receipt-sm text-center uppercase">{address.city}</div>}
+      {/* Identidade da loja. No Clássico o logo é grande e centralizado; nos
+          outros ele fica pequeno à esquerda com o nome ao lado — um cabeçalho
+          de uma linha só, que come bem menos rolo. Sem logo, o nome centraliza. */}
+      {layout === 'classico' ? (
+        <>
+          {storeLogo && <img src={storeLogo} alt="" className="receipt-logo" />}
+          <div className="receipt-lg text-center uppercase tracking-wide break-words">{storeName}</div>
+          {headerCity && <div className="receipt-sm text-center uppercase">{headerCity}</div>}
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          {storeLogo && <img src={storeLogo} alt="" className="receipt-logo-inline" />}
+          <div className={`min-w-0 flex-1 ${storeLogo ? '' : 'text-center'}`}>
+            <div className="receipt-lg uppercase leading-tight break-words">{storeName}</div>
+            {headerCity && <div className="receipt-sm uppercase">{headerCity}</div>}
+          </div>
+        </div>
+      )}
 
-      <Rule strong />
+      <Rule />
 
       {/* Nº do pedido: é o que a cozinha e o entregador procuram primeiro. */}
       <div className="receipt-xl text-center tracking-wider break-all">{order.id}</div>
       <div className="receipt-sm text-center">
-        {fmtDate} às {fmtTime}
+        {fmtDate} · {fmtTime}
       </div>
-
-      <Rule />
-
       {/* Tipo de entrega em destaque: erro aqui manda o motoboy para o lugar errado. */}
-      <div className="receipt-lg text-center uppercase">
+      <div className="receipt-lg mt-1 text-center uppercase tracking-wide">
         {pickupOrder ? 'Retirada na loja' : 'Entrega'}
         {!pickupOrder && distanceKm > 0 && (
           <span className="receipt-sm normal-case"> · {distanceKm.toFixed(1).replace('.', ',')} km</span>
@@ -106,34 +193,37 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
         </div>
       )}
 
-      <Rule />
-
-      <Field label="CLIENTE">
-        <div className="break-words">{order.customerName}</div>
-      </Field>
-      {order.customerPhone && <div className="tabular-nums">{order.customerPhone}</div>}
-
-      {!pickupOrder && (
-        <div className="mt-1">
-          <Field label="ENDEREÇO">
-            {address ? (
-              <>
-                <div className="break-words">
-                  {address.street}, {address.number}
-                </div>
-                {address.neighborhood && <div className="break-words">{address.neighborhood}</div>}
-                {address.complement && <div className="break-words">{address.complement}</div>}
-              </>
-            ) : (
-              <div>(não informado)</div>
-            )}
-          </Field>
-        </div>
-      )}
-
       <Rule strong />
 
-      <div className="space-y-1.5">
+      {/* Quem recebe e onde. Os rótulos alinhados dispensam divisórias aqui. */}
+      <div className="space-y-0.5">
+        <Row label="CLIENTE">{order.customerName}</Row>
+        {order.customerPhone && (
+          <Row label="FONE">
+            <span className="tabular-nums">{order.customerPhone}</span>
+          </Row>
+        )}
+        {!pickupOrder && (
+          <Row label="ENDEREÇO">
+            {address ? (
+              <>
+                <div>
+                  {address.street}, {address.number}
+                </div>
+                {address.neighborhood && <div>{address.neighborhood}</div>}
+                {address.complement && <div>{address.complement}</div>}
+              </>
+            ) : (
+              '(não informado)'
+            )}
+          </Row>
+        )}
+      </div>
+
+      <Rule />
+
+      <div className="receipt-sm">ITENS ({itemCount})</div>
+      <div className="mt-1 space-y-1.5">
         {items.map((it) => (
           <div key={it.id}>
             <Line
@@ -161,28 +251,32 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
         ))}
       </div>
 
-      <Rule />
-
-      <Line label="Subtotal" value={money(order.subtotal)} size="receipt-sm" />
-      {order.discount > 0 && (
-        <Line label="Desconto" value={`- ${money(order.discount)}`} size="receipt-sm" />
-      )}
-      <Line
-        label={pickupOrder ? 'Retirada' : 'Entrega'}
-        value={order.deliveryFee > 0 ? money(order.deliveryFee) : 'GRÁTIS'}
-        size="receipt-sm"
-      />
+      {/* Somas coladas na lista, separadas só por respiro. */}
+      <div className="mt-2 space-y-0.5">
+        <Line label="Subtotal" value={money(order.subtotal)} size="receipt-sm" />
+        {order.discount > 0 && (
+          <Line label="Desconto" value={`- ${money(order.discount)}`} size="receipt-sm" />
+        )}
+        <Line
+          label={pickupOrder ? 'Retirada' : 'Entrega'}
+          value={order.deliveryFee > 0 ? money(order.deliveryFee) : 'GRÁTIS'}
+          size="receipt-sm"
+        />
+      </div>
 
       <Rule strong />
       <Line label="TOTAL" value={money(order.total)} size="receipt-xl" />
-      <Rule strong />
 
-      <Field label="PAGAMENTO">
-        <div className="uppercase break-words">
-          {payment ? paymentLabel(payment, order.fulfillment) : '—'}
-        </div>
-      </Field>
-      {!!payment?.changeForAmount && <div className="receipt-sm">Troco para {money(payment.changeForAmount)}</div>}
+      <div className="mt-2 space-y-0.5">
+        <Row label="PAGAMENTO">
+          <span className="uppercase">{payment ? paymentLabel(payment, order.fulfillment) : '—'}</span>
+        </Row>
+        {!!payment?.changeForAmount && (
+          <Row label="TROCO">
+            <span className="tabular-nums">para {money(payment.changeForAmount)}</span>
+          </Row>
+        )}
+      </div>
 
       {/* Quanto o entregador tem que receber — a linha mais consultada na porta. */}
       {amountDue > 0 && (
@@ -190,7 +284,7 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
           A receber {money(amountDue)}
         </div>
       )}
-      {!isCancelled && payment?.isPaid && <div className="receipt-lg text-center uppercase">— Pago —</div>}
+      {!isCancelled && payment?.isPaid && <div className="receipt-lg mt-1 text-center uppercase">— Pago —</div>}
 
       {!!payment && needsCardMachine(payment) && !isCancelled && (
         <div className="receipt-box receipt-lg text-center uppercase">Levar maquininha</div>
@@ -202,7 +296,7 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
         </div>
       )}
       {isCancelled && payment?.refundStatus === 'devolvido' && (
-        <div className="receipt-sm text-center">Valor já devolvido ao cliente.</div>
+        <div className="receipt-sm mt-1 text-center">Valor já devolvido ao cliente.</div>
       )}
       {isCancelled && payment?.refundStatus === 'falhou' && (
         <div className="receipt-box receipt-lg text-center uppercase">
@@ -210,19 +304,22 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
         </div>
       )}
 
-      {(obs || order.driverName) && <Rule />}
-      {obs && (
-        <Field label="OBSERVAÇÕES">
-          <div className="break-words">{obs}</div>
-        </Field>
-      )}
-      {order.driverName && (
-        <Field label="ENTREGADOR">
-          <div className="break-words">{order.driverName}</div>
-        </Field>
-      )}
+      <Rule />
 
-      <Rule strong />
+      {(obs || order.driverName) && (
+        <div className="mb-1 space-y-1">
+          {obs && (
+            <Field label="OBSERVAÇÕES">
+              <div className="break-words">{obs}</div>
+            </Field>
+          )}
+          {order.driverName && (
+            <Field label="ENTREGADOR">
+              <div className="break-words">{order.driverName}</div>
+            </Field>
+          )}
+        </div>
+      )}
 
       {isCancelled ? (
         <div className="receipt-lg text-center uppercase">Não entregar</div>
@@ -236,19 +333,29 @@ const ReceiptBody: React.FC<{ order: Order; storeName: string }> = ({ order, sto
   );
 };
 
-export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({ order, storeName, onClose }) => {
+export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({
+  order,
+  storeName,
+  storeCity = '',
+  storeLogo = '',
+  onClose,
+}) => {
   const [printing, setPrinting] = React.useState(false);
   const [paperWidth, setPaperWidth] = React.useState<PaperWidth>(readStoredPaper);
+  const [layout, setLayout] = React.useState<ReceiptLayout>(readStoredLayout);
   const printGuard = React.useRef(false);
 
   const chooseWidth = (width: PaperWidth) => {
     setPaperWidth(width);
-    try {
-      window.localStorage.setItem(PAPER_STORAGE_KEY, String(width));
-    } catch {
-      /* modo anônimo / storage cheio: a escolha só não persiste */
-    }
+    remember(PAPER_STORAGE_KEY, String(width));
   };
+
+  const chooseLayout = (next: ReceiptLayout) => {
+    setLayout(next);
+    remember(LAYOUT_STORAGE_KEY, next);
+  };
+
+  const layoutHint = LAYOUTS.find((item) => item.value === layout)?.hint ?? '';
 
   const handlePrint = () => {
     // Evita impressões repetidas (duplo clique / múltiplas chamadas)
@@ -299,32 +406,31 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({ order, sto
           </button>
         </div>
 
-        <div className="receipt-no-print flex items-center gap-2 px-4 py-2.5 border-b border-[#E7E5E4] shrink-0">
-          <span className="text-[10px] font-bold text-[#57534E]">Largura do papel</span>
-          <div className="flex rounded-full bg-[#F5F5F4] p-0.5" role="group">
-            {PAPER_WIDTHS.map((width) => (
-              <button
-                key={width}
-                onClick={() => chooseWidth(width)}
-                aria-pressed={paperWidth === width}
-                className={`px-3 py-1 rounded-full text-[10px] font-extrabold transition ${
-                  paperWidth === width ? 'bg-[#1C1917] text-white' : 'text-[#57534E] hover:text-[#1C1917]'
-                }`}
-              >
-                {width}mm
-              </button>
-            ))}
-          </div>
+        <div className="receipt-no-print shrink-0 space-y-2 border-b border-[#E7E5E4] px-4 py-3">
+          <Segmented label="Modelo" options={LAYOUTS} value={layout} onChange={(value) => chooseLayout(value as ReceiptLayout)} />
+          <Segmented
+            label="Papel"
+            options={WIDTH_OPTIONS}
+            value={String(paperWidth)}
+            onChange={(value) => chooseWidth(Number(value) as PaperWidth)}
+          />
+          {layoutHint && <p className="pl-[3.9rem] text-[10px] leading-snug text-[#A8A29E]">{layoutHint}</p>}
         </div>
 
         <div className="receipt-scroll overflow-y-auto bg-[#E7E5E4] p-4 flex justify-center">
           <div
-            className={`print-area bg-white px-3 py-4 max-w-full shadow-md ${
+            className={`print-area max-w-full bg-white px-3 py-4 shadow-md ${
               paperWidth === 58 ? 'receipt-narrow' : ''
-            }`}
+            } ${layout === 'ampliado' ? 'receipt-airy' : ''}`}
             style={{ ['--receipt-w' as string]: `${paperWidth}mm`, width: `${paperWidth}mm` }}
           >
-            <ReceiptBody order={order} storeName={storeName} />
+            <ReceiptBody
+              order={order}
+              storeName={storeName}
+              storeCity={storeCity}
+              storeLogo={storeLogo}
+              layout={layout}
+            />
           </div>
         </div>
 

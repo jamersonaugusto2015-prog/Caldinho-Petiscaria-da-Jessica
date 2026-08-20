@@ -1,8 +1,10 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../../types';
 import { kitchenApi as api } from '../../lib/api';
+import { chatAlertFor } from '../../shared/orderAlerts';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
+import { useKitchenSoundAlert } from './KitchenSoundStore';
 
 interface KitchenChatContextType {
   openOrderId: string | null;
@@ -25,6 +27,7 @@ const KitchenChatSyncContext = createContext<KitchenChatSyncContextType | undefi
 
 export const KitchenChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const triggerToast = useKitchenToast();
+  const { deliver } = useKitchenSoundAlert();
   const { settings } = useKitchenSettings();
   const [threads, setThreads] = useState<Record<string, ChatMessage[]>>({});
   const [unread, setUnread] = useState<Record<string, number>>({});
@@ -51,11 +54,14 @@ export const KitchenChatProvider: React.FC<{ children: React.ReactNode }> = ({ c
     (message: ChatMessage) => {
       appendMessage(message);
       if (message.sender === 'store') return;
+      // A conversa aberta na tela não vira alerta nem contador: a mensagem já
+      // apareceu na frente de quem ia ser avisado.
       if (openOrderIdRef.current === message.orderId) return;
+      // O contador é estado, não alerta: ele fica no crachá até alguém abrir.
       setUnread((previous) => ({ ...previous, [message.orderId]: (previous[message.orderId] || 0) + 1 }));
-      triggerToast(`💬 Nova mensagem no pedido ${message.orderId}.`);
+      deliver(chatAlertFor('kitchen', message));
     },
-    [appendMessage, triggerToast]
+    [appendMessage, deliver]
   );
 
   const openThread = useCallback((orderId: string) => {

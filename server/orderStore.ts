@@ -1,6 +1,5 @@
 import { db } from './db';
 import { Driver, Order, Product } from '../src/types';
-import { DomainError } from './errors';
 
 export { DomainError } from './errors';
 

@@ -1,9 +1,24 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { Driver, Order, PublicStoreSettings } from '../../types';
 import { driverApi as api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
+import { AlertBannerProvider, bannerTextFor, useAlertBanner } from '../../lib/alertBanner';
+import { useAlertChannel, useAlertMemory, type AlertChannel } from '../../lib/alertChannel';
+import { orderAlertFor, type AlertUrgency } from '../../shared/orderAlerts';
 import { getDriverProfile, getStoredRoleToken, saveDriverProfile } from '../../lib/auth';
-import { useDriverLocation, DriverLocationStatus } from './useDriverLocation';
+import { socket } from '../../lib/socket';
+import { usePageLifecycle } from '../../lib/pageLifecycle';
+import { useDriverLocation, useWakeLock, DriverLocationStatus } from './useDriverLocation';
+
+/**
+ * O que a tela do motoboy mostra sobre a própria presença.
+ *
+ * `reconnecting` é o estado que faltava: com o celular no bolso o socket cai, e
+ * antes disso significar "offline" o app precisa de um nome para "eu ainda
+ * quero corridas, só estou sem linha". Sem ele, a queda do socket virava
+ * OFFLINE na cozinha enquanto o app do motoboy seguia dizendo ONLINE.
+ */
+export type DriverPresenceState = 'online' | 'reconnecting' | 'offline';
 
 function localDateKey(iso: string): string {
   const d = new Date(iso);
@@ -16,7 +31,10 @@ function localDateKey(iso: string): string {
 interface DriverContextType {
   profile: ReturnType<typeof getDriverProfile>;
   settings: PublicStoreSettings | null;
+  /** Intenção do motoboy: o que o botão ONLINE diz. */
   isOnline: boolean;
+  /** Intenção + socket + ciclo de vida da página, para a tela mostrar. */
+  presenceState: DriverPresenceState;
   toggleOnline: () => Promise<void>;
   myDeliveries: Order[];
   availableOrders: Order[];
@@ -26,38 +44,53 @@ interface DriverContextType {
   earningsToday: number;
   feeForOrder: (order: Order) => number;
   acceptAndStart: (orderId: string) => Promise<void>;
+  /** "Peguei o pedido": leva a corrida de 'pronto' para 'saiu_entrega'. */
+  startRoute: (orderId: string) => Promise<void>;
   confirmDelivery: (orderId: string) => Promise<void>;
-  notificationToast: string | null;
-  triggerToast: (msg: string) => void;
+  triggerToast: (msg: string, urgency?: AlertUrgency) => void;
+  /** Canal de alertas do motoboy: a tela usa para pedir a permissão. */
+  alertChannel: AlertChannel;
   locationStatus: DriverLocationStatus;
+  /** Quando chegou o último ponto de GPS, em ms. `null` = nenhum ainda. */
+  lastFixAt: number | null;
   retryLocation: () => void;
 }
 
 const DriverContext = createContext<DriverContextType | undefined>(undefined);
 
-export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+/** A faixa envolve a loja: o motoboy recebe avisos antes de qualquer corrida. */
+export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <AlertBannerProvider>
+    <DriverStore>{children}</DriverStore>
+  </AlertBannerProvider>
+);
+
+const DriverStore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const triggerToast = useAlertBanner();
+  const memory = useAlertMemory();
+  const channel = useAlertChannel({
+    onBanner: (alert) => triggerToast(bannerTextFor(alert), alert.urgency),
+  });
   const [orders, setOrders] = useState<Order[]>([]);
   const [profile, setProfile] = useState(getDriverProfile());
   const [settings, setSettings] = useState<PublicStoreSettings | null>(null);
   // A presença mora no servidor. Começamos pelo perfil salvo para não piscar
   // "OFFLINE" a cada recarga e confirmamos logo em seguida com o servidor.
   const [isOnline, setIsOnline] = useState(() => Boolean(getDriverProfile()?.online));
-  const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [dismissedCancellations, setDismissedCancellations] = useState<Set<string>>(new Set());
 
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerToast = useCallback((msg: string) => {
-    setNotificationToast(msg);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setNotificationToast(null), 4000);
-  }, []);
-
   const refetchOrders = useCallback(() => {
-    const driverId = profile?.id;
-    const qs = driverId ? `?driverId=${encodeURIComponent(driverId)}` : '';
-    api.get<Order[]>(`/orders${qs}`).then(setOrders).catch(() => {});
-  }, [profile?.id]);
+    // Sem driverId na query: o servidor deriva o motoboy da credencial da requisição.
+    api
+      .get<Order[]>('/orders')
+      .then((list) => {
+        // A lista recarregada é o que já sabíamos: sem semear, cada reconexão
+        // ofereceria de novo, aos gritos, toda corrida parada no balcão.
+        memory.seed(list);
+        setOrders(list);
+      })
+      .catch(() => {});
+  }, [memory]);
 
   const driverId = profile?.id;
 
@@ -66,45 +99,99 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     api.get<PublicStoreSettings>('/settings').then(setSettings).catch(() => {});
   }, [refetchOrders]);
 
+  const lifecycle = usePageLifecycle();
+  const [connected, setConnected] = useState(socket.connected);
+
   useEffect(() => {
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
+  // A primeira leitura é a verdade: o perfil salvo no aparelho pode ter ficado
+  // ONLINE de ontem. Depois dela o app passa a ser o dono da intenção.
+  const presenceSyncedRef = useRef(false);
+
+  const syncPresence = useCallback(() => {
     if (!driverId) return;
     api
       .get<Driver>(`/drivers/${encodeURIComponent(driverId)}/presence`)
       .then((driver) => {
-        setIsOnline(Boolean(driver.online));
+        // A leitura seguinte só LIGA, nunca desliga. Um `online: false` vindo do
+        // servidor depois disso quase sempre é a janela de graça tendo expirado
+        // com o celular no bolso — e aí quem sabe se o turno acabou é este app,
+        // não o servidor. Desligar aqui era o que fazia o motoboy voltar do
+        // bolso já fora do quadro da cozinha, sem ter tocado em nada.
+        if (!presenceSyncedRef.current || driver.online) setIsOnline(Boolean(driver.online));
+        presenceSyncedRef.current = true;
         saveDriverProfile(driver);
         setProfile(driver);
       })
       .catch(() => {});
   }, [driverId]);
 
+  // Reconferir a presença não é coisa de uma vez só: o app dizia ONLINE e a
+  // cozinha OFFLINE porque a única leitura acontecia na troca de `driverId`.
+  // Toda volta pra frente é uma chance de os dois lados terem divergido
+  // enquanto a tela estava bloqueada (a reconexão do socket avisa logo abaixo).
+  useEffect(() => {
+    if (lifecycle !== 'foreground') return;
+    syncPresence();
+  }, [lifecycle, syncPresence]);
+
+  // A corrida oferecida agora toca e vibra: o motoboy está com o celular no
+  // bolso e o capacete na cabeça — um toast mudo não chega até ele.
+  const applyIncoming = useCallback(
+    (event: 'order:new' | 'order:updated', order: Order) => {
+      setOrders((previous) => mergeById(previous, order));
+      channel.deliver(orderAlertFor('driver', event, order, { ...memory.contextFor(order), driverId }));
+      memory.remember(order);
+    },
+    [channel, driverId, memory]
+  );
+
   useLiveSession({
     role: 'driver',
     token: getStoredRoleToken('driver'),
-    driverId: profile?.id,
     onSettingsUpdated: (next) => setSettings((previous) => (previous ? { ...previous, ...next } : previous)),
-    onOrderNew: (order) => {
-      setOrders((previous) => mergeById(previous, order));
-      if (order.status === 'pronto' && !order.driverId) {
-        triggerToast(`🛵 Nova corrida disponível: ${order.id}`);
-      }
+    onOrderNew: (order) => applyIncoming('order:new', order),
+    onOrderUpdated: (order) => applyIncoming('order:updated', order),
+    onReconnect: () => {
+      refetchOrders();
+      // Depois de um reload/queda de rede, o servidor pode ter agendado offline;
+      // reler a presença evita a tela ficar “Offline” com o servidor ainda online.
+      syncPresence();
     },
-    onOrderUpdated: (order) => {
-      setOrders((previous) => mergeById(previous, order));
-      if (order.status === 'pronto' && !order.driverId) {
-        triggerToast(`🛵 Nova corrida disponível: ${order.id}`);
-      }
-      if (order.driverId === profile?.id && order.status === 'entregue') {
-        triggerToast(`✅ Corrida ${order.id} concluída!`);
-      }
-      if (order.driverId === profile?.id && order.status === 'cancelado') {
-        triggerToast(
-          `⚠️ Corrida ${order.id} foi cancelada${order.cancelledBy === 'cliente' ? ' pelo cliente' : ' pela loja'}.`
-        );
-      }
-    },
-    onReconnect: refetchOrders,
   });
+
+  // Reentrar na sala não prova que o motoboy quer corrida: o socket também
+  // volta pra quem tocou OFFLINE e deixou o app aberto. Quem sabe da intenção é
+  // este app, então é ele que a declara — a cada conexão, junto do token que
+  // diz *quem* ele é (ADR-0009). É isto que devolve a presença sozinha depois
+  // da tela bloqueada passar da janela de graça do servidor.
+  const intentRef = useRef(isOnline);
+  intentRef.current = isOnline;
+
+  useEffect(() => {
+    const token = getStoredRoleToken('driver');
+    if (!token) return;
+    const assertIntent = () => {
+      // Antes da primeira leitura do servidor a intenção é só o palpite do
+      // localStorage: declarar aqui poria o motoboy online só por abrir o app.
+      if (!presenceSyncedRef.current) return;
+      socket.emit('join', { role: 'driver', token, online: intentRef.current });
+    };
+    assertIntent();
+    socket.on('connect', assertIntent);
+    return () => {
+      socket.off('connect', assertIntent);
+    };
+  }, [isOnline]);
 
   const myDeliveries = orders.filter(
     (o) => o.driverId === profile?.id && (o.status === 'pronto' || o.status === 'saiu_entrega')
@@ -112,8 +199,14 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const availableOrders = orders.filter((o) => o.status === 'pronto' && !o.driverId);
 
   const todayKey = localDateKey(new Date().toISOString());
+  // O ganho conta no dia em que a entrega terminou, não no dia em que o pedido nasceu:
+  // um pedido feito 23h50 e entregue 00h10 cairia no dia errado. `deliveredAt` só falta
+  // em pedidos antigos, gravados antes do campo existir — aí o createdAt é o que há.
   const completedToday = orders.filter(
-    (o) => o.driverId === profile?.id && o.status === 'entregue' && localDateKey(o.createdAt) === todayKey
+    (o) =>
+      o.driverId === profile?.id &&
+      o.status === 'entregue' &&
+      localDateKey(o.deliveredAt || o.createdAt) === todayKey
   );
 
   // Corrida cancelada some do "myDeliveries" (não é pronto/saiu_entrega), então não segura o GPS
@@ -141,9 +234,26 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const earningsToday = completedToday.reduce((sum, o) => sum + feeForOrder(o), 0);
 
   const hasActiveDelivery = myDeliveries.length > 0;
-  const { status: locationStatus, start: startLocationWatch, stop: stopLocationWatch } = useDriverLocation(
-    profile?.id
-  );
+  const {
+    status: locationStatus,
+    lastFixAt,
+    start: startLocationWatch,
+    stop: stopLocationWatch,
+  } = useDriverLocation(profile?.id);
+
+  // Corrida na rua segura a tela acesa: tela apagada é watch de GPS suspenso e
+  // socket caído — o motoboy some do mapa do cliente no meio do trajeto.
+  useWakeLock(hasActiveDelivery);
+
+  // Presença = intenção + socket vivo + onde a página está. Perder o socket
+  // deixou de zerar a intenção: com o celular no bolso o motoboy fica
+  // "Reconectando", e não "Offline" — o servidor guarda a vaga dele na janela
+  // de graça e a reconexão redeclara a intenção.
+  const presenceState: DriverPresenceState = !isOnline
+    ? 'offline'
+    : connected && lifecycle !== 'offline'
+      ? 'online'
+      : 'reconnecting';
 
   useEffect(() => {
     if (isOnline || hasActiveDelivery) startLocationWatch();
@@ -178,38 +288,50 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const next = !isOnline;
     const ok = await setOnlinePresence(next);
     if (!ok) return;
-    triggerToast(next ? '🛵 Você está ONLINE e disponível para corridas!' : 'Você está offline.');
+    triggerToast(next ? 'Você está online e disponível para corridas.' : 'Você está offline.');
   };
 
   const acceptAndStart = async (orderId: string) => {
+    if (!isOnline) {
+      triggerToast('Fique online para aceitar corridas.');
+      return;
+    }
     if (!profile?.name) {
       triggerToast('Faça login novamente para aceitar corridas.');
       return;
     }
     try {
-      const updated = await api.post<Order>(`/orders/${orderId}/assign`, {
-        driverId: profile.id,
-        driverName: profile.name,
-      });
+      // Corpo vazio de propósito: o servidor resolve o motoboy pela credencial.
+      const updated = await api.post<Order>(`/orders/${orderId}/assign`, {});
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
-      triggerToast(`🚀 Corrida ${orderId} aceita! Dirija até a loja.`);
+      // Aceitar não é sair para entrega: a corrida segue 'pronto' até o motoboy
+      // pegar o pedido no balcão. "Retirar" é o que o cliente faz, não o motoboy.
+      triggerToast(`Corrida ${orderId} aceita. Vá à loja e pegue no balcão.`);
       if (!isOnline) await setOnlinePresence(true);
     } catch (err) {
       triggerToast(err instanceof Error ? err.message : 'Erro ao aceitar corrida.');
     }
   };
 
+  // Passo "peguei o pedido": pronto → saiu_entrega. É o que de fato tira o motoboy da loja.
+  const startRoute = async (orderId: string) => {
+    if (!profile?.name) return;
+    try {
+      const updated = await api.patch<Order>(`/orders/${orderId}/status`, { status: 'saiu_entrega' });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+      triggerToast('Pedido com você! Saiu para entrega — siga para o endereço do cliente.');
+    } catch (err) {
+      triggerToast(err instanceof Error ? err.message : 'Erro ao sair para entrega.');
+    }
+  };
+
   const confirmDelivery = async (orderId: string) => {
     if (!profile?.name) return;
     try {
-      const updated = await api.patch<Order>(`/orders/${orderId}/status`, {
-        status: 'entregue',
-        driverId: profile.id,
-        driverName: profile.name,
-      });
+      const updated = await api.patch<Order>(`/orders/${orderId}/status`, { status: 'entregue' });
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
       const fee = feeForOrder(updated);
-      triggerToast(`✅ Entrega concluída! + R$ ${fee.toFixed(2)}`);
+      triggerToast(`Entrega concluída. + R$ ${fee.toFixed(2)} nos ganhos de hoje.`);
     } catch (err) {
       triggerToast(err instanceof Error ? err.message : 'Erro ao confirmar entrega.');
     }
@@ -221,6 +343,7 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         profile,
         settings,
         isOnline,
+        presenceState,
         toggleOnline,
         myDeliveries,
         availableOrders,
@@ -230,10 +353,12 @@ export const DriverProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         earningsToday,
         feeForOrder,
         acceptAndStart,
+        startRoute,
         confirmDelivery,
-        notificationToast,
         triggerToast,
+        alertChannel: channel,
         locationStatus,
+        lastFixAt,
         retryLocation,
       }}
     >

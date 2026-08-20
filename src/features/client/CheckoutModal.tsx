@@ -21,7 +21,6 @@ import {
   UserRound,
   Phone,
   ChevronDown,
-  Loader2,
   Clock,
   AlertCircle,
   MessageCircle,

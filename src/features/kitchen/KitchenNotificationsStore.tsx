@@ -1,37 +1,19 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React from 'react';
+import { AlertBannerProvider, useAlertBanner } from '../../lib/alertBanner';
+import type { AlertUrgency } from '../../shared/orderAlerts';
 
-type TriggerToast = (msg: string) => void;
+type TriggerToast = (msg: string, urgency?: AlertUrgency) => void;
 
-/** The message and the trigger live in separate contexts: every store needs the
- * trigger, but only the shell renders the message. */
-const KitchenToastMessageContext = createContext<string | null | undefined>(undefined);
-const KitchenToastContext = createContext<TriggerToast | undefined>(undefined);
+/**
+ * A faixa da cozinha é a faixa compartilhada.
+ *
+ * Os nomes continuam os mesmos porque nove lojas de estado chamam
+ * `useKitchenToast(msg)`; o que mudou é o que está atrás — o temporizador e a
+ * região viva agora são os mesmos do cliente e do motoboy.
+ */
+export const KitchenNotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <AlertBannerProvider>{children}</AlertBannerProvider>
+);
 
-export const KitchenNotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notificationToast, setNotificationToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export const useKitchenToast = (): TriggerToast => useAlertBanner();
 
-  const triggerToast = useCallback<TriggerToast>((msg) => {
-    setNotificationToast(msg);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setNotificationToast(null), 4000);
-  }, []);
-
-  return (
-    <KitchenToastContext.Provider value={triggerToast}>
-      <KitchenToastMessageContext.Provider value={notificationToast}>{children}</KitchenToastMessageContext.Provider>
-    </KitchenToastContext.Provider>
-  );
-};
-
-export const useKitchenToast = (): TriggerToast => {
-  const context = useContext(KitchenToastContext);
-  if (!context) throw new Error('useKitchenToast deve ser usado dentro de KitchenProvider');
-  return context;
-};
-
-export const useKitchenToastMessage = (): string | null => {
-  const context = useContext(KitchenToastMessageContext);
-  if (context === undefined) throw new Error('useKitchenToastMessage deve ser usado dentro de KitchenProvider');
-  return context;
-};

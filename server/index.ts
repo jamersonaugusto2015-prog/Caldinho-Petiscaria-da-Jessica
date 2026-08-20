@@ -13,6 +13,9 @@ import { UPLOADS_DIR } from './paths';
 import { listOrdersByStatus, loadDriver, saveDriver, saveOrder } from './orderStore';
 import { applyOrderEvent } from './orderLifecycle';
 import { earnStamp } from './loyalty';
+import { driverFromToken } from './driverSession';
+import { recordDriverLocation } from './driverLocation';
+import { createDriverPresence } from './driverPresence';
 
 // Redefinição de emergência do PIN da cozinha via variável de ambiente:
 // defina KITCHEN_PIN_RESET=<novo pin> no painel do Render, faça deploy,
@@ -48,11 +51,45 @@ const io = new Server(server, {
 app.use('/api', createRoutes(io));
 app.use('/api/uploads', express.static(UPLOADS_DIR));
 
-// Em produção, serve o build do frontend
+// Em produção, serve o build do frontend.
+//
+// O `express.static` sem opções manda `max-age=0`: todo arquivo do bundle
+// revalidava a cada abertura do app, e um celular no 3G da rua pagava uma volta
+// de rede por asset só para ouvir "não mudou". Como o Vite põe o hash do
+// conteúdo no nome de tudo que sai em /assets, o nome já é a versão.
 const distDir = path.join(__dirname, '..', 'dist');
+const NO_CACHE = 'no-cache';
+
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-  app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
+  // Nome com hash = arquivo imutável. Um deploy novo gera nomes novos, então
+  // guardar para sempre nunca serve conteúdo velho.
+  app.use(
+    '/assets',
+    express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' })
+  );
+
+  // O index.html e o service worker são os únicos que apontam para os nomes
+  // novos. Um deles guardado em cache é um deploy que nunca chega a ninguém —
+  // o app fica preso na versão antiga sem ninguém entender por quê.
+  // `sw.js` é tratado defensivamente: se o arquivo não existir, o setHeaders
+  // simplesmente nunca roda para ele.
+  app.use(
+    express.static(distDir, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        const name = path.basename(filePath);
+        if (name === 'sw.js' || filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', NO_CACHE);
+        }
+      },
+    })
+  );
+
+  // Fallback do SPA (inclui a raiz, por causa do `index: false` acima).
+  app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', NO_CACHE);
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
 }
 
 // Precisa vir depois de todas as rotas: captura erros de handlers async
@@ -61,17 +98,39 @@ app.use(errorHandler);
 
 // GPS real do entregador: o app do motoboy envia sua posição via socket,
 // o servidor persiste e transmite aos clientes rastreando o pedido.
+//
+// A política de presença (janela de graça, multi-aba, volta do bolso) mora em
+// `driverPresence`; aqui ficam só os fios: quem conta os sockets e quem avisa
+// a cozinha.
+const driverPresence = createDriverPresence({
+  resolveDriver: driverFromToken,
+  loadDriver,
+  saveDriver,
+  countSessions: async (driverId) => (await io.in('driver:' + driverId).fetchSockets()).length,
+  onPresenceChanged: () => io.to('kitchen').emit('drivers:updated'),
+});
+
 io.on('connection', (socket) => {
   socket.on(
     'join',
-    (payload: { role?: string; token?: string; customerId?: string; driverId?: string }) => {
-      const { role, token, customerId, driverId } = payload ?? {};
+    (payload: { role?: string; token?: string; customerId?: string; online?: boolean }) => {
+      const { role, token, customerId, online } = payload ?? {};
       if (role === 'kitchen' && token === getRoleToken('kitchen')) socket.join('kitchen');
-      if (role === 'driver' && token === getRoleToken('driver')) {
-        socket.join('drivers');
-        // Sala própria: só ela recebe os dados do cliente da corrida aceita.
-        if (typeof driverId === 'string' && driverId.trim()) {
-          socket.join('driver:' + driverId.trim().slice(0, 80));
+      if (role === 'driver') {
+        // A identidade sai do token, nunca do payload: o `driverId` enviado pelo
+        // app punha qualquer motoboy dentro da sala privada de outro, que é por
+        // onde passa o contato do cliente da corrida.
+        //
+        // O `online` do payload é intenção, não identidade: diz "ainda estou de
+        // turno", e é o que traz o motoboy de volta ao quadro da cozinha depois
+        // de a tela ficar bloqueada tempo demais — sem ele precisar tocar em
+        // nada. Quem ele é continua saindo da credencial.
+        const driver = driverPresence.join(typeof token === 'string' ? token : '', online);
+        if (driver) {
+          socket.data.driverId = driver.id;
+          socket.join('drivers');
+          // Sala própria: só ela recebe os dados do cliente da corrida aceita.
+          socket.join('driver:' + driver.id);
         }
       }
       if (typeof customerId === 'string' && customerId.trim() && customerId !== 'anon') {
@@ -80,40 +139,35 @@ io.on('connection', (socket) => {
     }
   );
 
-  socket.on('driver:location', (payload: { driverId?: string; lat?: number; lng?: number }) => {
-    const { driverId, lat, lng } = payload ?? {};
-    if (!driverId || typeof lat !== 'number' || typeof lng !== 'number') return;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  socket.on('driver:location', (payload: { lat?: number; lng?: number }) => {
+    const driverId = socket.data.driverId as string | undefined;
+    if (!driverId) return;
+    const { lat, lng } = payload ?? {};
 
-    const driver = loadDriver(driverId);
-    if (!driver) return;
-    if (!driver.active) return;
-
-    const orders = listOrdersByStatus('saiu_entrega');
-    for (const order of orders) {
-      if (order.driverId !== driverId) continue;
-      try {
-        const result = applyOrderEvent(
+    const moved = recordDriverLocation(driverId, lat, lng, {
+      loadDriver,
+      saveDriver,
+      listOrdersByStatus,
+      applyMove: (order, id, pointLat, pointLng, at) =>
+        applyOrderEvent(
           order,
-          { type: 'move', driverId, lat, lng },
+          { type: 'move', driverId: id, lat: pointLat, lng: pointLng, at },
           { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
-        );
-        emitOrder(io, 'order:updated', result.order);
-      } catch {
-        // A corrida pode ter sido entregue/cancelada entre a leitura e o GPS.
-      }
-    }
+        ).order,
+    });
 
-    driver.lat = lat;
-    driver.lng = lng;
-    saveDriver(driver);
-    io.to('kitchen').to('drivers').emit('drivers:updated');
-    io.to('kitchen').to('drivers').emit('driver:location', { driverId, lat, lng });
-    for (const order of orders) {
-      if (order.driverId === driverId && order.customerId && order.customerId !== 'anon') {
-        io.to(`customer:${order.customerId}`).emit('driver:location', { driverId, lat, lng });
-      }
-    }
+    for (const order of moved) emitOrder(io, 'order:updated', order);
+    // O pino do motoboy no mapa da cozinha não vem do pedido, então precisa
+    // deste aviso — mas só quando alguma corrida de fato andou.
+    if (moved.length) io.to('kitchen').emit('drivers:updated');
+  });
+
+  socket.on('disconnect', () => {
+    const driverId = socket.data.driverId as string | undefined;
+    if (!driverId) return;
+    // Cair não é ir embora: `driverPresence` agenda o desligamento e a volta do
+    // motoboy dentro da janela cancela o agendamento.
+    void driverPresence.disconnect(driverId);
   });
 });
 

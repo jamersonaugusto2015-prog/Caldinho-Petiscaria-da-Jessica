@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Bike } from 'lucide-react';
+import { Bike, Clock, Radio } from 'lucide-react';
 import type { Driver } from '../../types';
+import { locationAgeLabel, locationFreshness } from '../../shared/driverFreshness';
 import { useKitchenDrivers } from './KitchenDriversStore';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { Heading, Panel, Empty } from './KitchenPanels';
+import { useNow } from './useNow';
 
 type DriverFormState = { name: string; phone: string; password: string; bikeModel: string; plate: string };
 
@@ -12,6 +14,10 @@ const emptyDriver: DriverFormState = { name: '', phone: '', password: '', bikeMo
 export const KitchenDriverPanel: React.FC = () => {
   const { drivers, createDriver, updateDriver, deleteDriver } = useKitchenDrivers();
   const triggerToast = useKitchenToast();
+  // A idade da posição envelhece sozinha, sem evento nenhum chegando: sem este
+  // tique um motoboy cujo GPS calou continuaria "ao vivo" na tela até a próxima
+  // atualização de qualquer outro motoboy.
+  const now = useNow(30000);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [driverForm, setDriverForm] = useState<DriverFormState>(emptyDriver);
   const [driverModal, setDriverModal] = useState(false);
@@ -59,8 +65,9 @@ export const KitchenDriverPanel: React.FC = () => {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-3">
         {drivers.map((driver) => (
           <Panel key={driver.id}>
-            <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1C1917] text-white flex items-center justify-center"><Bike className="w-5 h-5" /></div><div className="min-w-0 flex-1"><strong className="block truncate">{driver.name}</strong><span className="text-[11px] text-[#57534E]">{driver.phone || 'Sem telefone'}</span></div><span className={`text-[9px] font-black px-2 py-1 rounded-full ${driver.active ? 'bg-[#ECFDF5] text-[#059669]' : 'bg-[#FEF2F2] text-[#B91C1C]'}`}>{driver.online ? 'ONLINE' : driver.active ? 'ATIVO' : 'INATIVO'}</span></div>
+            <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-[#1C1917] text-white flex items-center justify-center"><Bike className="w-5 h-5" /></div><div className="min-w-0 flex-1"><strong className="block truncate">{driver.name}</strong><span className="text-[11px] text-[#57534E]">{driver.phone || 'Sem telefone'}</span></div><DriverBadge driver={driver} now={now} /></div>
             <div className="text-xs text-[#57534E] mt-3">{driver.bikeModel || 'Modelo não informado'} · {driver.plate || 'Sem placa'}</div>
+            <DriverLocationLine driver={driver} now={now} />
             <div className="flex gap-2 mt-4"><button className="btn-secondary flex-1" onClick={() => openDriver(driver)}>Editar</button><button className="btn-secondary" onClick={() => void updateDriver(driver.id, { active: !driver.active })}>{driver.active ? 'Desativar' : 'Ativar'}</button><button className="btn-danger" onClick={() => setDriverToDelete(driver)}>Excluir</button></div>
           </Panel>
         ))}
@@ -68,6 +75,58 @@ export const KitchenDriverPanel: React.FC = () => {
       </div>
       {driverModal && <DriverModal editing={editingDriver} form={driverForm} setForm={setDriverForm} onClose={() => setDriverModal(false)} onSubmit={submitDriver} />}
       {driverToDelete && <Confirm title="Excluir motoboy?" text={`Remover ${driverToDelete.name} permanentemente?`} onClose={() => setDriverToDelete(null)} onConfirm={() => { void deleteDriver(driverToDelete.id); setDriverToDelete(null); }} />}
+    </div>
+  );
+};
+
+/**
+ * Online e localizável não são a mesma coisa.
+ *
+ * Quem escolhe para quem mandar a próxima corrida lia só "ONLINE": o motoboy com
+ * o celular no bolso e a tela apagada — GPS suspenso, último ponto de dez minutos
+ * atrás — tinha exatamente a mesma etiqueta do motoboy parado na porta da loja.
+ * "SEM SINAL" separa os dois antes da corrida sair.
+ */
+const DriverBadge: React.FC<{ driver: Driver; now: number }> = ({ driver, now }) => {
+  const quiet = driver.online && locationFreshness(driver.locationAt, now) !== 'live';
+  const tone = quiet
+    ? 'bg-[#FEF3C7] text-[#B45309]'
+    : driver.active
+    ? 'bg-[#ECFDF5] text-[#059669]'
+    : 'bg-[#FEF2F2] text-[#B91C1C]';
+  const label = quiet ? 'SEM SINAL' : driver.online ? 'ONLINE' : driver.active ? 'ATIVO' : 'INATIVO';
+  return <span className={`text-[9px] font-black px-2 py-1 rounded-full ${tone}`}>{label}</span>;
+};
+
+/**
+ * A linha só existe para quem está online: motoboy offline não é candidato à
+ * próxima corrida, e uma idade de GPS ali seria ruído.
+ */
+const DriverLocationLine: React.FC<{ driver: Driver; now: number }> = ({ driver, now }) => {
+  if (!driver.online) return null;
+  const freshness = locationFreshness(driver.locationAt, now);
+  const age = locationAgeLabel(driver.locationAt, now);
+  const hasPoint = driver.lat != null && driver.lng != null;
+
+  if (freshness === 'live') {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-bold text-[#059669]">
+        <Radio className="w-3.5 h-3.5 shrink-0" />
+        <span>GPS ao vivo</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-bold text-[#B45309]">
+      <Clock className="w-3.5 h-3.5 shrink-0" />
+      <span>
+        {hasPoint && age
+          ? `Sem sinal · última posição ${age}`
+          : hasPoint
+          ? 'Sem sinal · última posição sem horário'
+          : 'Sem posição registrada'}
+      </span>
     </div>
   );
 };

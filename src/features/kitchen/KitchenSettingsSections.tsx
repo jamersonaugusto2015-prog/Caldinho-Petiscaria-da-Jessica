@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import {
   Copy,
   CloudUpload,
@@ -11,8 +11,7 @@ import {
 import type { OpeningHour, PublicStoreSettings } from '../../types';
 import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 import { useImageFramer } from '../../components/common/ImageFramer';
-import { LiveMap } from '../../components/common/LiveMap';
-import { playOrderMp3 } from '../../lib/sound';
+import { useKitchenSoundAlert } from './KitchenSoundStore';
 import { generateRandomPixKey } from '../../shared/pix';
 import type { SetSettingsField, SettingsDraft } from './kitchenSettingsDraft';
 import {
@@ -30,6 +29,39 @@ import {
 } from './KitchenSettingsUI';
 
 type UploadImage = (dataUrl: string, filename?: string) => Promise<string | null>;
+
+/**
+ * O mapa entra por `lazy`. Ele só é usado para arrastar o pino até a porta da
+ * loja — algo que se faz uma vez na vida — e estático arrastava o Leaflet e o
+ * CSS dele (~170 kB) para o primeiro carregamento do painel inteiro, inclusive
+ * na madrugada em que a cozinha só quer ver a fila de pedidos.
+ */
+const LiveMap = lazy(() =>
+  import('../../components/common/LiveMap').then((module) => ({ default: module.LiveMap }))
+);
+
+/** Da altura exata do mapa, para o formulário não pular quando ele chega. */
+const MapPlaceholder: React.FC = () => (
+  <div className="h-56 bg-[#F5F5F4] sm:h-72" aria-hidden />
+);
+
+/**
+ * O teste de som passa pelo canal de alerta, nunca direto no `sound.ts`.
+ *
+ * Com duas portas para o áudio, a de fora do canal ignorava as regras dele — o
+ * botão tocava o bipe padrão enquanto o pedido real tocava o MP3 da loja, e o
+ * teste deixava de provar qualquer coisa. `draft.orderSoundUrl` é o áudio ainda
+ * não salvo: é justamente ele que a loja quer ouvir antes de gravar.
+ */
+const SoundTestButton: React.FC<{ url: string }> = ({ url }) => {
+  const { channel } = useKitchenSoundAlert();
+  return (
+    <button type="button" className="btn-secondary" disabled={!url} onClick={() => channel.preview(url)}>
+      <Play className="h-3.5 w-3.5" />
+      Testar som
+    </button>
+  );
+};
 
 interface BaseProps {
   draft: SettingsDraft;
@@ -100,15 +132,17 @@ export const StoreSection: React.FC<
       {locationLabel && <FieldNote tone="ok">📍 {locationLabel}</FieldNote>}
       {locationError && <FieldNote tone="danger">{locationError}</FieldNote>}
       <div className="overflow-hidden rounded-xl border border-[#E7E5E4]">
-        <LiveMap
-          store={{ lat: draft.storeLat, lng: draft.storeLng, name: draft.storeName }}
-          pickPosition={{ lat: draft.storeLat, lng: draft.storeLng }}
-          onPick={(lat, lng) => {
-            setField('storeLat', lat);
-            setField('storeLng', lng);
-          }}
-          heightClass="h-56 sm:h-72"
-        />
+        <Suspense fallback={<MapPlaceholder />}>
+          <LiveMap
+            store={{ lat: draft.storeLat, lng: draft.storeLng, name: draft.storeName }}
+            pickPosition={{ lat: draft.storeLat, lng: draft.storeLng }}
+            onPick={(lat, lng) => {
+              setField('storeLat', lat);
+              setField('storeLng', lng);
+            }}
+            heightClass="h-56 sm:h-72"
+          />
+        </Suspense>
       </div>
       <FieldNote>Toque no mapa para arrastar o pino até a porta da loja.</FieldNote>
       <Advanced summary="Coordenadas exatas">
@@ -500,15 +534,7 @@ export const SystemSection: React.FC<
             }}
           />
         </label>
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={!draft.orderSoundUrl}
-          onClick={() => playOrderMp3(draft.orderSoundUrl)}
-        >
-          <Play className="h-3.5 w-3.5" />
-          Testar som
-        </button>
+        <SoundTestButton url={draft.orderSoundUrl} />
       </div>
     </SettingsCard>
   </>

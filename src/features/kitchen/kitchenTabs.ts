@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Megaphone,
   Settings,
+  Star,
   Tags,
   Ticket,
   Undo2,
@@ -19,6 +20,7 @@ export type KitchenTab =
   | 'dashboard'
   | 'orders'
   | 'solicitacoes'
+  | 'avaliacoes'
   | 'cardapio'
   | 'categorias'
   | 'clientes'
@@ -55,6 +57,10 @@ export const KITCHEN_NAV: KitchenNavGroup[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'orders', label: 'Pedidos', icon: ChefHat },
       { id: 'solicitacoes', label: 'Solicitações', icon: Inbox },
+      // Fica em Operação, ao lado de Solicitações: as duas são a voz do cliente
+      // chegando na loja. Relatórios mostra a nota média do período; aqui é onde
+      // se lê o comentário por trás dela.
+      { id: 'avaliacoes', label: 'Avaliações', icon: Star },
     ],
   },
   {

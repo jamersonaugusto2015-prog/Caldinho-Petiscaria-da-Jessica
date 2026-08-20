@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useRef, useState } from 'react';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell } from './ClientStore';
-import { LiveMap } from '../../components/common/LiveMap';
 import { isPickup, storeAddressLine } from '../../shared/fulfillment';
 import { paymentLabel } from '../../shared/payment';
 import { formatKm } from '../../shared/geo';
@@ -28,6 +27,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { OrderStatus } from '../../types';
+import { locationAgeLabel, locationFreshness } from '../../shared/driverFreshness';
 import { usePixPaymentPoll } from './usePixPoll';
 import { copyToClipboard, selectElementText } from './clipboard';
 import { OrderActionSheet } from './OrderActionSheet';
@@ -40,6 +40,20 @@ import {
   minutesLeft,
   useNow,
 } from './orderTiming';
+
+/**
+ * O Leaflet (~170 kB com o CSS) só é baixado quando esta ficha abre. Estático,
+ * ele vinha no mesmo pedaço do cardápio: todo cliente pagava o mapa do
+ * acompanhamento antes de escolher o primeiro prato.
+ */
+const LiveMap = lazy(() =>
+  import('../../components/common/LiveMap').then((module) => ({ default: module.LiveMap }))
+);
+
+/** Da altura exata do mapa, para a linha do tempo não pular quando ele chega. */
+const MapPlaceholder: React.FC = () => (
+  <div className="h-56 rounded-2xl border border-[#E7E5E4] bg-[#F5F5F4]" aria-hidden />
+);
 
 const REQUESTABLE_STATUSES: OrderStatus[] = ['em_preparo', 'pronto', 'saiu_entrega'];
 
@@ -72,7 +86,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
   const pixCodeRef = useRef<HTMLDivElement>(null);
 
   const hasPendingRequest = order?.cancellationRequest?.status === 'pendente';
-  const now = useNow(hasPendingRequest ? 10000 : 60000);
+  // Com o motoboy na rua o relógio anda mais rápido: quando o GPS cala, nenhum
+  // evento chega, e é só este tique que faz o pino apagar e a linha aparecer.
+  // A 60 s o cliente esperaria até dois minutos para saber que o mapa parou.
+  const onTheRoad = order?.status === 'saiu_entrega';
+  const now = useNow(hasPendingRequest ? 10000 : onTheRoad ? 30000 : 60000);
 
   const { failed: pixPollFailed, retry: retryPixPoll } = usePixPaymentPoll({
     orderId: order?.id,
@@ -111,6 +129,17 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
   const isLate = isOrderLate(order, now);
   const refundStatus = order.payment.refundStatus;
   const canComplain = canOpenComplaint(order, now);
+
+  // O pino do motoboy tem idade. Sem o carimbo — pedido antigo, ou a posição que
+  // o servidor semeou no aceite — ele vale como último ponto conhecido, nunca
+  // como ao vivo: era isso que deixava o cliente dez minutos olhando uma moto
+  // parada sem saber se era trânsito ou GPS morto.
+  const driverPoint =
+    order.driverLat != null && order.driverLng != null
+      ? { lat: order.driverLat, lng: order.driverLng, name: order.driverName }
+      : null;
+  const driverFreshness = locationFreshness(order.driverLocationAt, now);
+  const driverAge = locationAgeLabel(order.driverLocationAt, now);
 
   const handleImmediateCancel = async (reason: string) => {
     setIsSubmitting(true);
@@ -370,7 +399,14 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
     : [
         { status: 'recebido', title: 'Pedido Recebido', desc: 'Confirmado pela loja', color: '#2563EB' },
         { status: 'em_preparo', title: 'Em Preparo', desc: 'Ajeitando seu caldinho bem quente', color: '#D97706' },
-        { status: 'pronto', title: 'Pronto', desc: 'Aguardando o motoboy', color: '#B45309' },
+        {
+          status: 'pronto',
+          title: 'Pronto',
+          // O motoboy aceita a corrida e só depois busca na loja: entre os dois
+          // momentos o status continua `pronto`, mas já existe alguém a caminho.
+          desc: order.driverId ? 'Motoboy indo buscar na loja' : 'Aguardando o motoboy',
+          color: '#B45309',
+        },
         { status: 'saiu_entrega', title: 'A Caminho', desc: 'Motoboy no trecho', color: '#7C3AED' },
         { status: 'entregue', title: 'Entregue', desc: 'Bom apetite!', color: '#059669' },
       ];
@@ -581,24 +617,37 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
           )}
 
           {order.status !== 'cancelado' && (
-            <LiveMap
-              store={{ lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }}
-              customer={
-                pickupOrder
-                  ? null
-                  : {
-                      lat: order.address.lat || settings.storeLat,
-                      lng: order.address.lng || settings.storeLng,
-                      label: `${order.address.street}, ${order.address.number}`,
-                    }
-              }
-              driver={
-                order.driverLat != null && order.driverLng != null
-                  ? { lat: order.driverLat, lng: order.driverLng, name: order.driverName }
-                  : null
-              }
-              heightClass="h-56"
-            />
+            <div className="space-y-1.5">
+              <Suspense fallback={<MapPlaceholder />}>
+                <LiveMap
+                  store={{ lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }}
+                  customer={
+                    pickupOrder
+                      ? null
+                      : {
+                          lat: order.address.lat || settings.storeLat,
+                          lng: order.address.lng || settings.storeLng,
+                          label: `${order.address.street}, ${order.address.number}`,
+                        }
+                  }
+                  driver={driverPoint}
+                  driverFreshness={driverFreshness}
+                  heightClass="h-56"
+                />
+              </Suspense>
+              {/* O pino apagado sozinho ainda deixa adivinhar. A linha diz em
+                  palavras o que ele quer dizer — uma só, baixinho. */}
+              {driverPoint && driverFreshness !== 'live' && (
+                <p className="flex items-center gap-1.5 px-1 text-[10px] font-bold text-[#A8A29E]">
+                  <Clock className="w-3 h-3 shrink-0" />
+                  <span>
+                    {driverAge
+                      ? `Última posição ${driverAge} — o mapa volta a andar quando o sinal voltar.`
+                      : 'Esta é a última posição conhecida do motoboy.'}
+                  </span>
+                </p>
+              )}
+            </div>
           )}
 
           {/* O chat continua acessível no pedido cancelado: é a hora em que mais se precisa falar. */}

@@ -2,10 +2,18 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Sem `maximum-scale`/`user-scalable=no`: bloquear o pizza-zoom é falha de
+         acessibilidade (WCAG 1.4.4) e quem mais sofre é o cliente que precisa
+         ampliar o endereço de entrega. `viewport-fit=cover` fica: é ele que
+         libera a área sob o notch, tratada pelos utilitários `.pt-safe`. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- A cor é trocada por papel em `src/lib/appShell.ts`; esta é o padrão. -->
     <meta name="theme-color" content="#B91C1C" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Os três manifestos (cliente/cozinha/entregador) saem deste mesmo HTML,
+         então o <link rel="manifest"> é injetado em runtime pelo appShell. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/cliente-apple-touch-180.png" />
     <title>Caldinho Express - Sabor Regional & Rapidez</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%B2%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com">

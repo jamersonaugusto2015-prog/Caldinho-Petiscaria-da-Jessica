@@ -1,4 +1,9 @@
-// Alerta sonoro gerado via Web Audio API (sem arquivos externos).
+// Primitivas de áudio do navegador: campainha via Web Audio, MP3 da loja e voz.
+//
+// Este arquivo não decide *quando* nem *o quê* tocar — quem decide é a tabela
+// (`src/shared/orderAlerts.ts`) e quem entrega é `src/lib/alertChannel.ts`.
+// Feature nenhuma deveria importar daqui direto: o alerta que toca sem passar
+// pelo canal é o alerta que toca duas vezes e ninguém deduplica.
 
 let ctx: AudioContext | null = null;
 
@@ -13,25 +18,25 @@ function ensureCtx(): AudioContext | null {
   return ctx;
 }
 
-// Navegadores bloqueiam áudio antes da 1ª interação; desbloqueia no 1º clique/tecla.
-export function unlockAudio(): void {
-  const resume = () => {
-    ensureCtx();
-    if ('speechSynthesis' in window) {
-      // pré-carrega as vozes e desbloqueia a fala silenciosamente
-      window.speechSynthesis.getVoices();
-      try {
-        const silent = new SpeechSynthesisUtterance(' ');
-        silent.volume = 0;
-        window.speechSynthesis.speak(silent);
-        window.speechSynthesis.cancel();
-      } catch {
-        /* ignora */
-      }
-    }
-  };
-  window.addEventListener('pointerdown', resume, { once: true });
-  window.addEventListener('keydown', resume, { once: true });
+/** Cria (ou retoma) o AudioContext. O iOS suspende o contexto quando a aba sai
+ *  de frente, e sem retomar o primeiro pedido depois disso chegaria mudo. */
+export function resumeAudio(): void {
+  ensureCtx();
+}
+
+/** Pré-carrega as vozes e destrava a fala com uma frase inaudível. Sem isso a
+ *  primeira locução da sessão sai muda no Chrome. */
+export function primeSpeech(): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.getVoices();
+    const silent = new SpeechSynthesisUtterance(' ');
+    silent.volume = 0;
+    window.speechSynthesis.speak(silent);
+    window.speechSynthesis.cancel();
+  } catch {
+    /* ignora */
+  }
 }
 
 function beep(freq: number, start: number, duration: number, volume = 0.3): void {
@@ -49,11 +54,16 @@ function beep(freq: number, start: number, duration: number, volume = 0.3): void
   osc.stop(c.currentTime + start + duration + 0.05);
 }
 
+const CHIME_SECONDS = 0.8;
+
 /** Alerta de NOVO PEDIDO: dois "dings" ascendentes (tipo campainha de loja). */
-export function playNewOrderSound(): void {
-  beep(880, 0, 0.2); // Lá5
-  beep(1174.66, 0.18, 0.28); // Ré6
-  beep(1760, 0.42, 0.35, 0.22); // Lá6
+export function playNewOrderSound(repeat = 1): void {
+  for (let round = 0; round < Math.max(1, repeat); round++) {
+    const offset = round * CHIME_SECONDS;
+    beep(880, offset, 0.2); // Lá5
+    beep(1174.66, offset + 0.18, 0.28); // Ré6
+    beep(1760, offset + 0.42, 0.35, 0.22); // Lá6
+  }
 }
 
 // Prefere uma voz feminina em português do Brasil (Maria/Luciana etc.)
@@ -68,15 +78,16 @@ function pickFemalePtVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice
   return female || pt[0];
 }
 
-/** Toca um MP3/áudio personalizado 2 vezes (alerta de novo pedido). */
-export function playOrderMp3(url: string): void {
+/** Toca o áudio personalizado da loja `repeat` vezes. */
+export function playOrderMp3(url: string, repeat = 2): void {
   try {
+    const rounds = Math.max(1, repeat);
     const audio = new Audio(url);
     audio.volume = 1;
     let plays = 0;
     audio.addEventListener('ended', () => {
       plays++;
-      if (plays < 2) {
+      if (plays < rounds) {
         audio.currentTime = 0;
         audio.play().catch(() => {});
       }
@@ -89,17 +100,19 @@ export function playOrderMp3(url: string): void {
   }
 }
 
-/** Anúncio por voz: "Novo pedido chegou!" repetido 2 vezes (voz feminina pt-BR). */
-export function announceNewOrder(orderId?: string): void {
+/** Locução pt-BR (voz feminina quando existe uma instalada). */
+export function speakPtBr(phrase: string, repeat = 1): void {
   try {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const text = phrase.trim();
+    if (!text) return;
     const synth = window.speechSynthesis;
-    const phrase = orderId ? `Novo pedido ${orderId} chegou!` : 'Um novo pedido chegou!';
+    const rounds = Math.max(1, repeat);
 
     const speak = (voices: SpeechSynthesisVoice[]) => {
       synth.cancel();
-      for (let i = 0; i < 2; i++) {
-        const u = new SpeechSynthesisUtterance(phrase);
+      for (let i = 0; i < rounds; i++) {
+        const u = new SpeechSynthesisUtterance(text);
         u.lang = 'pt-BR';
         u.rate = 1.05;
         u.pitch = 1.15;

@@ -27,37 +27,35 @@ export const LoyaltySection: React.FC = () => {
   };
 
   return (
-    <div className="bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FDE68A] text-[#1C1917] rounded-2xl p-4 border border-[#FCD34D] shadow-sm flex flex-col items-center justify-between gap-3">
-      <div className="flex items-center gap-3 text-center w-full">
-        <div className="w-10 h-10 rounded-xl bg-[#D97706] text-white flex items-center justify-center shrink-0 shadow-md">
-          <Award className="w-5 h-5" />
+    <div className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-[#FCD34D] bg-[#FFFBEB] p-4 text-[#1C1917] shadow-sm">
+      <div className="flex w-full items-center gap-3 text-left">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#D97706] text-white shadow-md">
+          <Award className="h-5 w-5" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            <h4 className="font-extrabold text-xs text-[#1C1917]">
-              Programa de Fidelidade
-            </h4>
-            <span className="bg-[#D97706] text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full">
-              {filled}/{totalNeeded} SELOS
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-xs font-extrabold text-[#1C1917]">Fidelidade</h4>
+            <span className="rounded-full bg-[#D97706] px-2 py-0.5 text-[9px] font-extrabold text-white">
+              {filled}/{totalNeeded} selos
               {loyaltyPoints > totalNeeded && <span className="ml-1">({loyaltyPoints})</span>}
             </span>
           </div>
-          <p className="text-[11px] text-[#78350F] mt-0.5">
-            Faça 10 pedidos entregues e ganhe 1 Caldinho grátis!
+          <p className="mt-0.5 text-[11px] text-[#78350F]">
+            10 pedidos entregues = 1 caldinho grátis
           </p>
 
-          <div className="flex items-center gap-1 mt-2 justify-center">
+          <div className="mt-2 flex items-center gap-1">
             {Array.from({ length: totalNeeded }).map((_, i) => (
               <div
                 key={i}
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold border transition ${
+                className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[7px] font-bold transition ${
                   i < filled
-                    ? 'bg-[#B91C1C] text-white border-[#B91C1C] shadow-xs'
-                    : 'bg-white/80 border-[#FCD34D] text-[#D97706]'
+                    ? 'border-[#B91C1C] bg-[#B91C1C] text-white shadow-xs'
+                    : 'border-[#FCD34D] bg-white text-[#D97706]'
                 }`}
               >
-                {i < filled ? '🍲' : i + 1}
+                {i < filled ? '•' : ''}
               </div>
             ))}
           </div>
@@ -70,7 +68,7 @@ export const LoyaltySection: React.FC = () => {
           onClick={() => setShowPick(true)}
           className={`px-5 py-2.5 rounded-full font-extrabold text-[11px] flex items-center justify-center gap-2 shadow-md transition shrink-0 w-full ${
             canRedeem
-              ? 'bg-[#B91C1C] hover:bg-[#991B1B] text-white animate-bounce'
+              ? 'bg-[#B91C1C] hover:bg-[#991B1B] text-white'
               : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed'
           }`}
         >

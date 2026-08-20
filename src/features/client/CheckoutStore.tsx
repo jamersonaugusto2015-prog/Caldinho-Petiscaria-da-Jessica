@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import type {
   ChatMessage,
   Order,
-  OrderStatus,
   PaymentMethod,
   PaymentTiming,
   Product,
@@ -11,7 +10,10 @@ import type {
 } from '../../types';
 import { api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
-import { LOYALTY_STAMP_COST, statusMessageFor } from '../../shared/constants';
+import { useAlertChannel, useAlertMemory, type AlertChannel } from '../../lib/alertChannel';
+import { bannerTextFor } from '../../lib/alertBanner';
+import { orderAlertFor, type AlertUrgency } from '../../shared/orderAlerts';
+import { LOYALTY_STAMP_COST } from '../../shared/constants';
 import { useCart } from './CartStore';
 
 export interface CheckoutContextValue {
@@ -44,13 +46,15 @@ export interface CheckoutContextValue {
   loyaltyPoints: number;
   redeemLoyaltyReward: (productId: string) => Promise<{ success: boolean; message: string }>;
   sendChatMessage: (orderId: string, sender: 'client' | 'store' | 'driver', senderName: string, text: string) => Promise<void>;
+  /** Canal de alertas do cliente: o cabeçalho usa para pedir a permissão. */
+  alertChannel: AlertChannel;
 }
 
 type CheckoutProviderProps = {
   customerId: string;
   products: Product[];
   settings: PublicStoreSettings;
-  triggerToast: (message: string) => void;
+  triggerToast: (message: string, urgency?: AlertUrgency) => void;
   children: React.ReactNode;
 };
 
@@ -81,29 +85,57 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
   const [orders, setOrders] = useState<Order[]>([]);
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(initialTrackingOrder);
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
-  const previousStatus = useRef<Record<string, OrderStatus>>({});
+  const memory = useAlertMemory();
+  const channel = useAlertChannel({
+    onBanner: (alert) => triggerToast(bannerTextFor(alert), alert.urgency),
+  });
+
+  const fetchOrders = useCallback(
+    () => api.get<Order[]>(`/orders?customerId=${encodeURIComponent(customerId)}`),
+    [customerId]
+  );
 
   useEffect(() => {
     void Promise.all([
-      api.get<Order[]>(`/orders?customerId=${encodeURIComponent(customerId)}`).then(setOrders),
+      fetchOrders().then((list) => {
+        // Semeia a memória com o que já era verdade: o histórico carregado não
+        // é notícia, e sem isso todo pedido antigo alertaria ao abrir o app.
+        memory.seed(list);
+        setOrders(list);
+      }),
       api.get<{ points: number }>(`/loyalty?customerId=${encodeURIComponent(customerId)}`).then((result) => setLoyaltyPoints(result.points)),
     ]).catch(() => {});
-  }, [customerId]);
+  }, [customerId, fetchOrders, memory]);
+
+  const applyIncoming = useCallback(
+    (order: Order) => {
+      setOrders((previous) => mergeById(previous, order));
+      const alert = orderAlertFor('client', 'order:updated', order, memory.contextFor(order));
+      memory.remember(order);
+      channel.deliver(alert);
+      // O confete é comemoração, não urgência: quem manda nele é a tabela.
+      if (alert?.celebrate) confetti({ particleCount: 100, spread: 90, origin: { y: 0.5 } });
+    },
+    [channel, memory]
+  );
 
   useLiveSession({
     customerId,
     join: false,
-    onOrderUpdated: (order) => {
+    onOrderUpdated: applyIncoming,
+    onOrderNew: (order) => {
       setOrders((previous) => mergeById(previous, order));
-      const before = previousStatus.current[order.id];
-      previousStatus.current[order.id] = order.status;
-      if (before && before !== order.status) {
-        triggerToast(`${order.id}: ${statusMessageFor(order.status, order.fulfillment)}`);
-        if (order.status === 'entregue') confetti({ particleCount: 100, spread: 90, origin: { y: 0.5 } });
-      }
+      memory.remember(order);
     },
-    onOrderNew: (order) => setOrders((previous) => mergeById(previous, order)),
     onLoyaltyUpdated: ({ points }) => setLoyaltyPoints(points),
+    onReconnect: () => {
+      // O celular do cliente dormiu e o socket caiu: o `saiu_entrega` que
+      // passou nesse intervalo nunca chegaria. A lista recarregada volta a
+      // passar pela tabela — a chave do alerta impede o aviso repetido.
+      void fetchOrders()
+        .then((list) => list.forEach(applyIncoming))
+        .catch(() => {});
+    },
   });
 
   const placeOrder: CheckoutContextValue['placeOrder'] = async (
@@ -138,6 +170,9 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
           : {}),
       });
       setOrders((previous) => [result.order, ...previous]);
+      // Guarda o `recebido` inicial: sem ele a primeira mudança de status não
+      // teria com o que ser comparada e passaria em branco.
+      memory.remember(result.order);
       setTrackingOrderId(result.order.id);
       setLoyaltyPoints(result.loyaltyPoints);
       clearCart();
@@ -260,6 +295,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
     loyaltyPoints,
     redeemLoyaltyReward,
     sendChatMessage,
+    alertChannel: channel,
   };
   return <CheckoutContext.Provider value={value}>{children}</CheckoutContext.Provider>;
 };

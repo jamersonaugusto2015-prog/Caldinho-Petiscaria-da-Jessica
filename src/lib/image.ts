@@ -69,11 +69,6 @@ export function cropImageToDataUrl(
   return dataUrl;
 }
 
-/** Redimensiona uma imagem de arquivo para um data URL (JPEG), evitando uploads gigantes. */
-export async function resizeImage(file: File, maxDim = 1000, quality = 0.85): Promise<string> {
-  const img = await loadImageFile(file);
-  return cropImageToDataUrl(img, { sx: 0, sy: 0, sw: img.width, sh: img.height }, maxDim, quality);
-}
 
 export const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/gif';
 const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];

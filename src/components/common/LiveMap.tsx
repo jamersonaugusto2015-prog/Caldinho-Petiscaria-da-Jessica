@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { RECIFE_CENTER } from '../../shared/defaults';
+import type { LocationFreshness } from '../../shared/driverFreshness';
 
 export interface GeoPoint {
   lat: number;
@@ -13,6 +14,14 @@ interface LiveMapProps {
   store?: (GeoPoint & { name?: string }) | null;
   customer?: (GeoPoint & { label?: string }) | null;
   driver?: (GeoPoint & { name?: string }) | null;
+  /**
+   * Idade do ponto do motoboy, decidida por quem tem o carimbo (o pedido tem
+   * `driverLocationAt`, a cozinha tem `driver.locationAt`). O mapa não adivinha:
+   * o padrão é `unknown` porque um ponto sem idade declarada não pode ser
+   * desenhado como ao vivo — era assim que uma moto parada há dez minutos
+   * pulsava no mapa do cliente como se estivesse andando.
+   */
+  driverFreshness?: LocationFreshness;
   pickPosition?: GeoPoint | null;
   onPick?: (lat: number, lng: number) => void;
   center?: GeoPoint;
@@ -27,10 +36,27 @@ function usablePoint<T extends GeoPoint>(point?: T | null): T | null {
   return Number.isFinite(point.lat) && Number.isFinite(point.lng) ? point : null;
 }
 
-function pinIcon(emoji: string, bg: string, pulse?: boolean): L.DivIcon {
+interface PinLook {
+  /** A pulsação é o sinal de "isto está acontecendo agora". Só o ponto vivo a ganha. */
+  pulse?: boolean;
+  /**
+   * Ponto velho: mesmo pino, sem brilho. Dessaturado e translúcido lê como
+   * "estava aqui", não como erro — de propósito não é vermelho nem alerta, que
+   * assustariam o cliente por um GPS que só ficou quieto.
+   */
+  faded?: boolean;
+  /** Aparece ao passar o mouse/segurar; o resto da explicação vai em texto na tela. */
+  title?: string;
+}
+
+function pinIcon(emoji: string, bg: string, look: PinLook = {}): L.DivIcon {
+  const style = look.faded
+    ? `background:${bg};opacity:0.5;filter:grayscale(0.75);box-shadow:0 2px 6px rgba(0,0,0,0.2)`
+    : `background:${bg}`;
+  const title = look.title ? ` title="${look.title}"` : '';
   return L.divIcon({
     className: 'live-map-pin',
-    html: `<div class="live-map-pin-dot${pulse ? ' live-map-pin-pulse' : ''}" style="background:${bg}">${emoji}</div>`,
+    html: `<div class="live-map-pin-dot${look.pulse ? ' live-map-pin-pulse' : ''}" style="${style}"${title}>${emoji}</div>`,
     iconSize: [34, 34],
     iconAnchor: [17, 34],
     popupAnchor: [0, -34],
@@ -67,6 +93,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   store: storeProp,
   customer: customerProp,
   driver: driverProp,
+  driverFreshness = 'unknown',
   pickPosition: pickPositionProp,
   onPick,
   center: centerProp,
@@ -79,6 +106,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const driver = usablePoint(driverProp);
   const pickPosition = usablePoint(pickPositionProp);
   const mapCenter = usablePoint(centerProp) ?? store ?? pickPosition ?? RECIFE_CENTER;
+  // Só 'live' ganha o pino aceso. 'unknown' anda junto de 'stale' de propósito:
+  // um ponto de idade desconhecida (linha antiga, posição semeada no aceite) não
+  // é prova de que o motoboy está ali agora.
+  const driverIsLive = driverFreshness === 'live';
 
   const fitPoints = useMemo(() => {
     const pts: GeoPoint[] = [];
@@ -113,7 +144,16 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
         {store && <Marker position={[store.lat, store.lng]} icon={pinIcon('🏪', '#B91C1C')} />}
         {customer && <Marker position={[customer.lat, customer.lng]} icon={pinIcon('🏠', '#059669')} />}
-        {driver && <Marker position={[driver.lat, driver.lng]} icon={pinIcon('🛵', '#7C3AED', true)} />}
+        {driver && (
+          <Marker
+            position={[driver.lat, driver.lng]}
+            icon={pinIcon('🛵', '#7C3AED', {
+              pulse: driverIsLive,
+              faded: !driverIsLive,
+              title: driverIsLive ? 'Motoboy ao vivo' : 'Última posição conhecida',
+            })}
+          />
+        )}
         {pickPosition && onPick && (
           <Marker
             draggable

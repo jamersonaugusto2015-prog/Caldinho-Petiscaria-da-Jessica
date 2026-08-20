@@ -18,8 +18,8 @@ import {
   X,
 } from 'lucide-react';
 import type { Order, OrderStatus } from '../../types';
-import { STATUS_ORDER } from '../../shared/constants';
 import { isPickup } from '../../shared/fulfillment';
+import { actionLabel, canTransition, isClosed, nextStatus } from '../../shared/orderFlow';
 import { needsCardMachine, paymentLabel } from '../../shared/payment';
 import { whatsAppLink } from '../../lib/whatsapp';
 import { useKitchenOrders } from './KitchenOrdersStore';
@@ -63,23 +63,16 @@ const COLUMNS: ColumnMeta[] = [
 
 const CLOSED_STATUSES: OrderStatus[] = ['entregue', 'cancelado'];
 
-const NEXT_STATUS: Record<'delivery' | 'pickup', Partial<Record<OrderStatus, OrderStatus>>> = {
-  delivery: { recebido: 'em_preparo', em_preparo: 'pronto', pronto: 'saiu_entrega', saiu_entrega: 'entregue' },
-  pickup: { recebido: 'em_preparo', em_preparo: 'pronto', pronto: 'entregue' },
-};
-
-const NEXT_LABEL: Record<'delivery' | 'pickup', Partial<Record<OrderStatus, string>>> = {
-  delivery: { recebido: 'Aceitar pedido', em_preparo: 'Marcar pronto', pronto: 'Saiu para entrega', saiu_entrega: 'Marcar entregue' },
-  pickup: { recebido: 'Aceitar pedido', em_preparo: 'Pronto para retirar', pronto: 'Cliente retirou' },
-};
-
-/** Só dá para empurrar um pedido para a frente — o servidor recusa voltar atrás. */
+/**
+ * O que pode ser arrastado para onde é a mesma regra que o servidor aplica, lida
+ * de `shared/orderFlow`. Antes o quadro tinha a própria cópia dela, e as duas
+ * discordavam: o botão oferecia "Saiu para entrega", mas o arrastar deixava
+ * pular de "Pronto" direto para "Entregue" — um pedido de entrega fechava sem
+ * nunca ter saído da loja, pagando a taxa a um motoboy que não rodou.
+ */
 const canDropIn = (order: Order, target: OrderStatus): boolean => {
-  if (target === order.status) return false;
-  if (CLOSED_STATUSES.includes(order.status)) return false;
-  if (target === 'cancelado') return true; // cai no modal de motivo, não avança sozinho
-  if (target === 'saiu_entrega' && isPickup(order)) return false;
-  return STATUS_ORDER.indexOf(target) > STATUS_ORDER.indexOf(order.status);
+  if (target === 'cancelado') return !isClosed(order.status); // cai no modal de motivo
+  return canTransition(order, target, 'kitchen');
 };
 
 const elapsedLabel = (iso: string, now: number): string => {
@@ -123,7 +116,7 @@ const useMediaQuery = (query: string): boolean => {
 
 export const KitchenOrdersBoard: React.FC = () => {
   const { orders, busyOrderId, newOrderFlashId, updateOrderStatus, cancelOrder, confirmPayment } = useKitchenOrders();
-  const { settings } = useKitchenSettings();
+  const { settings, storeLogo } = useKitchenSettings();
   const { unread, openThread } = useKitchenChat();
   const now = useNow(30000);
   const reduceMotion = useReducedMotion();
@@ -387,7 +380,13 @@ export const KitchenOrdersBoard: React.FC = () => {
       )}
 
       {printOrder && (
-        <OrderReceiptModal order={printOrder} storeName={settings.storeName} onClose={() => setPrintOrder(null)} />
+        <OrderReceiptModal
+          order={printOrder}
+          storeName={settings.storeName}
+          storeCity={settings.city}
+          storeLogo={storeLogo}
+          onClose={() => setPrintOrder(null)}
+        />
       )}
       {cancelTarget && (
         <KitchenCancelOrderModal
@@ -538,9 +537,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
 }) => {
   const dragControls = useDragControls();
   const pickup = isPickup(order);
-  const mode = pickup ? 'pickup' : 'delivery';
-  const next = NEXT_STATUS[mode][order.status];
-  const nextLabel = NEXT_LABEL[mode][order.status];
+  // O próximo passo e o rótulo dele saem da mesma tabela que o servidor usa.
+  const next = nextStatus(order);
+  const nextLabel = actionLabel(order);
   const abandoned = isAbandonedPix(order, now);
   const late = isOrderLate(order, now);
   const requested = hasPendingCancelRequest(order);

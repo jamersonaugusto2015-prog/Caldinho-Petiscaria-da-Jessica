@@ -5,9 +5,20 @@ import { ClientProvider, useClientShell } from './ClientStore';
 import { ClientHeader } from './ClientHeader';
 import { ClientView } from './ClientView';
 import { SplashScreen } from '../../components/SplashScreen';
+import { setPushCustomerId } from '../../lib/pushSubscription';
+import { getOrCreateCustomerId } from './clientIdentity';
+
+/**
+ * A identidade do cliente é registrada aqui, na carga do módulo, e não num
+ * efeito: o canal de alerta do checkout tenta a inscrição de push já na
+ * montagem dele, e os efeitos dos filhos rodam ANTES do efeito do pai. Num
+ * efeito, o id chegaria tarde demais e o servidor devolveria 401 — o cliente
+ * ficaria sem notificação com o app fechado, que é o único caso que importa.
+ */
+setPushCustomerId(getOrCreateCustomerId());
 
 const LoadErrorScreen: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
-  <div className="min-h-screen flex flex-col items-center justify-center text-center p-8 gap-4">
+  <div className="min-h-dscreen flex flex-col items-center justify-center text-center p-8 gap-4">
     <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] text-[#B91C1C] flex items-center justify-center">
       <WifiOff className="w-8 h-8" />
     </div>
@@ -61,9 +72,9 @@ const ClientShell: React.FC<{ splashDone: boolean }> = ({ splashDone }) => {
   return (
     <div
       ref={contentRef}
-      className="min-h-screen bg-[#121214] text-[#1C1917] font-sans antialiased flex justify-center selection:bg-[#B91C1C] selection:text-white"
+      className="min-h-dscreen bg-[#121214] text-[#1C1917] font-sans antialiased flex justify-center selection:bg-[#B91C1C] selection:text-white"
     >
-      <div className="w-full max-w-[430px] min-h-screen bg-[#F5F5F4] flex flex-col shadow-2xl shadow-black/40">
+      <div className="w-full max-w-[430px] min-h-dscreen bg-[#F5F5F4] flex flex-col shadow-2xl shadow-black/40">
         {loadError ? (
           <LoadErrorScreen onRetry={retryLoad} />
         ) : (

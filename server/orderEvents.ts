@@ -1,63 +1,54 @@
 import { Server } from 'socket.io';
 import { Order } from '../src/types';
+import { orderAudience } from './orderAudience';
+import { OrderPushContext, sendOrderPush } from './push';
+import { stripCustomerContact, stripPaymentSecrets } from './orderViews';
 
-export function stripPaymentSecrets(order: Order): Order {
-  return {
-    ...order,
-    payment: {
-      ...order.payment,
-      pixCopyPaste: undefined,
-      pixQrCode: undefined,
-    },
-  };
+// A redação mora em `orderViews.ts`, junto com a vista usada pelas rotas HTTP.
+// Reexportado porque `routes.ts` ainda importa `stripPaymentSecrets` daqui.
+export { stripCustomerContact, stripPaymentSecrets };
+export type { OrderPushContext };
+
+/**
+ * O adaptador de socket da audiência do pedido.
+ *
+ * Quem recebe o quê é decisão de `orderAudience.ts`; aqui só se percorre a
+ * lista e se emite. `except` vem no destinatário porque a sala compartilhada
+ * `drivers` inclui o dono da corrida, que já recebeu a vista completa na sala
+ * dele — sem descontar, ele receberia a redigida por cima e perderia o
+ * endereço no meio da entrega.
+ */
+export function emitOrder(
+  io: Server,
+  event: 'order:new' | 'order:updated',
+  order: Order,
+  ctx: OrderPushContext = {}
+): void {
+  for (const recipient of orderAudience(order)) {
+    const target = recipient.except
+      ? io.to(recipient.room).except(recipient.except)
+      : io.to(recipient.room);
+    target.emit(event, recipient.order);
+  }
+
+  // O push sai daqui dentro, não do call site. Enquanto fosse uma segunda
+  // chamada em cada rota, uma rota nova ia emitir o socket e esquecer o push —
+  // que é a mesma forma como a redação virou dois caminhos e um deles vazou
+  // (ADR-0010). Um lugar só decide quem é avisado, dos dois jeitos.
+  sendOrderPush(order, event, ctx);
 }
 
 /**
- * Nome, telefone e endereço só podem chegar ao motoboy que aceitou a corrida.
- * Os outros ainda precisam do evento para tirar o card da lista de disponíveis,
- * mas sem os dados do cliente.
+ * O que o pedido era ANTES do evento. A tabela de alertas precisa disso para
+ * separar notícia de repetição: sem o status anterior, cada `order:updated`
+ * pareceria uma mudança e o cliente receberia a mesma notificação de novo a
+ * cada movimento do GPS do motoboy.
  */
-export function stripCustomerContact(order: Order): Order {
+export function orderEventContext(before: Order): OrderPushContext {
   return {
-    ...order,
-    customerName: '',
-    customerPhone: '',
-    address: {
-      ...order.address,
-      street: '',
-      number: '',
-      complement: undefined,
-      cep: undefined,
-      lat: undefined,
-      lng: undefined,
-    },
+    previousStatus: before.status,
+    hadPendingCancelRequest: before.cancellationRequest?.status === 'pendente',
+    hadOpenComplaint: before.complaint?.status === 'aberta',
   };
 }
 
-export function emitOrder(io: Server, event: 'order:new' | 'order:updated', order: Order): void {
-  io.to('kitchen').emit(event, order);
-
-  const forDrivers = stripPaymentSecrets(order);
-  if (order.driverId) {
-    io.to(`driver:${order.driverId}`).emit(event, forDrivers);
-    io.to('drivers')
-      .except(`driver:${order.driverId}`)
-      .emit(event, stripCustomerContact(forDrivers));
-  } else if (order.status === 'pronto') {
-    // Corrida aberta: o motoboy precisa do endereço para decidir se aceita.
-    io.to('drivers').emit(event, forDrivers);
-  } else if (order.status === 'cancelado') {
-    // Ninguém vai entregar este pedido. A sala compartilhada só precisa do
-    // evento para tirar o card da lista, nunca dos dados do cliente.
-    io.to('drivers').emit(event, stripCustomerContact(forDrivers));
-  }
-
-  if (order.customerId && order.customerId !== 'anon') {
-    io.to(`customer:${order.customerId}`).emit(event, order);
-  }
-}
-
-export function emitLoyalty(io: Server, customerId: string, points: number): void {
-  if (!customerId || customerId === 'anon') return;
-  io.to(`customer:${customerId}`).emit('loyalty:updated', { customerId, points });
-}

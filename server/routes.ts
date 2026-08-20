@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import {
   db,
   getSettings,
@@ -16,7 +17,6 @@ import {
   Order,
   OrderStatus,
   ChatMessage,
-  CartItem,
   Driver,
   SizeOption,
 } from '../src/types';
@@ -36,7 +36,24 @@ import {
   verifyWebhookSignature,
   publicBaseUrl,
 } from './mercadopago';
-import { emitOrder, stripPaymentSecrets } from './orderEvents';
+import { emitOrder, orderEventContext } from './orderEvents';
+import {
+  deletePushSubscription,
+  isPushSubscription,
+  pushPublicKey,
+  savePushSubscription,
+  sendChatPush,
+} from './push';
+import {
+  currentDriver,
+  driverFromRequest,
+  issueDriverToken,
+  publicDriver,
+  requireDriver,
+  revokeDriverTokens,
+  tokenFromRequest,
+} from './driverSession';
+import { orderForDriver } from './orderViews';
 import {
   getOrder,
   insertOrderWithBeforeInsert,
@@ -146,19 +163,36 @@ function registerLoginSuccess(key: string): void {
   loginAttempts.delete(key);
 }
 
+/**
+ * O papel `kitchen` continua vindo do token de papel compartilhado; `driver`
+ * vem da credencial pessoal do motoboy. Assim quem passa aqui como motoboy é
+ * sempre um motoboy identificado, e a rota lê a identidade de
+ * `currentDriver(res)` em vez de aceitar um `driverId` do cliente.
+ *
+ * O header vazio nunca autentica: `getRoleToken` devolve '' enquanto o papel
+ * não tem token gravado, e a comparação `'' === ''` liberava a rota para
+ * qualquer requisição sem header.
+ */
 const requireRole = (roles: 'kitchen' | 'driver' | ('kitchen' | 'driver')[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const list = Array.isArray(roles) ? roles : [roles];
-    const token = req.headers['x-role-token'];
-    if (list.some((r) => token === getRoleToken(r))) return next();
+    const token = tokenFromRequest(req);
+    if (token && list.includes('kitchen') && token === getRoleToken('kitchen')) return next();
+    if (list.includes('driver')) {
+      const driver = driverFromRequest(req);
+      if (driver) {
+        res.locals.driver = driver;
+        return next();
+      }
+    }
     res.status(401).json({ error: 'Não autorizado. Faça login com o PIN correto.' });
   };
 };
 
 function roleOf(req: Request): 'kitchen' | 'driver' | null {
-  const token = req.headers['x-role-token'];
-  if (token === getRoleToken('kitchen')) return 'kitchen';
-  if (token === getRoleToken('driver')) return 'driver';
+  const token = tokenFromRequest(req);
+  if (token && token === getRoleToken('kitchen')) return 'kitchen';
+  if (driverFromRequest(req)) return 'driver';
   return null;
 }
 
@@ -183,6 +217,59 @@ export function createRoutes(io: Server): Router {
     res.json({ ok: true, time: new Date().toISOString() });
   });
 
+  // ---------- Push (o aviso que atravessa o app fechado) ----------
+  // A chave pública é pública mesmo: sem ela o navegador não consegue nem pedir
+  // permissão, e ela não autoriza ninguém a enviar nada.
+  router.get('/push/key', (_req, res) => {
+    res.json({ key: pushPublicKey() });
+  });
+
+  /**
+   * A SALA É DECIDIDA AQUI, nunca lida do corpo (ADR-0009). Um `room` vindo do
+   * cliente seria a chave da sala privada de qualquer motoboy — o contato do
+   * cliente da corrida entregue no celular de quem pedisse.
+   */
+  router.post('/push/subscribe', (req, res) => {
+    const subscription = req.body?.subscription;
+    if (!isPushSubscription(subscription)) {
+      return res.status(400).json({ error: 'Inscrição de push inválida.' });
+    }
+
+    const token = tokenFromRequest(req);
+    if (token && token === getRoleToken('kitchen')) {
+      savePushSubscription({ room: 'kitchen', role: 'kitchen', subscription });
+      return res.status(201).json({ ok: true, rooms: ['kitchen'] });
+    }
+
+    const driver = driverFromRequest(req);
+    if (driver) {
+      // Uma linha só, na sala privada: o endpoint é o navegador e o navegador é
+      // um só. A sala compartilhada `drivers` é derivada do papel na hora do
+      // envio, então o motoboy fica nas duas sem receber em dobro.
+      savePushSubscription({ room: `driver:${driver.id}`, role: 'driver', subscription });
+      return res.status(201).json({ ok: true, rooms: ['drivers', `driver:${driver.id}`] });
+    }
+
+    // Mesmo trim + corte de 80 que o `join` do socket aplica: as duas portas
+    // precisam gerar exatamente a mesma sala, senão o cliente se inscreve num
+    // canal onde o evento nunca cai.
+    const customerId = String(req.body?.customerId || '').trim().slice(0, 80);
+    if (!customerId || customerId === 'anon') {
+      return res.status(401).json({ error: 'Não autorizado.' });
+    }
+    savePushSubscription({ room: `customer:${customerId}`, role: 'client', subscription });
+    return res.status(201).json({ ok: true, rooms: [`customer:${customerId}`] });
+  });
+
+  // Sem token: quem tem o endpoint é o dono do navegador que o gerou, e apagar
+  // a própria inscrição não expõe nada de ninguém.
+  router.post('/push/unsubscribe', (req, res) => {
+    const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim() : '';
+    if (!endpoint) return res.status(400).json({ error: 'Endpoint inválido.' });
+    deletePushSubscription(endpoint);
+    res.json({ ok: true });
+  });
+
   // ---------- Auth ----------
   router.post(
     '/auth/login',
@@ -192,7 +279,14 @@ export function createRoutes(io: Server): Router {
       return res.status(400).json({ error: 'Papel inválido.' });
     }
 
-    const attemptKey = `${req.ip || 'unknown'}:${role}`;
+    // No papel driver a chave do rate-limit leva o nome informado: com
+    // `${ip}:driver` um motoboy errando a senha trancava a equipe inteira, já
+    // que todos saem pelo mesmo Wi-Fi da loja.
+    const loginName = typeof req.body?.name === 'string' ? req.body.name.trim().toLowerCase() : '';
+    const attemptKey =
+      role === 'driver'
+        ? `${req.ip || 'unknown'}:driver:${loginName}`
+        : `${req.ip || 'unknown'}:${role}`;
     const blockedMs = loginBlockedMs(attemptKey);
     if (blockedMs > 0) {
       return res.status(429).json({
@@ -203,22 +297,27 @@ export function createRoutes(io: Server): Router {
     if (role === 'driver') {
       const rows = db.prepare('SELECT data FROM drivers').all() as { data: string }[];
       const drivers = rows.map((r) => JSON.parse(r.data) as Driver);
-      const { name } = req.body ?? {};
 
       let driver: Driver | undefined;
-      if (typeof name === 'string' && name.trim()) {
+      if (loginName) {
+        // Cadastro antigo pode ter vindo sem nome: `.toLowerCase()` num
+        // undefined derrubaria o login de todo mundo, não só o dele.
         driver = drivers.find(
-          (d) => d.active && d.name.toLowerCase() === name.trim().toLowerCase()
+          (d) => d.active && typeof d.name === 'string' && d.name.toLowerCase() === loginName
         );
       }
       if (driver && (await verifyPassword(String(pin ?? ''), driver.password || ''))) {
         registerLoginSuccess(attemptKey);
-        const { password: _pw, ...safeDriver } = driver;
-        return res.json({ token: getRoleToken('driver'), role, driver: safeDriver });
+        // Credencial própria do motoboy: o token diz QUEM é, não só que é um
+        // motoboy. É o que permite revogar o acesso de um só ao demitir.
+        const token = issueDriverToken(driver.id);
+        return res.json({ token, role, driver: publicDriver(driver) });
       }
       registerLoginFailure(attemptKey);
       return res.status(401).json({
-        error: !name ? 'Informe seu nome de motoboy.' : 'Nome ou senha incorretos. Verifique com a cozinha.',
+        error: !loginName
+          ? 'Informe seu nome de motoboy.'
+          : 'Nome ou senha incorretos. Verifique com a cozinha.',
       });
     }
 
@@ -365,7 +464,7 @@ export function createRoutes(io: Server): Router {
     res.json({ ok: true });
   });
 
-  router.delete('/products/:id/caldinho-do-dia', requireRole('kitchen'), (req, res) => {
+  router.delete('/products/:id/caldinho-do-dia', requireRole('kitchen'), (_req, res) => {
     clearCaldinhoDoDia();
     io.emit('products:updated');
     res.json({ ok: true });
@@ -373,27 +472,33 @@ export function createRoutes(io: Server): Router {
 
   // ---------- Orders ----------
   router.get('/orders', (req, res) => {
-    const role = roleOf(req);
     const customerId = typeof req.query.customerId === 'string' ? req.query.customerId.trim() : '';
-    const driverId = typeof req.query.driverId === 'string' ? req.query.driverId.trim() : '';
 
-    if (customerId && customerId !== 'anon') {
-      return res.json(listOrdersByCustomer(customerId));
-    }
-
-    if (role === 'kitchen') {
+    if (roleOf(req) === 'kitchen') {
       return res.json(listAllOrders());
     }
 
-    if (role === 'driver') {
+    // O motoboy é avaliado antes do ramo do cliente: senão bastaria mandar um
+    // `customerId` na query para sair pela rota do cliente e receber o pedido
+    // inteiro, sem redação.
+    const driver = driverFromRequest(req);
+    if (driver) {
+      // O `driverId` da query é ignorado de propósito: a identidade vem da
+      // credencial, nunca da entrada.
       const orders = listAllOrders()
         .filter(
           (o) =>
             (o.status === 'pronto' && !o.driverId && o.fulfillment !== 'pickup') ||
-            (driverId !== '' && o.driverId === driverId)
+            o.driverId === driver.id
         )
-        .map(stripPaymentSecrets);
+        .map((o) => orderForDriver(o, driver.id));
       return res.json(orders);
+    }
+
+    // O `customerId` é um UUID aleatório do dispositivo: funciona como
+    // capability, quem não o tem não chega aos pedidos.
+    if (customerId && customerId !== 'anon') {
+      return res.json(listOrdersByCustomer(customerId));
     }
 
     return res.status(401).json({ error: 'Não autorizado.' });
@@ -426,7 +531,10 @@ export function createRoutes(io: Server): Router {
   router.patch('/orders/:id/status', requireRole(['kitchen', 'driver']), (req, res) => {
     const order = getOrderOr404(req.params.id);
     if (!order) return res.status(404).json({ error: 'Pedido não encontrado.' });
-    const actor = roleOf(req) === 'driver' ? 'driver' : 'kitchen';
+    // `requireRole` já resolveu o motoboy: se há um em `res.locals`, quem
+    // chama é ele. O `driverId` do corpo é ignorado.
+    const driver = (res.locals.driver as Driver | undefined) ?? null;
+    const actor = driver ? 'driver' : 'kitchen';
     try {
       const result = applyOrderEvent(
         order,
@@ -434,7 +542,7 @@ export function createRoutes(io: Server): Router {
           type: 'advance',
           status: req.body?.status as OrderStatus,
           actor,
-          driverId: String(req.body?.driverId || '').trim() || undefined,
+          driverId: driver?.id,
         },
         { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
       );
@@ -444,8 +552,8 @@ export function createRoutes(io: Server): Router {
           points: result.loyaltyPoints,
         });
       }
-      emitOrder(io, 'order:updated', result.order);
-      res.json(result.order);
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
+      res.json(driver ? orderForDriver(result.order, driver.id) : result.order);
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
       res.status(500).json({ error: 'Não foi possível atualizar o pedido.' });
@@ -453,14 +561,18 @@ export function createRoutes(io: Server): Router {
   });
 
   // Aceitar corrida + iniciar rota (entregador)
-  router.post('/orders/:id/assign', requireRole('driver'), (req, res) => {
+  router.post('/orders/:id/assign', requireDriver, (req, res) => {
     const order = getOrderOr404(req.params.id);
     if (!order) return res.status(404).json({ error: 'Pedido não encontrado.' });
-    const driverId = String(req.body?.driverId || '').trim();
+    const driver = currentDriver(res);
     try {
-      const result = applyOrderEvent(order, { type: 'assign', driverId }, { getSettings, getDriver: loadDriver, saveOrder, earnStamp });
-      emitOrder(io, 'order:updated', result.order);
-      res.json(result.order);
+      const result = applyOrderEvent(
+        order,
+        { type: 'assign', driverId: driver.id },
+        { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
+      );
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
+      res.json(orderForDriver(result.order, driver.id));
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
       res.status(500).json({ error: 'Não foi possível aceitar a corrida.' });
@@ -553,7 +665,7 @@ export function createRoutes(io: Server): Router {
         { type: 'request-cancel', reason: String(req.body?.reason || '') },
         { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
       );
-      emitOrder(io, 'order:updated', result.order);
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
       res.json(result.order);
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
@@ -576,11 +688,13 @@ export function createRoutes(io: Server): Router {
         { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
       );
       if (!accept) {
-        emitOrder(io, 'order:updated', result.order);
+        emitOrder(io, 'order:updated', result.order, orderEventContext(order));
         return res.json(result.order);
       }
       const reason = result.order.cancellationRequest?.reason || defaultCancelReason('loja');
-      res.json(cancelOrder(io, { order: result.order, reason, by: 'loja' }));
+      // `before` é o pedido com a solicitação ainda pendente: é o que faz o
+      // alerta "Cancelamento aceito" existir para o cliente.
+      res.json(cancelOrder(io, { order: result.order, reason, by: 'loja', before: order }));
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
       res.status(500).json({ error: 'Não foi possível responder ao pedido de cancelamento.' });
@@ -628,7 +742,9 @@ export function createRoutes(io: Server): Router {
         JSON.stringify(message)
       );
       io.to('kitchen').to('drivers').to(`customer:${order.customerId}`).emit('chat:message', message);
-      emitOrder(io, 'order:updated', result.order);
+      // Sem push do chat aqui: a reclamação já tem alerta próprio na tabela, e
+      // os dois juntos notificariam a cozinha duas vezes pelo mesmo toque.
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
       res.status(201).json(result.order);
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
@@ -645,7 +761,7 @@ export function createRoutes(io: Server): Router {
         { type: 'resolve-complaint' },
         { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
       );
-      emitOrder(io, 'order:updated', result.order);
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
       res.json(result.order);
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
@@ -666,7 +782,7 @@ export function createRoutes(io: Server): Router {
         rating: Number(req.body?.rating),
         comment: typeof req.body?.comment === 'string' ? req.body.comment : undefined,
       }, { getSettings, getDriver: loadDriver, saveOrder, earnStamp });
-      emitOrder(io, 'order:updated', result.order);
+      emitOrder(io, 'order:updated', result.order, orderEventContext(order));
       res.json(result.order);
     } catch (err) {
       if (err instanceof DomainError) return res.status(err.status).json({ error: err.message });
@@ -690,8 +806,11 @@ export function createRoutes(io: Server): Router {
 
   // ---------- Chat ----------
   const canAccessOrderChat = (req: Request, order: Order): boolean => {
-    const role = roleOf(req);
-    if (role === 'kitchen' || role === 'driver') return true;
+    if (roleOf(req) === 'kitchen') return true;
+    // Liberar o chat para qualquer motoboy fazia da rota um dump de nome,
+    // telefone e endereço por `orderId`. Só o dono da corrida entra.
+    const driver = driverFromRequest(req);
+    if (driver) return order.driverId === driver.id;
     const customerId = String(req.body?.customerId || req.query.customerId || '').trim();
     return !!customerId && customerId === order.customerId;
   };
@@ -734,7 +853,14 @@ export function createRoutes(io: Server): Router {
       req.params.id,
       JSON.stringify(message)
     );
-    io.to('kitchen').to('drivers').to(`customer:${order.customerId}`).emit('chat:message', message);
+    // A sala `drivers` é o time inteiro: mandar para lá espalhava o nome e o
+    // texto do cliente para motoboys que não têm nada com a corrida.
+    let target = io.to('kitchen').to(`customer:${order.customerId}`);
+    if (order.driverId) target = target.to(`driver:${order.driverId}`);
+    target.emit('chat:message', message);
+    // O chat só alcançava quem estava com a aba aberta: uma pergunta do cliente
+    // ficava sem resposta até alguém voltar à tela.
+    sendChatPush(order, message);
     res.status(201).json(message);
   });
 
@@ -1079,9 +1205,24 @@ export function createRoutes(io: Server): Router {
   });
 
   // ---------- Drivers / Motoboys ----------
+  // O login casa o motoboy pelo nome: dois cadastros com o mesmo nome deixam o
+  // login ambíguo e um dos dois nunca entra.
+  const driverNameTaken = (name: string, exceptId?: string): boolean => {
+    const wanted = name.trim().toLowerCase();
+    const rows = db.prepare('SELECT id, data FROM drivers').all() as {
+      id: string;
+      data: string;
+    }[];
+    return rows.some((r) => {
+      if (exceptId && r.id === exceptId) return false;
+      const other = JSON.parse(r.data) as Driver;
+      return typeof other.name === 'string' && other.name.trim().toLowerCase() === wanted;
+    });
+  };
+
   router.get('/drivers', requireRole('kitchen'), (_req, res) => {
     const rows = db.prepare('SELECT data FROM drivers ORDER BY rowid').all() as { data: string }[];
-    res.json(rows.map((r) => JSON.parse(r.data) as Driver));
+    res.json(rows.map((r) => publicDriver(JSON.parse(r.data) as Driver)));
   });
 
   router.post(
@@ -1092,8 +1233,15 @@ export function createRoutes(io: Server): Router {
     if (!d?.name || !d?.password) {
       return res.status(400).json({ error: 'Nome e senha do motoboy são obrigatórios.' });
     }
+    if (driverNameTaken(d.name)) {
+      return res.status(409).json({
+        error: `Já existe um motoboy chamado "${d.name.trim()}". Use um nome diferente (ex.: "João M.").`,
+      });
+    }
     const driver: Driver = {
-      id: d.id || 'drv-' + Date.now(),
+      // O id é do servidor: vindo do corpo, a cozinha podia sobrescrever o
+      // cadastro de outro motoboy só repetindo o id.
+      id: 'drv-' + randomUUID(),
       name: d.name.trim(),
       phone: d.phone?.trim() || undefined,
       password: await hashPassword(d.password),
@@ -1105,7 +1253,7 @@ export function createRoutes(io: Server): Router {
     };
     db.prepare('INSERT INTO drivers (id, data) VALUES (?, ?)').run(driver.id, JSON.stringify(driver));
     io.emit('drivers:updated');
-    res.status(201).json({ ...driver, password: undefined });
+    res.status(201).json(publicDriver(driver));
   })
   );
 
@@ -1120,16 +1268,28 @@ export function createRoutes(io: Server): Router {
 
     const driver: Driver = JSON.parse(row.data);
     const b = req.body ?? {};
-    if (typeof b.name === 'string' && b.name.trim()) driver.name = b.name.trim();
+    if (typeof b.name === 'string' && b.name.trim()) {
+      if (driverNameTaken(b.name, driver.id)) {
+        return res.status(409).json({
+          error: `Já existe um motoboy chamado "${b.name.trim()}". Use um nome diferente (ex.: "João M.").`,
+        });
+      }
+      driver.name = b.name.trim();
+    }
     if (typeof b.phone === 'string') driver.phone = b.phone.trim() || undefined;
-    if (typeof b.password === 'string' && b.password.trim()) driver.password = await hashPassword(b.password);
+    const passwordChanged = typeof b.password === 'string' && !!b.password.trim();
+    if (passwordChanged) driver.password = await hashPassword(b.password);
     if (typeof b.bikeModel === 'string') driver.bikeModel = b.bikeModel.trim() || undefined;
     if (typeof b.plate === 'string') driver.plate = b.plate.trim().toUpperCase() || undefined;
+    const deactivated = b.active === false && driver.active !== false;
     if (typeof b.active === 'boolean') driver.active = b.active;
 
     db.prepare('UPDATE drivers SET data = ? WHERE id = ?').run(JSON.stringify(driver), driver.id);
+    // Demitir ou trocar a senha precisa cortar o acesso agora: sem isso o token
+    // guardado no celular do ex-funcionário continuava lendo os pedidos.
+    if (deactivated || passwordChanged) revokeDriverTokens(driver.id);
     io.emit('drivers:updated');
-    res.json({ ...driver, password: undefined });
+    res.json(publicDriver(driver));
   })
   );
 
@@ -1139,6 +1299,7 @@ export function createRoutes(io: Server): Router {
       | undefined;
     if (!row) return res.status(404).json({ error: 'Motoboy não encontrado.' });
     db.prepare('DELETE FROM drivers WHERE id = ?').run(req.params.id);
+    revokeDriverTokens(req.params.id);
     io.emit('drivers:updated');
     res.json({ ok: true });
   });
@@ -1146,27 +1307,27 @@ export function createRoutes(io: Server): Router {
   // Presença do entregador (online/offline + última posição)
   // O app do motoboy recarrega sem estado: sem esta leitura ele voltaria sempre
   // como OFFLINE mesmo tendo ficado online no servidor.
-  router.get('/drivers/:id/presence', requireRole('driver'), (req, res) => {
-    const row = db.prepare('SELECT data FROM drivers WHERE id = ?').get(req.params.id) as
-      | { data: string }
-      | undefined;
-    if (!row) return res.status(404).json({ error: 'Motoboy não encontrado.' });
-    const driver: Driver = JSON.parse(row.data);
-    res.json({ ...driver, password: undefined });
+  // A presença é do próprio motoboy: qualquer um podia ler e escrever o
+  // cadastro de qualquer outro, inclusive desligá-lo do turno.
+  router.get('/drivers/:id/presence', requireDriver, (req, res) => {
+    const driver = currentDriver(res);
+    if (req.params.id !== driver.id) {
+      return res.status(403).json({ error: 'Você só pode ver a sua própria presença.' });
+    }
+    res.json(publicDriver(driver));
   });
 
-  router.post('/drivers/:id/presence', requireRole('driver'), (req, res) => {
-    const row = db.prepare('SELECT data FROM drivers WHERE id = ?').get(req.params.id) as
-      | { data: string }
-      | undefined;
-    if (!row) return res.status(404).json({ error: 'Motoboy não encontrado.' });
-    const driver: Driver = JSON.parse(row.data);
+  router.post('/drivers/:id/presence', requireDriver, (req, res) => {
+    const driver = currentDriver(res);
+    if (req.params.id !== driver.id) {
+      return res.status(403).json({ error: 'Você só pode mudar a sua própria presença.' });
+    }
+    // Só `online` entra aqui. A posição é responsabilidade do módulo
+    // `driverLocation`, que valida a coordenada e move as corridas junto.
     if (typeof req.body?.online === 'boolean') driver.online = req.body.online;
-    if (typeof req.body?.lat === 'number') driver.lat = req.body.lat;
-    if (typeof req.body?.lng === 'number') driver.lng = req.body.lng;
     db.prepare('UPDATE drivers SET data = ? WHERE id = ?').run(JSON.stringify(driver), driver.id);
     io.emit('drivers:updated');
-    res.json({ ...driver, password: undefined });
+    res.json(publicDriver(driver));
   });
 
   return router;

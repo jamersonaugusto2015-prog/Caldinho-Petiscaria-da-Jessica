@@ -184,7 +184,6 @@ export const CATEGORY_ICON_GROUPS: CategoryIconGroup[] = [
 export const CATEGORY_ICONS: CategoryIcon[] = CATEGORY_ICON_GROUPS.flatMap((group) => group.icons);
 
 /** Compatibilidade: paleta curta de emoji usada antes do seletor completo. */
-export const CATEGORY_EMOJIS = CATEGORY_ICON_GROUPS[0].icons.slice(0, 12).map((icon) => icon.char);
 
 export interface CategoryColor {
   hex: string;
@@ -215,7 +214,6 @@ export const CATEGORY_COLOR_OPTIONS: CategoryColor[] = [
 ];
 
 /** Compatibilidade: só os valores hex. */
-export const CATEGORY_COLORS = CATEGORY_COLOR_OPTIONS.map((color) => color.hex);
 
 /** Remove acento e caixa para a busca aceitar "camarao" e "Camarão". */
 export const normalizeSearch = (value: string): string =>

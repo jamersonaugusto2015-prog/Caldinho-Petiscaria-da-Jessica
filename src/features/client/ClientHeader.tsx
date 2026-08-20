@@ -1,14 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useCart } from './CartStore';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell } from './ClientStore';
 import { api } from '../../lib/api';
-import { LiveMap } from '../../components/common/LiveMap';
+import { AlertBanner, AlertPermissionPrompt } from '../../lib/alertBanner';
+import { useInstallAffordance, useUpdateReady } from '../../lib/appShell';
 import { computeDeliveryFee, effectiveDistanceKm, formatKm } from '../../shared/geo';
 import {
-  ShoppingBag,
   MapPin,
   Search,
   Award,
@@ -16,17 +16,40 @@ import {
   ChevronRight,
   Plus,
   X,
-  Soup,
   Check,
+  Download,
   Flame,
   Loader2,
   LocateFixed,
+  RefreshCw,
+  Share,
   Store,
   Trash2,
 } from 'lucide-react';
 import { formatAddressLine, isUsableAddress } from '../../shared/address';
 import { storeAddressLine } from '../../shared/fulfillment';
 import { LOYALTY_STAMP_COST } from '../../shared/constants';
+
+/**
+ * O mapa entra por `lazy`: o Leaflet e o CSS dele somam ~170 kB e só aparecem
+ * quando o cliente abre o formulário de endereço para marcar o pino. Importado
+ * direto, todo mundo que abre o cardápio pagava esse download antes de ver a
+ * primeira sopa — inclusive quem já tem o endereço salvo e nunca abre o mapa.
+ */
+const LiveMap = lazy(() =>
+  import('../../components/common/LiveMap').then((module) => ({ default: module.LiveMap }))
+);
+
+/** Mesma faixa fina do convite de notificação: um vocabulário só no topo vermelho. */
+const CLIENT_STRIP =
+  'flex items-center gap-2 bg-[#991B1B] px-3 py-1.5 text-[11px] font-semibold text-white/90';
+const CLIENT_STRIP_ACTION =
+  'shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-bold text-white active:bg-white/25';
+
+/** Do tamanho exato do mapa, para a ficha do endereço não pular ao carregar. */
+const MapPlaceholder: React.FC<{ heightClass: string }> = ({ heightClass }) => (
+  <div className={`${heightClass} bg-[#F5F5F4]`} aria-hidden />
+);
 
 interface CepResult {
   cep: string;
@@ -37,8 +60,6 @@ interface CepResult {
 
 export const ClientHeader: React.FC = () => {
   const {
-    cart,
-    setIsCartOpen,
     addresses,
     selectedAddress,
     setSelectedAddress,
@@ -50,8 +71,10 @@ export const ClientHeader: React.FC = () => {
     setAddressFormOpen,
     fulfillment,
   } = useCart();
-  const { loyaltyPoints, orders, setTrackingOrderId } = useCheckout();
-  const { searchQuery, setSearchQuery, storeLogo, storeName, city, settings, notificationToast } = useClientShell();
+  const { loyaltyPoints, orders, setTrackingOrderId, alertChannel } = useCheckout();
+  const { searchQuery, setSearchQuery, storeLogo, storeName, city, settings } = useClientShell();
+  const install = useInstallAffordance('ce_install_hint_client');
+  const updateReady = useUpdateReady();
 
   const isPickupMode = fulfillment === 'pickup';
 
@@ -70,8 +93,6 @@ export const ClientHeader: React.FC = () => {
   const [newLat, setNewLat] = useState<number | null>(null);
   const [newLng, setNewLng] = useState<number | null>(null);
 
-  const cartTotalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
   const activeOrder = useMemo(
     () =>
       orders.find((o) => ['recebido', 'em_preparo', 'pronto', 'saiu_entrega'].includes(o.status)) || null,
@@ -87,7 +108,10 @@ export const ClientHeader: React.FC = () => {
       case 'em_preparo':
         return 'Em preparo';
       case 'pronto':
-        return isPickupOrder ? 'Pronto para retirada' : 'Pronto';
+        if (isPickupOrder) return 'Pronto para retirada';
+        // Corrida já aceita, motoboy ainda indo buscar: o status só vira
+        // `saiu_entrega` quando ele retira o pedido no balcão.
+        return activeOrder.driverId ? 'Motoboy a caminho da loja' : 'Pronto';
       case 'saiu_entrega':
         return 'Saiu para entrega';
       default:
@@ -194,11 +218,51 @@ export const ClientHeader: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#B91C1C] text-white shadow-[0_2px_12px_rgba(0,0,0,0.14)]">
-      {notificationToast && (
-        <div className="fixed top-0 left-0 right-0 z-[80] bg-[#7F1D1D] text-white px-4 py-2 text-center text-[11px] font-bold flex items-center justify-center gap-2 shadow-lg">
-          <Soup className="w-3.5 h-3.5 text-[#FDE68A] animate-bounce" />
-          <span>{notificationToast}</span>
+    // `pt-safe`: instalado, o app desenha sob o notch e o nome da loja ficava
+    // atrás do relógio do sistema.
+    <header className="pt-safe sticky top-0 z-40 bg-[#B91C1C] text-white shadow-[0_2px_12px_rgba(0,0,0,0.14)]">
+      <AlertBanner variant="client" />
+
+      {/* Sem recarga automática: o cliente pode estar no meio do checkout. */}
+      {updateReady && (
+        <div className={CLIENT_STRIP}>
+          <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Versão nova disponível.</span>
+          <button type="button" onClick={() => window.location.reload()} className={CLIENT_STRIP_ACTION}>
+            Atualizar
+          </button>
+        </div>
+      )}
+
+      {install.kind !== 'none' && (
+        <div className={CLIENT_STRIP}>
+          {install.kind === 'prompt' ? (
+            <>
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">Instale o app e acompanhe o pedido.</span>
+              {/* Dentro do clique: fora de um gesto o Chrome descarta o diálogo. */}
+              <button type="button" onClick={install.install} className={CLIENT_STRIP_ACTION}>
+                Instalar app
+              </button>
+            </>
+          ) : (
+            <>
+              <Share className="w-3.5 h-3.5 shrink-0" />
+              {/* No iPhone este é o ÚNICO caminho para o push existir: fora do
+                  app instalado o Safari nem expõe o `PushManager`. */}
+              <span className="min-w-0 flex-1 truncate">
+                Para receber avisos: Compartilhar → Adicionar à Tela de Início.
+              </span>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={install.dismiss}
+            aria-label="Agora não"
+            className="shrink-0 rounded-lg p-1 text-white/60 active:bg-white/15"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -239,19 +303,6 @@ export const ClientHeader: React.FC = () => {
               {loyaltyPoints}/{LOYALTY_STAMP_COST}
             </span>
           )}
-
-          <button
-            onClick={() => setIsCartOpen(true)}
-            className="relative w-9 h-9 rounded-xl bg-white text-[#B91C1C] flex items-center justify-center transition-transform active:scale-95"
-            aria-label="Abrir sacola"
-          >
-            <ShoppingBag className="w-[18px] h-[18px]" strokeWidth={2.5} />
-            {cartTotalCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#D97706] border-2 border-[#B91C1C] text-white text-[9px] font-black flex items-center justify-center tabular-nums">
-                {cartTotalCount}
-              </span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -273,6 +324,16 @@ export const ClientHeader: React.FC = () => {
           <ChevronRight className="w-3.5 h-3.5 text-white/70 shrink-0" />
         </button>
       )}
+
+      {/* O aviso do sistema é a única forma de o cliente saber que o pedido saiu
+          com o app fechado. Pedido por botão, uma linha só, e some para sempre
+          quando ele diz "agora não". */}
+      <AlertPermissionPrompt
+        channel={alertChannel}
+        storageKey="ce_client_notify_prompt"
+        label="Receber aviso quando seu pedido andar"
+        tone="client"
+      />
 
       {/* LINHA 3: endereço + busca. A busca abre no lugar do endereço para
           caber inteira em 430px, no lugar de dois campos espremidos. */}
@@ -530,17 +591,19 @@ export const ClientHeader: React.FC = () => {
                   </div>
 
                   <div className="rounded-2xl overflow-hidden border border-[#E7E5E4]">
-                    <LiveMap
-                      center={{ lat: settings.storeLat, lng: settings.storeLng }}
-                      store={{ lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }}
-                      pickPosition={newLat != null && newLng != null ? { lat: newLat, lng: newLng } : null}
-                      onPick={(lat, lng) => {
-                        setNewLat(lat);
-                        setNewLng(lng);
-                        setGeoError('');
-                      }}
-                      heightClass="h-44"
-                    />
+                    <Suspense fallback={<MapPlaceholder heightClass="h-44" />}>
+                      <LiveMap
+                        center={{ lat: settings.storeLat, lng: settings.storeLng }}
+                        store={{ lat: settings.storeLat, lng: settings.storeLng, name: settings.storeName }}
+                        pickPosition={newLat != null && newLng != null ? { lat: newLat, lng: newLng } : null}
+                        onPick={(lat, lng) => {
+                          setNewLat(lat);
+                          setNewLng(lng);
+                          setGeoError('');
+                        }}
+                        heightClass="h-44"
+                      />
+                    </Suspense>
                     <div className="p-2 bg-[#F5F5F4]/60 text-[10px] text-[#57534E] flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-[#B91C1C]" />
