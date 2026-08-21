@@ -262,7 +262,7 @@ self.addEventListener('push', (event) => {
       if (!alert) {
         // Push sem corpo legível ainda merece uma notificação: o navegador
         // exige que TODO push mostre alguma. Melhor a nossa, com a marca certa.
-        await self.registration.showNotification('Caldinho Express', {
+        await self.registration.showNotification('Caldinho da Jessica', {
           body: 'Você tem uma novidade no app.',
           tag: 'caldinho:geral',
           icon: NOTIFICATION_ICON,

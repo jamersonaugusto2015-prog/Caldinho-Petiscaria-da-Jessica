@@ -21,6 +21,7 @@ import type { Order, OrderStatus } from '../../types';
 import { isPickup } from '../../shared/fulfillment';
 import { actionLabel, canTransition, isClosed, nextStatus } from '../../shared/orderFlow';
 import { needsCardMachine, paymentLabel } from '../../shared/payment';
+import { comboChoiceLines } from '../../shared/comboChoices';
 import { whatsAppLink } from '../../lib/whatsapp';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
@@ -692,6 +693,26 @@ const OrderCard: React.FC<OrderCardProps> = ({
                     <span className="min-w-0">
                       {item.quantity}x {item.product.name}
                       {item.isFree ? ' (grátis)' : ''}
+                      {item.comboChoices && item.comboChoices.length > 0 && (
+                        <span className="block text-[10px] text-[#D97706] font-medium leading-snug">
+                          {comboChoiceLines(item.comboChoices).join(' | ')}
+                        </span>
+                      )}
+                      {item.size && (
+                        <span className="block text-[10px] text-[#57534E] font-medium">
+                          Tamanho: {item.size}
+                        </span>
+                      )}
+                      {item.selectedExtras.length > 0 && (
+                        <span className="block text-[10px] text-[#57534E] font-medium">
+                          + {item.selectedExtras.map((e) => e.name).join(', ')}
+                        </span>
+                      )}
+                      {item.observation && (
+                        <span className="block text-[10px] text-[#A8A29E] italic font-medium">
+                          Obs: {item.observation}
+                        </span>
+                      )}
                     </span>
                     <strong className="shrink-0 tabular-nums">{money(item.itemTotalPrice)}</strong>
                   </div>

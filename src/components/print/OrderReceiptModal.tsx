@@ -4,6 +4,7 @@ import { X, Printer } from 'lucide-react';
 import { Order } from '../../types';
 import { isPickup } from '../../shared/fulfillment';
 import { needsCardMachine, paymentLabel } from '../../shared/payment';
+import { comboChoiceLines } from '../../shared/comboChoices';
 
 interface OrderReceiptModalProps {
   order: Order;
@@ -239,7 +240,7 @@ const ReceiptBody: React.FC<{
             {it.size && <div className="receipt-sm pl-3">{it.size}</div>}
             {it.comboChoices && it.comboChoices.length > 0 && (
               <div className="receipt-sm pl-3 break-words">
-                {it.comboChoices.map((c) => `${c.slotLabel}: ${c.optionLabel}`).join(' | ')}
+                {comboChoiceLines(it.comboChoices).join(' | ')}
               </div>
             )}
             {it.selectedExtras && it.selectedExtras.length > 0 && (

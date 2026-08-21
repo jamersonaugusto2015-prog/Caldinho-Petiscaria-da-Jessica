@@ -40,16 +40,12 @@ export const COMBO_SLOTS_HAPPY_HOUR = [
 
 export const COMBO_SLOTS_CASAL = [
   {
-    id: 'slot-caldinho-1',
-    label: '1º Caldinho (escolha o sabor)',
+    id: 'slot-caldinho-2x',
+    label: 'Escolha 2 Caldinhos (sabores podem repetir ou variar)',
     required: true,
+    minChoices: 2,
+    maxChoices: 2,
     options: CALDINHO_FLAVORS.map((label, i) => ({ id: `opt-c1-${i}`, label })),
-  },
-  {
-    id: 'slot-caldinho-2',
-    label: '2º Caldinho (escolha o sabor)',
-    required: true,
-    options: CALDINHO_FLAVORS.map((label, i) => ({ id: `opt-c2-${i}`, label })),
   },
   {
     id: 'slot-petisco',
@@ -59,6 +55,35 @@ export const COMBO_SLOTS_CASAL = [
       { id: 'opt-p-0', label: 'Batata Frita Especial Suprema' },
       { id: 'opt-p-1', label: 'Carne de Sol Acebolada com Macaxeira' },
     ],
+  },
+];
+
+export const COMBO_SLOTS_FAMILIA = [
+  {
+    id: 'slot-caldinho-3x',
+    label: 'Escolha 3 Caldinhos (sabores podem repetir ou variar)',
+    required: true,
+    minChoices: 3,
+    maxChoices: 3,
+    options: CALDINHO_FLAVORS.map((label, i) => ({ id: `opt-c3-${i}`, label })),
+  },
+  {
+    id: 'slot-petisco-f',
+    label: 'Petisco Grande (escolha a opção)',
+    required: true,
+    options: [
+      { id: 'opt-pf-0', label: 'Batata Frita Especial Suprema' },
+      { id: 'opt-pf-1', label: 'Carne de Sol Acebolada com Macaxeira' },
+      { id: 'opt-pf-2', label: 'Calabresa Acebolada com Queijo Coalho' },
+    ],
+  },
+  {
+    id: 'slot-bebidas-2x',
+    label: 'Escolha 2 Bebidas',
+    required: true,
+    minChoices: 2,
+    maxChoices: 2,
+    options: BEER_OPTIONS.map((label, i) => ({ id: `opt-bf-${i}`, label })),
   },
 ];
 
@@ -301,7 +326,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'com-2',
     name: 'Combo Casal (2 Caldinhos + 1 Petisco Grande)',
-    description: '2 Caldinhos de Feijão ou Camarão + 1 Batata Frita Suprema ou Carne de Sol acebolada.',
+    description: 'Escolha 2 caldinhos à vontade + 1 petisco grande. Perfeito para dividir.',
     category: 'combos',
     basePrice: 69.90,
     originalPrice: 82.90,
@@ -311,6 +336,21 @@ export const INITIAL_PRODUCTS: Product[] = [
     reviewsCount: 110,
     prepTimeMinutes: 22,
     comboSlots: COMBO_SLOTS_CASAL,
+  },
+  {
+    id: 'com-3',
+    name: 'Combo Família (3 Caldinhos + Petisco + 2 Bebidas)',
+    description: 'Escolha 3 caldinhos à vontade + 1 petisco grande + 2 cervejas 600ml. O melhor custo-benefício para a mesa inteira.',
+    category: 'combos',
+    basePrice: 96.90,
+    originalPrice: 119.90,
+    image: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=800',
+    isPopular: true,
+    available: true,
+    rating: 4.96,
+    reviewsCount: 87,
+    prepTimeMinutes: 28,
+    comboSlots: COMBO_SLOTS_FAMILIA,
   },
 ];
 

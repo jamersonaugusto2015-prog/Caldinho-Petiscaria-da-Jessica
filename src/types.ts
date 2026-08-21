@@ -37,6 +37,10 @@ export interface ComboSlot {
   label: string; // ex: '1º Caldinho'
   options: ComboSlotOption[];
   required: boolean;
+  /** Quantas opções o cliente precisa escolher neste slot (default: required ? 1 : 0). */
+  minChoices?: number;
+  /** Quantas opções o cliente pode escolher no máximo (default: minChoices, ou seja, escolha exata). */
+  maxChoices?: number;
 }
 
 // Escolha feita pelo cliente em um slot do combo

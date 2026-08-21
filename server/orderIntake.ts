@@ -165,6 +165,26 @@ export function resolveCartItem(
         priceDelta: opt.priceDelta || 0,
       });
     }
+    for (const slot of slots) {
+      const count = comboChoices.filter((c) => c.slotId === slot.id).length;
+      const min = slot.minChoices ?? (slot.required ? 1 : 0);
+      const max = slot.maxChoices ?? slot.minChoices ?? (slot.required ? 1 : 0);
+      if (count < min) {
+        throw new DomainError(400, `Combo incompleto em ${product.name}: escolha pelo menos ${min} em “${slot.label}”.`);
+      }
+      if (count > max) {
+        throw new DomainError(400, `Combo com escolhas demais em ${product.name}: no máximo ${max} em “${slot.label}”.`);
+      }
+    }
+  } else {
+    // Combo enviado sem escolhas: os slots obrigatórios ainda precisam estar preenchidos.
+    const slots = product.comboSlots || [];
+    for (const slot of slots) {
+      const min = slot.minChoices ?? (slot.required ? 1 : 0);
+      if (min > 0) {
+        throw new DomainError(400, `Combo incompleto em ${product.name}: escolha pelo menos ${min} em “${slot.label}”.`);
+      }
+    }
   }
 
   let size: string | undefined;

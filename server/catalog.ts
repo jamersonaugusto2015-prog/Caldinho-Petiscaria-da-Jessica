@@ -111,18 +111,30 @@ export function normalizeComboSlots(raw: unknown): ComboSlot[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((s: ComboSlot) => s && typeof s.label === 'string' && s.label.trim())
-    .map((s: ComboSlot) => ({
-      id: typeof s.id === 'string' && s.id ? s.id : 'slot-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      label: s.label.trim().slice(0, 60),
-      required: s.required !== false,
-      options: (Array.isArray(s.options) ? s.options : [])
+    .map((s: ComboSlot) => {
+      const required = s.required !== false;
+      const options = (Array.isArray(s.options) ? s.options : [])
         .filter((o: ComboSlotOption) => o && typeof o.label === 'string' && o.label.trim())
         .map((o: ComboSlotOption) => ({
           id: typeof o.id === 'string' && o.id ? o.id : 'opt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
           label: o.label.trim().slice(0, 60),
           priceDelta: Math.max(0, Number(o.priceDelta) || 0),
-        })),
-    }));
+        }));
+      const fallbackMin = required ? 1 : 0;
+      const minChoices = Math.max(0, Math.floor(Number(s.minChoices ?? fallbackMin) || fallbackMin));
+      const maxChoices = Math.min(
+        options.length,
+        Math.max(minChoices, Math.floor(Number(s.maxChoices ?? minChoices) || minChoices))
+      );
+      return {
+        id: typeof s.id === 'string' && s.id ? s.id : 'slot-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        label: s.label.trim().slice(0, 60),
+        required,
+        minChoices,
+        maxChoices,
+        options,
+      };
+    });
 }
 
 export function updateProduct(id: string, body: Record<string, unknown>): Product {

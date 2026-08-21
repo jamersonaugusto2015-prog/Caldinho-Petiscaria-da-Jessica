@@ -534,6 +534,51 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                     </button>
                   </div>
 
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#57534E] sm:pl-4">
+                    <span>Escolhas</span>
+                    <input
+                      className="input w-16 bg-white py-1.5 text-center"
+                      type="number"
+                      min={0}
+                      step="1"
+                      inputMode="numeric"
+                      aria-label="Mínimo de escolhas"
+                      value={slot.minChoices ?? (slot.required ? 1 : 0)}
+                      onChange={(event) =>
+                        setComboSlots((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex !== slotIndex
+                              ? item
+                              : {
+                                  ...item,
+                                  minChoices: Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                                  required: (Math.max(0, Math.floor(Number(event.target.value) || 0))) > 0,
+                                }
+                          )
+                        )
+                      }
+                    />
+                    <span>a</span>
+                    <input
+                      className="input w-16 bg-white py-1.5 text-center"
+                      type="number"
+                      min={0}
+                      step="1"
+                      inputMode="numeric"
+                      aria-label="Máximo de escolhas"
+                      value={slot.maxChoices ?? slot.minChoices ?? (slot.required ? 1 : 0)}
+                      onChange={(event) =>
+                        setComboSlots((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex !== slotIndex
+                              ? item
+                              : { ...item, maxChoices: Math.max(0, Math.floor(Number(event.target.value) || 0)) }
+                          )
+                        )
+                      }
+                    />
+                  </div>
+
                   {slot.options.map((option, optionIndex) => (
                     <div key={option.id} className="flex gap-2 sm:pl-4">
                       <input
@@ -634,7 +679,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                 onClick={() =>
                   setComboSlots((current) => [
                     ...current,
-                    { id: `slot-${Date.now()}`, label: `Escolha ${current.length + 1}`, required: true, options: [] },
+                    { id: `slot-${Date.now()}`, label: `Escolha ${current.length + 1}`, required: true, minChoices: 1, maxChoices: 1, options: [] },
                   ])
                 }
               >

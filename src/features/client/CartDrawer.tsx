@@ -8,6 +8,7 @@ import { formatAddressLine, isUsableAddress } from '../../shared/address';
 import { storeAddressLine } from '../../shared/fulfillment';
 import { FulfillmentPicker } from './FulfillmentPicker';
 import { computeCartItemTotal } from '../../shared/pricing';
+import { formatComboChoices } from '../../shared/comboChoices';
 import { X, Trash2, Plus, Minus, Ticket, ArrowRight, ShoppingBag, MapPin } from 'lucide-react';
 
 interface CartDrawerProps {
@@ -145,7 +146,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
                   {item.comboChoices && item.comboChoices.length > 0 && (
                     <div className="text-[10px] text-[#D97706] mt-0.5">
-                      {item.comboChoices.map((c) => `${c.slotLabel}: ${c.optionLabel}`).join(' • ')}
+                      {formatComboChoices(item.comboChoices)}
                     </div>
                   )}
 

@@ -150,6 +150,20 @@ function seedProducts() {
   tx();
 }
 
+// Bancos já populados não re-seedeam (seedProducts retorna cedo). Mas os combos
+// entram no catálogo de exemplo junto com a categoria Combos: sem esta correção,
+// uma loja com banco antigo nunca ganharia os combos novos. Só inserimos os que
+// faltam (id fixo) — nada de sobrescrever um produto que o dono já editou.
+function ensureSeedCombos() {
+  const insert = db.prepare('INSERT OR IGNORE INTO products (id, data) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const p of INITIAL_PRODUCTS) {
+      if (p.category === 'combos') insert.run(p.id, JSON.stringify(p));
+    }
+  });
+  tx();
+}
+
 function seedCoupons() {
   const count = (db.prepare('SELECT COUNT(*) AS c FROM coupons').get() as { c: number }).c;
   if (count > 0) return;
@@ -274,6 +288,7 @@ function seedSettings() {
 
 seedCategories();
 seedProducts();
+ensureSeedCombos();
 seedCoupons();
 seedDrivers();
 seedSettings();

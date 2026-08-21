@@ -29,7 +29,7 @@ const SHELLS: Record<AppRole, RoleShell> = {
     manifest: '/manifest-cliente.webmanifest',
     appleTouchIcon: '/icons/cliente-apple-touch-180.png',
     themeColor: '#B91C1C',
-    title: 'Caldinho',
+    title: 'Caldinho da Jessica',
   },
   kitchen: {
     manifest: '/manifest-cozinha.webmanifest',

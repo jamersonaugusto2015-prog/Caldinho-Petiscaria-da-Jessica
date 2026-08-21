@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Product, CartItemExtra, ComboSlotOption } from '../../types';
+import { Product, CartItemExtra, ComboChoice, ComboSlot, ComboSlotOption } from '../../types';
 import { useCart } from './CartStore';
 import { useClientShell } from './ClientStore';
 import { computeCartItemTotal } from '../../shared/pricing';
@@ -28,6 +28,20 @@ interface ProductModalProps {
 
 const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
+/** Soma as unidades escolhidas num bloco (ex.: 2× Feijão + 1× Camarão = 3). */
+function countSlotChoices(slotCounts: Record<string, number> | undefined): number {
+  let total = 0;
+  for (const key in slotCounts) total += slotCounts[key] ?? 0;
+  return total;
+}
+
+/** Rótulo curto da regra do bloco: "Escolha 3", "Escolha 1–2" ou "Escolha até 4". */
+function slotPickLabel(min: number, max: number): string {
+  if (min === max) return `Escolha ${min}`;
+  if (min === 0) return `Escolha até ${max}`;
+  return `Escolha ${min}–${max}`;
+}
+
 /** Observações que quase todo mundo escreve — um toque poupa a digitação no celular. */
 const QUICK_NOTES = [
   'Sem cebola',
@@ -45,7 +59,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
 
   const slots = product.comboSlots ?? [];
   const extrasList = product.allowedExtras ?? [];
-  const [comboChoices, setComboChoices] = useState<Record<string, ComboSlotOption>>({});
+  const [comboCounts, setComboCounts] = useState<Record<string, Record<string, number>>>({});
   const [selectedExtras, setSelectedExtras] = useState<CartItemExtra[]>([]);
   const [observation, setObservation] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -55,20 +69,55 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
   const scrollRef = useRef<HTMLDivElement>(null);
   const slotRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const chosenCount = Object.keys(comboChoices).length;
-  const missingSlot = slots.find((slot) => slot.required && !comboChoices[slot.id]);
+  const slotMin = (slot: ComboSlot) => slot.minChoices ?? (slot.required ? 1 : 0);
+  const slotMax = (slot: ComboSlot) => slot.maxChoices ?? slot.minChoices ?? (slot.required ? 1 : 0);
+  const chosenCount = slots.reduce((sum, slot) => sum + countSlotChoices(comboCounts[slot.id]), 0);
+  const totalRequired = slots.reduce((sum, slot) => sum + slotMin(slot), 0);
+  const missingSlot = slots.find((slot) => countSlotChoices(comboCounts[slot.id]) < slotMin(slot));
   const canAdd = !missingSlot;
+
+  // Tocar numa opção sempre soma uma unidade (pode repetir o sabor); o "−" do
+  // estepe tira uma. Se o bloco já está no máximo e a opção não está escolhida,
+  // ela trava — igual ao seletor de antes.
+  const addComboOption = (slot: ComboSlot, option: ComboSlotOption) => {
+    setComboCounts((current) => {
+      const slotCounts = { ...(current[slot.id] ?? {}) };
+      if (countSlotChoices(slotCounts) >= slotMax(slot)) return current;
+      slotCounts[option.id] = (slotCounts[option.id] ?? 0) + 1;
+      return { ...current, [slot.id]: slotCounts };
+    });
+  };
+
+  const removeComboOption = (slot: ComboSlot, option: ComboSlotOption) => {
+    setComboCounts((current) => {
+      const slotCounts = { ...(current[slot.id] ?? {}) };
+      const next = (slotCounts[option.id] ?? 0) - 1;
+      if (next <= 0) delete slotCounts[option.id];
+      else slotCounts[option.id] = next;
+      return { ...current, [slot.id]: slotCounts };
+    });
+  };
 
   const previewChoices = useMemo(
     () =>
-      (Object.entries(comboChoices) as [string, ComboSlotOption][]).map(([slotId, option]) => ({
-        slotId,
-        slotLabel: slots.find((slot) => slot.id === slotId)?.label ?? slotId,
-        optionId: option.id,
-        optionLabel: option.label,
-        priceDelta: option.priceDelta ?? 0,
-      })),
-    [comboChoices, slots]
+      slots.flatMap((slot) => {
+        const slotCounts = comboCounts[slot.id] ?? {};
+        const out: ComboChoice[] = [];
+        for (const option of slot.options) {
+          const count = slotCounts[option.id] ?? 0;
+          for (let i = 0; i < count; i++) {
+            out.push({
+              slotId: slot.id,
+              slotLabel: slot.label,
+              optionId: option.id,
+              optionLabel: option.label,
+              priceDelta: option.priceDelta ?? 0,
+            });
+          }
+        }
+        return out;
+      }),
+    [comboCounts, slots]
   );
 
   const unitPrice = computeCartItemTotal(
@@ -277,7 +326,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                           canAdd ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-[#FEF2F2] text-[#B91C1C]'
                         }`}
                       >
-                        {chosenCount}/{slots.length}
+                        {chosenCount}/{totalRequired || slots.length}
                       </span>
                     }
                   />
@@ -285,15 +334,19 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                     <motion.div
                       className="h-full rounded-full bg-[#B91C1C]"
                       initial={false}
-                      animate={{ width: `${(chosenCount / slots.length) * 100}%` }}
+                      animate={{ width: `${Math.min(100, ((chosenCount / (totalRequired || 1)) * 100))}%` }}
                       transition={{ type: 'spring', stiffness: 320, damping: 32 }}
                     />
                   </div>
 
                   <div className="space-y-4">
                     {slots.map((slot) => {
-                      const chosen = comboChoices[slot.id];
+                      const slotCounts = comboCounts[slot.id] ?? {};
+                      const slotChosen = countSlotChoices(slotCounts);
                       const isNudged = nudged === slot.id;
+                      const min = slotMin(slot);
+                      const max = slotMax(slot);
+                      const done = slotChosen >= min;
                       return (
                         <motion.div
                           key={slot.id}
@@ -309,29 +362,47 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                           <div className="flex items-center justify-between gap-2 mb-1.5">
                             <span className="text-[11px] font-extrabold text-[#1C1917]">
                               {slot.label}
-                              {slot.required && <span className="text-[#B91C1C]"> *</span>}
+                              {min > 0 && <span className="text-[#B91C1C]"> *</span>}
                             </span>
-                            {chosen && (
-                              <span className="text-[10px] font-bold text-[#047857] flex items-center gap-1">
-                                <Check className="w-3 h-3" strokeWidth={3} />
-                                {chosen.label}
+                            <span className="text-[10px] font-bold text-[#57534E] flex items-center gap-1">
+                              {slotPickLabel(min, max)}
+                              <span
+                                className={`ml-1 px-1.5 py-0.5 rounded-full tabular-nums ${
+                                  done ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-[#F5F5F4] text-[#A8A29E]'
+                                }`}
+                              >
+                                {slotChosen}/{max}
                               </span>
-                            )}
+                            </span>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                             {slot.options.map((option) => {
-                              const isSelected = chosen?.id === option.id;
+                              const count = slotCounts[option.id] ?? 0;
+                              const isSelected = count > 0;
+                              const locked = !isSelected && slotChosen >= max;
+                              const plusDisabled = slotChosen >= max;
                               return (
-                                <button
+                                <div
                                   key={option.id}
-                                  type="button"
+                                  role="button"
+                                  tabIndex={locked ? -1 : 0}
                                   aria-pressed={isSelected}
-                                  onClick={() =>
-                                    setComboChoices((current) => ({ ...current, [slot.id]: option }))
-                                  }
-                                  className={`p-3 rounded-2xl border text-left transition flex items-center justify-between gap-2 active:scale-[0.98] ${
+                                  aria-label={option.label}
+                                  onClick={() => {
+                                    if (!locked) addComboOption(slot, option);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (locked) return;
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault();
+                                      addComboOption(slot, option);
+                                    }
+                                  }}
+                                  className={`p-3 rounded-2xl border text-left transition flex items-center justify-between gap-2 cursor-pointer select-none active:scale-[0.98] ${
                                     isSelected
                                       ? 'bg-[#FEF2F2] border-[#B91C1C] shadow-sm'
+                                      : locked
+                                      ? 'bg-[#FAFAF9] border-[#E7E5E4] opacity-40 cursor-default'
                                       : 'bg-[#FAFAF9] border-[#E7E5E4] hover:bg-[#F5F5F4]'
                                   }`}
                                 >
@@ -348,17 +419,48 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                                         +{money(option.priceDelta)}
                                       </span>
                                     )}
-                                    <span
-                                      className={`w-5 h-5 rounded-full flex items-center justify-center transition ${
-                                        isSelected
-                                          ? 'bg-[#B91C1C] text-white'
-                                          : 'bg-white border border-[#E7E5E4]'
-                                      }`}
-                                    >
-                                      {isSelected && <Check className="w-3 h-3" strokeWidth={3} />}
-                                    </span>
+                                    {isSelected ? (
+                                      <span className="flex items-center gap-1 pointer-coarse:gap-1.5">
+                                        <button
+                                          type="button"
+                                          aria-label={`Remover um ${option.label}`}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            removeComboOption(slot, option);
+                                          }}
+                                          className="w-7 h-7 rounded-full border border-[#D6D3D1] bg-white text-[#57534E] hover:bg-[#F5F5F4] transition flex items-center justify-center"
+                                        >
+                                          <Minus className="w-3.5 h-3.5" />
+                                        </button>
+                                        <span className="min-w-[2ch] text-center text-xs font-black text-[#B91C1C] tabular-nums">
+                                          {count}×
+                                        </span>
+                                        <button
+                                          type="button"
+                                          aria-label={`Adicionar mais um ${option.label}`}
+                                          disabled={plusDisabled}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            addComboOption(slot, option);
+                                          }}
+                                          className="w-7 h-7 rounded-full border border-[#D6D3D1] bg-white text-[#1C1917] hover:bg-[#F5F5F4] transition flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`w-5 h-5 rounded-full flex items-center justify-center transition ${
+                                          isSelected
+                                            ? 'bg-[#B91C1C] text-white'
+                                            : 'bg-white border border-[#E7E5E4]'
+                                        }`}
+                                      >
+                                        {isSelected && <Check className="w-3 h-3" strokeWidth={3} />}
+                                      </span>
+                                    )}
                                   </span>
-                                </button>
+                                </div>
                               );
                             })}
                           </div>

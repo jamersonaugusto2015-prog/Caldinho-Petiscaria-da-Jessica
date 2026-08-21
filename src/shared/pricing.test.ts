@@ -75,6 +75,35 @@ test('computeCartItemTotal sums base + extras + combo delta, times quantity, rou
   assert.equal(computeCartItemTotal(item), 34.83);
 });
 
+test('computeCartItemTotal sums every combo choice delta (múltiplas escolhas por bloco)', () => {
+  const item = {
+    product: { basePrice: 30 },
+    selectedExtras: [],
+    comboChoices: [
+      { slotId: 's1', slotLabel: 'Caldinhos', optionId: 'a', optionLabel: 'Feijão', priceDelta: 0 },
+      { slotId: 's1', slotLabel: 'Caldinhos', optionId: 'b', optionLabel: 'Camarão', priceDelta: 4 },
+      { slotId: 's1', slotLabel: 'Caldinhos', optionId: 'c', optionLabel: 'Mocotó', priceDelta: 1.5 },
+    ],
+    quantity: 2,
+  };
+  // (30 + 0 + 4 + 1.5) * 2 = 71
+  assert.equal(computeCartItemTotal(item), 71);
+});
+
+test('computeCartItemTotal soma o delta de cada repetição da mesma opção', () => {
+  const item = {
+    product: { basePrice: 30 },
+    selectedExtras: [],
+    comboChoices: [
+      { slotId: 's1', slotLabel: 'Caldinhos', optionId: 'b', optionLabel: 'Camarão', priceDelta: 4 },
+      { slotId: 's1', slotLabel: 'Caldinhos', optionId: 'b', optionLabel: 'Camarão', priceDelta: 4 },
+    ],
+    quantity: 1,
+  };
+  // 30 + 4 + 4 = 38
+  assert.equal(computeCartItemTotal(item), 38);
+});
+
 test('computeCartTotals sums items, applies percent coupon and delivery fee', () => {
   const cart = [
     cartItem({

@@ -4,6 +4,7 @@ import { useClientShell } from './ClientStore';
 import { isPickup, storeAddressLine } from '../../shared/fulfillment';
 import { paymentLabel } from '../../shared/payment';
 import { formatKm } from '../../shared/geo';
+import { formatComboChoices } from '../../shared/comboChoices';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
@@ -759,7 +760,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   {it.size && <span className="text-[10px] text-[#A8A29E]"> ({it.size})</span>}
                   {it.comboChoices && it.comboChoices.length > 0 && (
                     <span className="block text-[10px] text-[#D97706]">
-                      {it.comboChoices.map((c) => `${c.slotLabel}: ${c.optionLabel}`).join(' • ')}
+                      {formatComboChoices(it.comboChoices)}
                     </span>
                   )}
                   {it.isFree && (

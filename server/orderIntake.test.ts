@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CartItem, Order, Product, Promotion, StoreSettings } from '../src/types';
+import { CartItem, ComboChoice, Order, Product, Promotion, StoreSettings } from '../src/types';
 import {
   createFakePaymentAdapter,
   OrderIntakeDependencies,
@@ -577,5 +577,211 @@ test('cobrança que falha não deixa a promoção contada', async () => {
     )
   );
   assert.deepEqual(registered, []);
+  assert.deepEqual(state.saved, []);
+});
+
+const comboProduct: Product = {
+  id: 'combo-test',
+  name: 'Combo Teste',
+  description: '',
+  category: 'combos',
+  basePrice: 30,
+  image: '',
+  available: true,
+  rating: 5,
+  reviewsCount: 0,
+  prepTimeMinutes: 20,
+  comboSlots: [
+    {
+      id: 'slot-caldinho',
+      label: 'Escolha 2 caldinhos',
+      required: true,
+      minChoices: 2,
+      maxChoices: 2,
+      options: [
+        { id: 'feijao', label: 'Feijão', priceDelta: 0 },
+        { id: 'camarao', label: 'Camarão', priceDelta: 4 },
+        { id: 'mocoto', label: 'Mocotó', priceDelta: 0 },
+      ],
+    },
+    {
+      id: 'slot-petisco',
+      label: 'Petisco',
+      required: true,
+      options: [{ id: 'batata', label: 'Batata' }],
+    },
+  ],
+};
+
+function comboItem(choices: ComboChoice[]): CartItem {
+  return {
+    id: 'item-combo',
+    product: comboProduct,
+    selectedExtras: [],
+    comboChoices: choices,
+    quantity: 1,
+    itemTotalPrice: comboProduct.basePrice,
+  };
+}
+
+function comboDeps() {
+  const state = deps({ loadProduct: (id) => (id === comboProduct.id ? comboProduct : null) });
+  return state;
+}
+
+test('combo válido com múltiplas escolhas por bloco é aceito e soma os acréscimos', async () => {
+  const state = comboDeps();
+  const result = await placeOrder(
+    {
+      items: [
+        comboItem([
+          { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+          { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'camarao', optionLabel: 'Camarão', priceDelta: 4 },
+          { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+        ]),
+      ],
+      address: address(),
+      paymentMethod: 'cash',
+      customerId: 'customer-1',
+    },
+    state.base
+  );
+  assert.equal(result.order.items[0].comboChoices?.length, 3);
+  assert.equal(result.order.items[0].itemTotalPrice, 34);
+});
+
+test('combo sem escolhas obrigatórias suficientes é recusado', async () => {
+  const state = comboDeps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [
+            comboItem([
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+            ]),
+          ],
+          address: address(),
+          paymentMethod: 'cash',
+          customerId: 'customer-1',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('combo sem nenhuma escolha é recusado', async () => {
+  const state = comboDeps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [comboItem([])],
+          address: address(),
+          paymentMethod: 'cash',
+          customerId: 'customer-1',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('combo com mais escolhas que o máximo é recusado', async () => {
+  const state = comboDeps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [
+            comboItem([
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'camarao', optionLabel: 'Camarão', priceDelta: 4 },
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'mocoto', optionLabel: 'Mocotó', priceDelta: 0 },
+              { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+            ]),
+          ],
+          address: address(),
+          paymentMethod: 'cash',
+          customerId: 'customer-1',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('a mesma opção pode ser escolhida mais de uma vez no mesmo bloco', async () => {
+  const state = comboDeps();
+  const result = await placeOrder(
+    {
+      items: [
+        comboItem([
+          { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+          { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+          { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+        ]),
+      ],
+      address: address(),
+      paymentMethod: 'cash',
+      customerId: 'customer-1',
+    },
+    state.base
+  );
+  assert.equal(result.order.items[0].comboChoices?.length, 3);
+  assert.equal(result.order.items[0].itemTotalPrice, 30);
+});
+
+test('a mesma opção repetida além do máximo é recusada', async () => {
+  const state = comboDeps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [
+            comboItem([
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+            ]),
+          ],
+          address: address(),
+          paymentMethod: 'cash',
+          customerId: 'customer-1',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
+  assert.deepEqual(state.saved, []);
+});
+
+test('opção de combo que não existe mais no cardápio é recusada', async () => {
+  const state = comboDeps();
+  await assert.rejects(
+    () =>
+      placeOrder(
+        {
+          items: [
+            comboItem([
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'fantasma', optionLabel: 'Sumiu', priceDelta: 0 },
+              { slotId: 'slot-caldinho', slotLabel: 'Escolha 2 caldinhos', optionId: 'feijao', optionLabel: 'Feijão', priceDelta: 0 },
+              { slotId: 'slot-petisco', slotLabel: 'Petisco', optionId: 'batata', optionLabel: 'Batata', priceDelta: 0 },
+            ]),
+          ],
+          address: address(),
+          paymentMethod: 'cash',
+          customerId: 'customer-1',
+        },
+        state.base
+      ),
+    (err: unknown) => err instanceof DomainError && err.status === 400
+  );
   assert.deepEqual(state.saved, []);
 });

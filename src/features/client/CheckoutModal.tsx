@@ -31,6 +31,7 @@ import { Order, PaymentMethod, PaymentTiming } from '../../types';
 import { CardPaymentForm, CardPaymentHandle } from './CardPaymentForm';
 import { usePixPaymentPoll } from './usePixPoll';
 import { copyToClipboard, selectElementText } from './clipboard';
+import { findCustomerByPhone, getLastCustomer, saveCustomer } from './clientIdentity';
 
 interface CheckoutModalProps {
   onClose: () => void;
@@ -47,8 +48,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const outOfRange = !isPickupMode && deliveryFee < 0;
 
   const [step, setStep] = useState<'dados' | 'pagamento'>('dados');
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  // Cadastro local: o último cliente que pediu neste navegador já vem preenchido.
+  const [initialCustomer] = useState(() => getLastCustomer());
+  const [customerName, setCustomerName] = useState(initialCustomer?.name ?? '');
+  const [customerPhone, setCustomerPhone] = useState(initialCustomer?.phone ?? '');
+  // true enquanto o nome foi preenchido pelo telefone (não à mão): evita
+  // sobrescrever um nome que o cliente acabou de digitar.
+  const nameAutoFilled = useRef(false);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [paymentTiming, setPaymentTiming] = useState<PaymentTiming>('online');
@@ -169,6 +175,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
       return;
     }
     const order = res.order;
+    // Pedido criado: o cadastro local guarda nome + telefone por número, para
+    // o próximo pedido não pedir de novo.
+    saveCustomer(customerName.trim(), customerPhone.trim());
     if (method === 'pix' && order.payment.pixCopyPaste) {
       setPendingPix(order);
     } else {
@@ -194,6 +203,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const handleContinueToPayment = () => {
     if (!dadosValid) return;
     setStep('pagamento');
+  };
+
+  /** Telefone completo que já pediu aqui preenche o nome sozinho. */
+  const handlePhoneChange = (value: string) => {
+    setCustomerPhone(value);
+    const found = findCustomerByPhone(value);
+    if (found && (!customerName.trim() || nameAutoFilled.current)) {
+      nameAutoFilled.current = true;
+      setCustomerName(found.name);
+    }
+  };
+
+  /** Nome digitado à mão: o telefone não pode mais substituí-lo. */
+  const handleNameChange = (value: string) => {
+    nameAutoFilled.current = false;
+    setCustomerName(value);
   };
 
   const deliveryLabel = isPickupMode
@@ -373,7 +398,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     <input
                       type="text"
                       value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
+                      onChange={(e) => handleNameChange(e.target.value)}
                       placeholder="Ex: Maria Silva"
                       className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:ring-2 transition ${
                         customerName && !nameValid
@@ -395,7 +420,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       type="tel"
                       inputMode="tel"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
                       placeholder="(81) 99999-0000"
                       className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:ring-2 transition ${
                         customerPhone && !phoneValid
@@ -405,6 +430,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     />
                     {customerPhone && !phoneValid && (
                       <p className="text-[10px] text-[#B91C1C] font-bold mt-1">Digite um telefone válido com DDD (mínimo 10 dígitos).</p>
+                    )}
+                    {findCustomerByPhone(customerPhone) && customerName && (
+                      <p className="text-[10px] text-[#059669] font-bold mt-1 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Cadastro encontrado — nome preenchido automaticamente.
+                      </p>
                     )}
                   </div>
 

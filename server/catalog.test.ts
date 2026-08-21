@@ -198,6 +198,42 @@ test('normalizeComboSlots defaults required to true unless explicitly false', ()
   assert.equal(explicitFalse.required, false);
 });
 
+test('normalizeComboSlots defaults minChoices/maxChoices from required', () => {
+  const [requiredSlot, optionalSlot] = normalizeComboSlots([
+    { label: 'A', options: [{ label: 'x' }, { label: 'y' }] },
+    { label: 'B', options: [{ label: 'x' }, { label: 'y' }], required: false },
+  ]);
+  assert.equal(requiredSlot.minChoices, 1);
+  assert.equal(requiredSlot.maxChoices, 1);
+  assert.equal(optionalSlot.minChoices, 0);
+  assert.equal(optionalSlot.maxChoices, 0);
+});
+
+test('normalizeComboSlots preserves explicit multi-choice bounds and clamps them', () => {
+  const [slot] = normalizeComboSlots([
+    { label: 'Escolha 2', minChoices: 2, maxChoices: 3, options: [{ label: 'a' }, { label: 'b' }, { label: 'c' }] },
+  ]);
+  assert.equal(slot.minChoices, 2);
+  assert.equal(slot.maxChoices, 3);
+});
+
+test('normalizeComboSlots clamps maxChoices to the number of options and never below min', () => {
+  const [aboveOptions] = normalizeComboSlots([
+    { label: 'A', minChoices: 1, maxChoices: 99, options: [{ label: 'a' }, { label: 'b' }] },
+  ]);
+  assert.equal(aboveOptions.maxChoices, 2);
+  const [maxBelowMin] = normalizeComboSlots([
+    { label: 'B', minChoices: 3, maxChoices: 1, options: [{ label: 'a' }, { label: 'b' }, { label: 'c' }] },
+  ]);
+  assert.equal(maxBelowMin.minChoices, 3);
+  assert.equal(maxBelowMin.maxChoices, 3);
+  const [negativeMin] = normalizeComboSlots([
+    { label: 'C', minChoices: -4, maxChoices: -1, options: [{ label: 'a' }] },
+  ]);
+  assert.equal(negativeMin.minChoices, 0);
+  assert.equal(negativeMin.maxChoices, 0);
+});
+
 test('updateProduct applies normalizeExtras and normalizeComboSlots to the patch', () => {
   createProduct(makeProduct({ id: 'p-combo' }));
   const updated = updateProduct('p-combo', {
