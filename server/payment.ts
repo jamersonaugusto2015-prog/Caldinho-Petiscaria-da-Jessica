@@ -17,7 +17,8 @@ import {
   isMercadoPagoConnected,
   refundPayment as refundMercadoPagoPayment,
 } from './mercadopago';
-import { generatePixCopyPaste } from './pix';
+import { generatePixCopyPaste, generatePixQrCodeBase64 } from './pix';
+import { usesLocalPix } from '../src/shared/pix';
 
 export async function collectPixPayment(opts: {
   orderId: string;
@@ -28,8 +29,12 @@ export async function collectPixPayment(opts: {
 }): Promise<Pick<PaymentDetails, 'mpPaymentId' | 'pixCopyPaste' | 'pixQrCode' | 'mpTicketUrl'>> {
   const { orderId, amount, settings, payerName, notificationUrl } = opts;
   const payment: Pick<PaymentDetails, 'mpPaymentId' | 'pixCopyPaste' | 'pixQrCode' | 'mpTicketUrl'> = {};
+  // A loja escolhe nas configurações quem cobra o PIX. Em 'local' o Mercado
+  // Pago não é chamado nem como reserva: o dono desligou de propósito, e cair
+  // no Mercado Pago escondido mandaria o dinheiro para a conta errada.
+  const local = usesLocalPix(settings.pixProvider);
 
-  if (isMercadoPagoConnected()) {
+  if (!local && isMercadoPagoConnected()) {
     try {
       const charge = await createPixCharge({
         orderId,
@@ -63,8 +68,16 @@ export async function collectPixPayment(opts: {
   if (!payment.pixCopyPaste) {
     throw new DomainError(
       400,
-      'PIX indisponível. Conecte o Mercado Pago ou cadastre uma chave PIX na cozinha.'
+      local
+        ? 'PIX indisponível. Cadastre a chave PIX da loja nas configurações da cozinha.'
+        : 'PIX indisponível. Conecte o Mercado Pago ou cadastre uma chave PIX na cozinha.'
     );
+  }
+
+  // Cobrança da chave da loja não vem com imagem pronta: desenhamos o QR Code
+  // do mesmo copia e cola para o cliente apontar a câmera do banco.
+  if (!payment.pixQrCode) {
+    payment.pixQrCode = await generatePixQrCodeBase64(payment.pixCopyPaste);
   }
 
   return payment;

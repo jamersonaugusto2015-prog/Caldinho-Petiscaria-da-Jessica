@@ -1,3 +1,13 @@
+import {
+  IMAGE_MAX_DIMENSION,
+  IMAGE_TARGET_BYTES,
+  dataUrlBytes,
+  isDataUrlOf,
+  pickBestAttempt,
+  qualityLadder,
+  scaledSize,
+} from '../shared/imageEncoding';
+
 /** Carrega o arquivo como <img> já decodificado, com timeout e mensagens de erro amigáveis. */
 export function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -42,16 +52,60 @@ export function loadImageFile(file: File): Promise<HTMLImageElement> {
 
 type CropRect = { sx: number; sy: number; sw: number; sh: number };
 
-/** Desenha um pedaço da imagem num JPEG (data URL), limitando o lado maior a maxDim. */
+/**
+ * O navegador sabe gravar WebP? Todos os atuais sabem, mas Safari antigo não,
+ * e um `toDataURL('image/webp')` num navegador sem suporte devolve PNG
+ * silenciosamente — um PNG de foto pesa vários megabytes. Por isso a checagem
+ * olha o que voltou, e não a versão do navegador.
+ */
+let webpSupport: boolean | null = null;
+function canEncodeWebp(): boolean {
+  if (webpSupport !== null) return webpSupport;
+  try {
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    webpSupport = isDataUrlOf(probe.toDataURL('image/webp'), 'image/webp');
+  } catch {
+    webpSupport = false;
+  }
+  return webpSupport;
+}
+
+/**
+ * Comprime o canvas até caber no teto de peso.
+ *
+ * Vai descendo a qualidade um degrau por vez e para na primeira que couber.
+ * Uma foto limpa sai no degrau melhor; uma foto cheia de textura desce mais,
+ * que é exatamente onde o peso estoura.
+ */
+function encodeCanvas(canvas: HTMLCanvasElement): string {
+  const mime = canEncodeWebp() ? 'image/webp' : 'image/jpeg';
+  const attempts: string[] = [];
+  for (const quality of qualityLadder(mime)) {
+    const dataUrl = canvas.toDataURL(mime, quality);
+    // Um navegador que ignora o formato devolve PNG: aí não adianta insistir
+    // na escada de qualidade, o PNG não tem qualidade com perda.
+    if (!isDataUrlOf(dataUrl, mime)) {
+      attempts.push(dataUrl);
+      break;
+    }
+    attempts.push(dataUrl);
+    if (dataUrlBytes(dataUrl) <= IMAGE_TARGET_BYTES) break;
+  }
+  return pickBestAttempt(attempts);
+}
+
+/**
+ * Desenha um pedaço da imagem já comprimido, com o lado maior limitado.
+ * Sai em WebP onde dá, e em JPEG no navegador que não grava WebP.
+ */
 export function cropImageToDataUrl(
   img: HTMLImageElement,
   crop: CropRect,
-  maxDim = 1000,
-  quality = 0.85
+  maxDim = IMAGE_MAX_DIMENSION
 ): string {
-  const scale = Math.min(1, maxDim / Math.max(crop.sw, crop.sh));
-  const w = Math.max(1, Math.round(crop.sw * scale));
-  const h = Math.max(1, Math.round(crop.sh * scale));
+  const { width: w, height: h } = scaledSize(crop.sw, crop.sh, maxDim);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -62,11 +116,7 @@ export function cropImageToDataUrl(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', quality);
-  if (!dataUrl || dataUrl.length < 100) {
-    throw new Error('Falha ao processar a imagem. Tente outro arquivo.');
-  }
-  return dataUrl;
+  return encodeCanvas(canvas);
 }
 
 

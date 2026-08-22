@@ -5,6 +5,7 @@ import {
   Inbox,
   LayoutDashboard,
   type LucideIcon,
+  MapPin,
   Megaphone,
   Settings,
   Star,
@@ -19,6 +20,7 @@ import {
 export type KitchenTab =
   | 'dashboard'
   | 'orders'
+  | 'mapa'
   | 'solicitacoes'
   | 'avaliacoes'
   | 'cardapio'
@@ -56,6 +58,9 @@ export const KITCHEN_NAV: KitchenNavGroup[] = [
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'orders', label: 'Pedidos', icon: ChefHat },
+      // Logo abaixo de Pedidos: as duas respondem à mesma pergunta do turno
+      // — o que está aberto agora. Pedidos olha a cozinha, Mapa olha a rua.
+      { id: 'mapa', label: 'Mapa', icon: MapPin },
       { id: 'solicitacoes', label: 'Solicitações', icon: Inbox },
       // Fica em Operação, ao lado de Solicitações: as duas são a voz do cliente
       // chegando na loja. Relatórios mostra a nota média do período; aqui é onde

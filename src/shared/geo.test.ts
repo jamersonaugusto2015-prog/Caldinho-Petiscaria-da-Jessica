@@ -27,6 +27,7 @@ const baseSettings: StoreSettings = {
   minOrderValue: 15,
   routeFactor: 1.35,
   driverFeePerDelivery: 0,
+  pixProvider: 'mercadopago',
   pixKey: '',
   cardOnDeliveryEnabled: true,
   pixMerchantName: '',

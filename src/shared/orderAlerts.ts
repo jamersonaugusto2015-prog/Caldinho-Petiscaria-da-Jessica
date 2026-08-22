@@ -57,6 +57,16 @@ export interface OrderAlert {
   role: AlertRole;
   title: string;
   body: string;
+  /**
+   * O que a voz fala, quando o título não serve para ser ouvido.
+   *
+   * O título carrega o código do pedido (`CX-8QK2ZR1`) porque na faixa e na
+   * notificação ele é *lido* — é por ele que a cozinha acha o pedido na tela.
+   * Falado, o mesmo código vira ruído letra por letra e empurra para fora as
+   * duas coisas que decidem a ação: quanto é e se sai para entrega. Ausente,
+   * a voz cai no título.
+   */
+  speech?: string;
   urgency: AlertUrgency;
   channels: AlertChannels;
   /** Agrupa a notificação do sistema: a nova substitui a anterior do mesmo pedido. */
@@ -146,6 +156,7 @@ interface AlertDraft {
   key: string;
   title: string;
   body: string;
+  speech?: string;
   urgency: AlertUrgency;
   channels?: Partial<AlertChannels>;
   tag?: string;
@@ -158,6 +169,7 @@ function build(role: AlertRole, orderId: string | undefined, draft: AlertDraft):
     role,
     title: draft.title,
     body: draft.body,
+    speech: draft.speech,
     urgency: draft.urgency,
     channels: channelsFor(draft.urgency, draft.channels),
     tag: draft.tag ?? (orderId ? `${role}:${orderId}` : `${role}:geral`),
@@ -170,6 +182,32 @@ function build(role: AlertRole, orderId: string | undefined, draft: AlertDraft):
 function money(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+
+/**
+ * Valor em palavras que qualquer voz pt-BR lê certo. `money()` devolve
+ * "R$ 87,50", e aí cada motor de voz inventa a sua leitura — alguns soletram
+ * "erre cifrão". Os números soltos todos leem igual.
+ */
+function spokenMoney(value: number): string {
+  const cents = Math.max(0, Math.round(value * 100));
+  const reais = Math.floor(cents / 100);
+  const rest = cents % 100;
+  const head = `${reais} ${reais === 1 ? 'real' : 'reais'}`;
+  if (!rest) return head;
+  return `${head} e ${rest} ${rest === 1 ? 'centavo' : 'centavos'}`;
+}
+
+/** A frase do pedido novo. Curta e na ordem em que a cozinha decide: quanto, e para onde. */
+export function newOrderSpeech(total: number, pickup: boolean): string {
+  return `Novo pedido. ${spokenMoney(total)}. ${pickup ? 'Retirada no balcão' : 'Entrega'}.`;
+}
+
+/**
+ * O que o botão "testar som" fala. Sai da mesma função do alerta de verdade
+ * de propósito: antes o teste dizia "Um novo pedido chegou!" e a hora H dizia
+ * outra coisa, então quem testava nunca ouvia o que ia ouvir na cozinha.
+ */
+export const SAMPLE_NEW_ORDER_SPEECH = newOrderSpeech(87.5, false);
 
 function itemCount(order: Order): number {
   return order.items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
@@ -195,6 +233,7 @@ function kitchenAlert(event: OrderAlertEvent, order: Order, ctx: AlertContext): 
       key: `kitchen:new:${order.id}`,
       title: `Novo pedido ${order.id}`,
       body: `${order.customerName} · ${itemCount(order)} ${itemCount(order) === 1 ? 'item' : 'itens'} · ${money(order.total)}`,
+      speech: newOrderSpeech(order.total, isPickup(order)),
       urgency: 'demand',
       channels: { voice: true },
     });

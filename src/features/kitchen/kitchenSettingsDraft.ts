@@ -21,6 +21,7 @@ export type SettingsDraft = Pick<
   | 'minOrderValue'
   | 'routeFactor'
   | 'driverFeePerDelivery'
+  | 'pixProvider'
   | 'pixKey'
   | 'pixMerchantName'
   | 'pixMerchantCity'
@@ -53,6 +54,7 @@ export const makeDraft = (settings: PublicStoreSettings): SettingsDraft => ({
   minOrderValue: settings.minOrderValue,
   routeFactor: settings.routeFactor,
   driverFeePerDelivery: settings.driverFeePerDelivery,
+  pixProvider: settings.pixProvider === 'local' ? 'local' : 'mercadopago',
   pixKey: settings.pixKey,
   pixMerchantName: settings.pixMerchantName,
   pixMerchantCity: settings.pixMerchantCity,

@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { INITIAL_PRODUCTS } from '../src/data/initialData';
 import { OpeningHour, SizeOption, StoreSettings } from '../src/types';
 import { DEFAULT_OPENING_HOURS, DEFAULT_SIZE_OPTIONS, DEFAULT_STORE_SETTINGS } from '../src/shared/defaults';
+import { normalizePixProvider } from '../src/shared/pix';
 import { hashPasswordSync } from './auth';
 import { DATA_DIR } from './paths';
 
@@ -249,6 +250,7 @@ function seedSettings() {
     ['min_order_value', String(base.minOrderValue)],
     ['route_factor', String(base.routeFactor)],
     ['driver_fee_per_delivery', String(base.driverFeePerDelivery)],
+    ['pix_provider', base.pixProvider],
     ['pix_key', base.pixKey],
     ['pix_merchant_name', base.pixMerchantName],
     ['pix_merchant_city', base.pixMerchantCity],
@@ -331,6 +333,7 @@ export function getSettings(): StoreSettings {
     minOrderValue: num('min_order_value', DEFAULT_SETTINGS.minOrderValue),
     routeFactor: num('route_factor', DEFAULT_SETTINGS.routeFactor),
     driverFeePerDelivery: num('driver_fee_per_delivery', DEFAULT_SETTINGS.driverFeePerDelivery),
+    pixProvider: normalizePixProvider(get('pix_provider', DEFAULT_SETTINGS.pixProvider)),
     pixKey: get('pix_key', DEFAULT_SETTINGS.pixKey),
     pixMerchantName: get('pix_merchant_name', DEFAULT_SETTINGS.pixMerchantName),
     pixMerchantCity: get('pix_merchant_city', DEFAULT_SETTINGS.pixMerchantCity),

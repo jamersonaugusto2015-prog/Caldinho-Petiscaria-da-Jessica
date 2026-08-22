@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -8,6 +8,17 @@ import type { LocationFreshness } from '../../shared/driverFreshness';
 export interface GeoPoint {
   lat: number;
   lng: number;
+}
+
+/**
+ * Um motoboy no mapa. A idade vem em cada pino, e não uma para o mapa inteiro:
+ * na cozinha há vários ao mesmo tempo, e um GPS vivo ao lado de um que dormiu
+ * não podem ser desenhados do mesmo jeito.
+ */
+export interface DriverPin extends GeoPoint {
+  id?: string;
+  name?: string;
+  freshness?: LocationFreshness;
 }
 
 interface LiveMapProps {
@@ -22,6 +33,21 @@ interface LiveMapProps {
    * pulsava no mapa do cliente como se estivesse andando.
    */
   driverFreshness?: LocationFreshness;
+  /**
+   * Vários motoboys de uma vez: a visão da rua na cozinha. Convive com `driver`,
+   * que continua sendo o pino único do cliente e do próprio motoboy.
+   */
+  drivers?: DriverPin[] | null;
+  /** As casas a entregar. O cliente vê a dele; a cozinha vê todas as da rua. */
+  destinations?: (GeoPoint & { label?: string })[] | null;
+  /**
+   * Reenquadra só quando isto muda.
+   *
+   * Sem ele o mapa se reenquadra a cada coordenada que chega — e com meia dúzia
+   * de motos andando a cozinha não consegue nem arrastar a tela, porque o
+   * próximo ponto de GPS puxa o mapa de volta.
+   */
+  fitKey?: string;
   pickPosition?: GeoPoint | null;
   onPick?: (lat: number, lng: number) => void;
   center?: GeoPoint;
@@ -72,20 +98,23 @@ function ClickHandler({ onPick }: { onPick?: (lat: number, lng: number) => void 
   return null;
 }
 
-function FitBounds({ points }: { points: GeoPoint[] }) {
+function FitBounds({ points, fitKey }: { points: GeoPoint[]; fitKey?: string }) {
   const map = useMap();
+  const latest = useRef(points);
+  latest.current = points;
   useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView([points[0].lat, points[0].lng], 15, { animate: true });
+    const pts = latest.current;
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.setView([pts[0].lat, pts[0].lng], 15, { animate: true });
       return;
     }
     map.fitBounds(
-      points.map((p) => [p.lat, p.lng] as [number, number]),
+      pts.map((p) => [p.lat, p.lng] as [number, number]),
       { padding: [36, 36], maxZoom: 17 }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(points)]);
+  }, [fitKey ?? JSON.stringify(points)]);
   return null;
 }
 
@@ -94,6 +123,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   customer: customerProp,
   driver: driverProp,
   driverFreshness = 'unknown',
+  drivers: driversProp,
+  destinations: destinationsProp,
+  fitKey,
   pickPosition: pickPositionProp,
   onPick,
   center: centerProp,
@@ -105,6 +137,17 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const customer = usablePoint(customerProp);
   const driver = usablePoint(driverProp);
   const pickPosition = usablePoint(pickPositionProp);
+  const driverPins = useMemo(
+    () => (driversProp ?? []).map((pin) => usablePoint(pin)).filter((pin): pin is DriverPin => pin !== null),
+    [driversProp]
+  );
+  const destinations = useMemo(
+    () =>
+      (destinationsProp ?? [])
+        .map((point) => usablePoint(point))
+        .filter((point): point is GeoPoint & { label?: string } => point !== null),
+    [destinationsProp]
+  );
   const mapCenter = usablePoint(centerProp) ?? store ?? pickPosition ?? RECIFE_CENTER;
   // Só 'live' ganha o pino aceso. 'unknown' anda junto de 'stale' de propósito:
   // um ponto de idade desconhecida (linha antiga, posição semeada no aceite) não
@@ -117,8 +160,9 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     if (store) pts.push(store);
     if (customer) pts.push(customer);
     if (driver) pts.push(driver);
+    pts.push(...driverPins, ...destinations);
     return pts;
-  }, [pickPosition, store, customer, driver]);
+  }, [pickPosition, store, customer, driver, driverPins, destinations]);
 
   const routeLine = useMemo(() => {
     if (store && driver && !customer) return [store, driver] as [GeoPoint, GeoPoint];
@@ -140,10 +184,31 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {onPick && <ClickHandler onPick={onPick} />}
-        <FitBounds points={fitPoints} />
+        <FitBounds points={fitPoints} fitKey={fitKey} />
 
         {store && <Marker position={[store.lat, store.lng]} icon={pinIcon('🏪', '#B91C1C')} />}
         {customer && <Marker position={[customer.lat, customer.lng]} icon={pinIcon('🏠', '#059669')} />}
+        {destinations.map((point, index) => (
+          <Marker
+            key={`dest-${index}-${point.lat},${point.lng}`}
+            position={[point.lat, point.lng]}
+            icon={pinIcon('🏠', '#059669', { title: point.label })}
+          />
+        ))}
+        {driverPins.map((pin, index) => {
+          const live = pin.freshness === 'live';
+          return (
+            <Marker
+              key={pin.id ?? `moto-${index}`}
+              position={[pin.lat, pin.lng]}
+              icon={pinIcon('🛵', '#7C3AED', {
+                pulse: live,
+                faded: !live,
+                title: `${pin.name || 'Motoboy'}${live ? '' : ' — última posição conhecida'}`,
+              })}
+            />
+          );
+        })}
         {driver && (
           <Marker
             position={[driver.lat, driver.lng]}

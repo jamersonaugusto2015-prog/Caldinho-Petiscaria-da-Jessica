@@ -42,7 +42,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
   const { cart, addresses, selectedAddress, setSelectedAddress, openAddressForm, fulfillment } = useCart();
   const { placeOrder, customerId, applyOrderUpdate } = useCheckout();
   const { settings } = useClientShell();
-  const pixOk = !!(settings.pixEnabled || settings.pixKey || settings.mercadoPagoConnected);
+  // Com a cobrança na chave da loja, o Mercado Pago conectado não conta: sem
+  // chave cadastrada o PIX quebraria só na hora de fechar o pedido.
+  const pixOk =
+    settings.pixProvider === 'local'
+      ? !!(settings.pixEnabled || settings.pixKey)
+      : !!(settings.pixEnabled || settings.pixKey || settings.mercadoPagoConnected);
   const { subtotal, discount, deliveryFee, total } = useCartTotals();
   const isPickupMode = fulfillment === 'pickup';
   const outOfRange = !isPickupMode && deliveryFee < 0;

@@ -308,6 +308,32 @@ summary,
   background: transparent;
   border: none;
 }
+/*
+ * O pino anda em vez de saltar.
+ *
+ * O Leaflet grava a posição nova de uma vez: a cada ponto de GPS o motoboy
+ * some de um lugar e reaparece no outro, e uma moto atravessando o bairro em
+ * pulos de quarteirão parece dado errado, não trânsito. A transição preenche
+ * o intervalo entre dois pontos — 900 ms cobre a folga do celular parado sem
+ * deixar o pino atrasado quando ele acelera.
+ *
+ * `linear` de propósito: a moto não freia e arranca a cada ponto. E só
+ * `transform`, que é o que o Leaflet mexe — `all` animaria também o zoom.
+ */
+.live-map-pin {
+  transition: transform 900ms linear;
+}
+/* Arrastar e dar zoom no mapa reposiciona todo mundo de uma vez; com a
+   transição ligada os pinos escorregariam atrás do mapa por quase um segundo. */
+.leaflet-drag-target .live-map-pin,
+.leaflet-zoom-anim .live-map-pin {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-map-pin {
+    transition: none;
+  }
+}
 .live-map-pin-dot {
   width: 34px;
   height: 34px;

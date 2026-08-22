@@ -112,6 +112,16 @@ export type PaymentMethod = 'pix' | 'card' | 'cash';
 /** Quando o dinheiro entra: agora no site, ou com o motoboy/balcão. */
 export type PaymentTiming = 'online' | 'delivery';
 
+/**
+ * Quem emite a cobrança PIX.
+ * - 'mercadopago': cobrança na conta do Mercado Pago, com QR Code que expira e
+ *   confirmação automática do pagamento.
+ * - 'local': BR Code gerado aqui a partir da chave PIX da loja. Cai direto na
+ *   conta do banco, sem taxa e sem intermediário, mas ninguém avisa o sistema
+ *   quando o dinheiro entra: a cozinha confirma na mão.
+ */
+export type PixProvider = 'mercadopago' | 'local';
+
 export interface PaymentDetails {
   method: PaymentMethod;
   /** Ausente em pedidos antigos — veja normalizePaymentTiming em shared/payment. */
@@ -354,6 +364,7 @@ export interface StoreSettings {
   minOrderValue: number; // pedido mínimo (0 = desligado)
   routeFactor: number; // multiplicador linha reta -> rota real (ex: 1.35)
   driverFeePerDelivery: number; // R$ fixo por entrega p/ motoboy (0 = usa taxa do pedido)
+  pixProvider: PixProvider; // quem gera a cobrança PIX: Mercado Pago ou a chave da loja
   pixKey: string;
   pixMerchantName: string;
   pixMerchantCity: string;

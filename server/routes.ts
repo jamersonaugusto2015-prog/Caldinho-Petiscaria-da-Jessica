@@ -9,7 +9,7 @@ import {
   getRoleToken,
 } from './db';
 import { verifyPassword, hashPassword } from './auth';
-import { normalizePixKey, validatePixKey } from '../src/shared/pix';
+import { normalizePixKey, normalizePixProvider, usesLocalPix, validatePixKey } from '../src/shared/pix';
 import { runBackup } from './backup';
 import { UPLOADS_DIR } from './paths';
 import {
@@ -915,7 +915,12 @@ export function createRoutes(io: Server): Router {
       ...settings,
       kitchenPinSet: isKitchen ? !!pinHash : false,
       isOpen: isStoreOpen(settings),
-      pixEnabled: !!(settings.pixKey || mpConnected),
+      // Em 'local' a chave da loja é a única forma de PIX: uma conta do
+      // Mercado Pago conectada não pode fazer o cliente ver PIX numa loja
+      // que desligou o Mercado Pago e ainda não cadastrou a chave.
+      pixEnabled: usesLocalPix(settings.pixProvider)
+        ? !!settings.pixKey
+        : !!(settings.pixKey || mpConnected),
       mercadoPagoConnected: mpConnected,
       mercadoPagoOAuthReady: isOAuthConfigured(),
       mercadoPagoTestMode: isTestMode(),
@@ -969,6 +974,16 @@ export function createRoutes(io: Server): Router {
       const pixErr = validatePixKey(b.pixKey);
       if (pixErr) return res.status(400).json({ error: pixErr });
     }
+    // Salvar "PIX na minha chave" sem chave nenhuma deixaria a loja anunciando
+    // um meio de pagamento que quebra na hora de fechar o pedido.
+    if (typeof b.pixProvider === 'string' && usesLocalPix(b.pixProvider)) {
+      const nextKey = typeof b.pixKey === 'string' ? b.pixKey.trim() : getSettings().pixKey.trim();
+      if (!nextKey) {
+        return res
+          .status(400)
+          .json({ error: 'Cadastre a chave PIX da loja antes de cobrar o PIX na própria chave.' });
+      }
+    }
 
     if (typeof b.storeName === 'string') upsert.run('store_name', b.storeName.trim());
     if (typeof b.city === 'string') upsert.run('store_city', b.city.trim());
@@ -987,6 +1002,7 @@ export function createRoutes(io: Server): Router {
     if (num(b.routeFactor) !== undefined) upsert.run('route_factor', String(num(b.routeFactor)));
     if (num(b.driverFeePerDelivery) !== undefined)
       upsert.run('driver_fee_per_delivery', String(num(b.driverFeePerDelivery)));
+    if (typeof b.pixProvider === 'string') upsert.run('pix_provider', normalizePixProvider(b.pixProvider));
     if (typeof b.pixKey === 'string') upsert.run('pix_key', normalizePixKey(b.pixKey));
     if (typeof b.pixMerchantName === 'string') upsert.run('pix_merchant_name', b.pixMerchantName.trim());
     if (typeof b.pixMerchantCity === 'string') upsert.run('pix_merchant_city', b.pixMerchantCity.trim());

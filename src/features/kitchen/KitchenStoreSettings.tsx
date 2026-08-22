@@ -73,6 +73,15 @@ export const KitchenStoreSettings: React.FC = () => {
       triggerToast(pixProblem);
       return;
     }
+    // Mesma regra do servidor, só que antes do round-trip: "minha chave PIX"
+    // sem chave cadastrada deixaria a loja anunciando um PIX que não existe.
+    if (draft.pixProvider === 'local' && !normalizedPix) {
+      const problem = 'Cadastre a chave PIX da loja antes de cobrar o PIX na própria chave.';
+      setPixError(problem);
+      setSection('pagamentos');
+      triggerToast(problem);
+      return;
+    }
     const newPin = draft.kitchenPin.trim();
     if (newPin && newPin.length < 4) {
       setPinError('O PIN precisa ter pelo menos 4 caracteres.');

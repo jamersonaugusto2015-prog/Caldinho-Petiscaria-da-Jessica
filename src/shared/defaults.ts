@@ -32,6 +32,7 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   minOrderValue: 15,
   routeFactor: 1.35,
   driverFeePerDelivery: 0,
+  pixProvider: 'mercadopago',
   pixKey: '',
   pixMerchantName: 'Caldinho Express',
   pixMerchantCity: 'Recife',

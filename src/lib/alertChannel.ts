@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { expandVibratePattern, type AlertContext, type OrderAlert } from '../shared/orderAlerts';
+import {
+  expandVibratePattern,
+  SAMPLE_NEW_ORDER_SPEECH,
+  type AlertContext,
+  type OrderAlert,
+} from '../shared/orderAlerts';
 import type { Order } from '../types';
 import { appRole, isIos } from './appShell';
 import { ensurePushSubscription, pushStatus, type PushStatus } from './pushSubscription';
@@ -283,7 +288,12 @@ export function createAlertChannel(options: AlertChannelOptions): AlertChannel {
       if (channels.sound && audible) playSound(channels.repeat, custom);
       // A voz cede o lugar ao áudio da loja: quem gravou o próprio alerta não
       // quer a locutora falando por cima dele.
-      if (channels.voice && audible && !custom) speakPtBr(alert.title, channels.repeat);
+      //
+      // Uma volta só, e não `channels.repeat`: a frase agora tem valor e tipo de
+      // entrega, e dizer isso duas vezes seguidas ocupa a voz por dez segundos —
+      // tempo em que o pedido seguinte chegaria mudo. O sino continua repetindo:
+      // é ele que atravessa a cozinha, a voz só explica o que o sino anunciou.
+      if (channels.voice && audible && !custom) speakPtBr(alert.speech || alert.title, 1);
 
       if (channels.vibrate) haptic(channels.vibrate, channels.repeat);
       if (channels.system) void showSystemNotification(alert);
@@ -311,7 +321,7 @@ export function createAlertChannel(options: AlertChannelOptions): AlertChannel {
         return;
       }
       playNewOrderSound();
-      speakPtBr('Um novo pedido chegou!');
+      speakPtBr(SAMPLE_NEW_ORDER_SPEECH);
     },
   };
 }

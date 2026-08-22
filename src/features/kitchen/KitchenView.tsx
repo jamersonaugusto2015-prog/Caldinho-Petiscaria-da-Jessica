@@ -12,7 +12,7 @@ import type { KitchenTab } from './kitchenTabs';
 
 export type { KitchenTab } from './kitchenTabs';
 
-const ORDER_TABS: KitchenTab[] = ['dashboard', 'orders', 'clientes', 'motoboys', 'financeiro', 'relatorios'];
+const ORDER_TABS: KitchenTab[] = ['dashboard', 'orders', 'mapa', 'clientes', 'motoboys', 'financeiro', 'relatorios'];
 const CATALOG_TABS: KitchenTab[] = ['cardapio', 'categorias', 'cupons'];
 
 export const KitchenView: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }) => {

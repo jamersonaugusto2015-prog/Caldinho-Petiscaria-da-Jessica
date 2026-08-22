@@ -36,6 +36,7 @@ const settings: StoreSettings = {
   minOrderValue: 0,
   routeFactor: 1.35,
   driverFeePerDelivery: 0,
+  pixProvider: 'mercadopago',
   pixKey: '11999999999',
   pixMerchantName: 'Caldinho Express',
   pixMerchantCity: 'Recife',
@@ -254,5 +255,51 @@ test('collectPixPayment fails clearly when neither Mercado Pago nor a PIX key is
         notificationUrl: '',
       }),
     (error: unknown) => error instanceof DomainError && error.status === 400
+  );
+});
+
+test('collectPixPayment na chave da loja gera o BR Code e o PNG do QR Code', async () => {
+  const payment = await collectPixPayment({
+    orderId: 'CX-PIX-LOCAL',
+    amount: 31.9,
+    settings: { ...settings, pixProvider: 'local' },
+    payerName: 'Ana',
+    notificationUrl: '',
+  });
+
+  assert.equal(
+    payment.pixCopyPaste,
+    generatePixCopyPaste({
+      pixKey: settings.pixKey,
+      amount: 31.9,
+      merchantName: settings.pixMerchantName,
+      merchantCity: settings.pixMerchantCity,
+      txid: 'CX-PIX-LOCAL',
+    })
+  );
+  // Sem Mercado Pago no meio: nada de id de cobrança nem link de comprovante.
+  assert.equal(payment.mpPaymentId, undefined);
+  assert.equal(payment.mpTicketUrl, undefined);
+  // A imagem tem que ser base64 puro de um PNG — as telas do cliente montam o
+  // `data:image/png;base64,` na frente e um data URL aqui viraria imagem quebrada.
+  assert.ok(payment.pixQrCode, 'faltou o QR Code do PIX');
+  assert.ok(!payment.pixQrCode!.startsWith('data:'), 'o QR veio como data URL');
+  assert.equal(Buffer.from(payment.pixQrCode!, 'base64').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+});
+
+test('collectPixPayment na chave da loja recusa o pedido quando não há chave cadastrada', async () => {
+  await assert.rejects(
+    () =>
+      collectPixPayment({
+        orderId: 'CX-PIX-LOCAL-SEM-CHAVE',
+        amount: 10,
+        settings: { ...settings, pixProvider: 'local', pixKey: '' },
+        payerName: 'Ana',
+        notificationUrl: '',
+      }),
+    (error: unknown) =>
+      error instanceof DomainError &&
+      error.status === 400 &&
+      error.message.includes('Cadastre a chave PIX')
   );
 });

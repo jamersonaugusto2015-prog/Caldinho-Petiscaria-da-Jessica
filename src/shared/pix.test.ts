@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generatePixCopyPaste, generateRandomPixKey, normalizePixKey, validatePixKey } from './pix';
+import {
+  generatePixCopyPaste,
+  generateRandomPixKey,
+  normalizePixKey,
+  normalizePixProvider,
+  usesLocalPix,
+  validatePixKey,
+} from './pix';
 
 test('generatePixCopyPaste produces a valid BR Code with a correct CRC16', () => {
   const out = generatePixCopyPaste({
@@ -12,7 +19,9 @@ test('generatePixCopyPaste produces a valid BR Code with a correct CRC16', () =>
   });
   assert.equal(
     out,
-    '00020126330014br.gov.bcb.pix011181999990000520400005303986540525.505802BR5916CALDINHO EXPRESS6006RECIFE62110507CX-12346304FC9A'
+    // Chave de celular sai com o DDI (+55) e o txid perde o hífen: as duas
+    // coisas que faziam o app do banco recusar o QR Code como inválido.
+    '00020101021126360014br.gov.bcb.pix0114+5581999990000520400005303986540525.505802BR5916CALDINHO EXPRESS6006RECIFE62100506CX12346304F201'
   );
 });
 
@@ -78,8 +87,49 @@ test('normalizePixKey keeps a phone key with the +55 DDI', () => {
   assert.equal(normalizePixKey('+5581999990000'), '+5581999990000');
 });
 
-test('normalizePixKey upper-cases a 32-char random (EVP) key', () => {
-  assert.equal(normalizePixKey('abcd1234abcd1234abcd1234abcd1234'), 'ABCD1234ABCD1234ABCD1234ABCD1234');
+test('normalizePixKey devolve a chave aleatória como UUID minúsculo com hífens', () => {
+  // O DICT guarda a EVP nesse formato. Os 32 dígitos colados, ou em
+  // maiúsculas, viram uma chave que o banco não encontra.
+  assert.equal(
+    normalizePixKey('ABCD1234ABCD1234ABCD1234ABCD1234'),
+    'abcd1234-abcd-1234-abcd-1234abcd1234'
+  );
+  assert.equal(
+    normalizePixKey('abcd1234-abcd-1234-abcd-1234abcd1234'),
+    'abcd1234-abcd-1234-abcd-1234abcd1234'
+  );
+});
+
+test('normalizePixKey separa celular de CPF pelos dígitos verificadores', () => {
+  // Os dois têm 11 dígitos. Só o DV do CPF distingue, e errar aqui põe uma
+  // chave inexistente dentro do QR Code.
+  assert.equal(normalizePixKey('81999990000'), '+5581999990000');
+  assert.equal(normalizePixKey('(81) 99999-0000'), '+5581999990000');
+  assert.equal(normalizePixKey('123.456.789-09'), '12345678909');
+  assert.equal(normalizePixKey('5581999990000'), '+5581999990000');
+});
+
+test('o txid do BR Code fica só com letras e números', () => {
+  // O id de pedido tem hífen ("CX-1234") e o Bacen só aceita [A-Za-z0-9] no
+  // campo 62-05: com o hífen, o app do banco recusa o payload inteiro.
+  const out = generatePixCopyPaste({
+    pixKey: 'lojista@example.com',
+    amount: 5,
+    merchantName: 'Loja',
+    merchantCity: 'Recife',
+    txid: 'CX-12/34 ab',
+  });
+  assert.ok(out.includes('0508CX1234ab'), out);
+});
+
+test('o BR Code declara o método de iniciação estático (campo 01 = 11)', () => {
+  const out = generatePixCopyPaste({
+    pixKey: 'lojista@example.com',
+    amount: 5,
+    merchantName: 'Loja',
+    merchantCity: 'Recife',
+  });
+  assert.ok(out.startsWith('000201010211'), out.slice(0, 20));
 });
 
 test('validatePixKey accepts CPF, CNPJ, e-mail, phone and random keys', () => {
@@ -88,6 +138,8 @@ test('validatePixKey accepts CPF, CNPJ, e-mail, phone and random keys', () => {
   assert.equal(validatePixKey('user@example.com'), null);
   assert.equal(validatePixKey('+5581999990000'), null);
   assert.equal(validatePixKey('abcd1234abcd1234abcd1234abcd1234'), null);
+  assert.equal(validatePixKey('7f3d9a2b-1c4e-4f8a-9b2d-6e5c1a0f3d77'), null); // EVP real (UUID)
+  assert.equal(validatePixKey('81999990000'), null); // celular sem DDI
   assert.equal(validatePixKey(''), null); // empty is allowed (PIX manual is optional)
 });
 
@@ -95,8 +147,21 @@ test('validatePixKey rejects an unrecognized format', () => {
   assert.notEqual(validatePixKey('not-a-real-key'), null);
 });
 
-test('generateRandomPixKey returns a 32-char uppercase hex string', () => {
+test('generateRandomPixKey devolve um UUID v4, o formato real de uma chave aleatória', () => {
   const key = generateRandomPixKey();
-  assert.equal(key.length, 32);
-  assert.match(key, /^[0-9A-F]{32}$/);
+  assert.match(key, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(validatePixKey(key), null);
+  assert.equal(normalizePixKey(key), key);
+});
+
+test('normalizePixProvider só aceita "local"; o resto volta para o Mercado Pago', () => {
+  assert.equal(normalizePixProvider('local'), 'local');
+  assert.equal(normalizePixProvider('mercadopago'), 'mercadopago');
+  // Config antiga (campo inexistente) e lixo digitado não podem desligar o
+  // Mercado Pago sem a loja pedir.
+  assert.equal(normalizePixProvider(undefined), 'mercadopago');
+  assert.equal(normalizePixProvider(''), 'mercadopago');
+  assert.equal(normalizePixProvider('LOCAL'), 'mercadopago');
+  assert.equal(usesLocalPix('local'), true);
+  assert.equal(usesLocalPix(undefined), false);
 });

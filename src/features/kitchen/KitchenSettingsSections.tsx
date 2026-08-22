@@ -8,11 +8,11 @@ import {
   Search,
   Upload,
 } from 'lucide-react';
-import type { OpeningHour, PublicStoreSettings } from '../../types';
+import type { OpeningHour, PixProvider, PublicStoreSettings } from '../../types';
 import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 import { useImageFramer } from '../../components/common/ImageFramer';
 import { useKitchenSoundAlert } from './KitchenSoundStore';
-import { generateRandomPixKey } from '../../shared/pix';
+import { generateRandomPixKey, normalizePixKey, pixKeyKind } from '../../shared/pix';
 import type { SetSettingsField, SettingsDraft } from './kitchenSettingsDraft';
 import {
   Advanced,
@@ -252,6 +252,89 @@ export const DeliverySection: React.FC<BaseProps> = ({ draft, setField }) => (
 
 /* ---------------------------------------------------------- Pagamentos --- */
 
+/* ------------------------------------------------------------ Pagamentos -- */
+
+const PIX_KEY_KIND_LABEL: Record<string, string> = {
+  email: 'e-mail',
+  evp: 'chave aleatória',
+  cpf: 'CPF',
+  cnpj: 'CNPJ',
+  phone: 'celular',
+};
+
+/**
+ * Celular e CPF têm os mesmos 11 dígitos. O sistema decide pelo dígito
+ * verificador do CPF, mas quem sabe qual é a chave é o dono: esta linha mostra
+ * a leitura para ele conferir antes que um cliente receba o QR Code errado.
+ */
+const PixKeyReading: React.FC<{ value: string }> = ({ value }) => {
+  const raw = value.trim();
+  if (!raw) return null;
+  const kind = pixKeyKind(raw);
+  if (kind === 'desconhecido') return null;
+  return (
+    <FieldNote tone="ok">
+      Entendemos como <strong>{PIX_KEY_KIND_LABEL[kind]}</strong>: <code>{normalizePixKey(raw)}</code>. É essa
+      chave que vai dentro do QR Code — se estiver errada, o banco recusa o pagamento.
+    </FieldNote>
+  );
+};
+
+
+
+/**
+ * Quem cobra o PIX. Duas opções que se excluem, então é uma lista de rádio e
+ * não dois interruptores: com dois interruptores a loja consegue desligar os
+ * dois e ficar sem PIX nenhum sem perceber.
+ */
+const PIX_PROVIDER_OPTIONS: { value: PixProvider; label: string; description: string }[] = [
+  {
+    value: 'mercadopago',
+    label: 'Mercado Pago',
+    description: 'O dinheiro cai na conta do Mercado Pago e o sistema confirma o pagamento sozinho. Tem taxa por cobrança.',
+  },
+  {
+    value: 'local',
+    label: 'Minha chave PIX',
+    description: 'O QR Code sai da chave abaixo e o dinheiro cai direto no seu banco, sem taxa. Você confere o comprovante e confirma o pagamento na mão.',
+  },
+];
+
+const PixProviderChoice: React.FC<{ value: PixProvider; onChange: (next: PixProvider) => void }> = ({
+  value,
+  onChange,
+}) => (
+  <div role="radiogroup" aria-label="Quem gera a cobrança PIX" className="grid gap-2.5">
+    {PIX_PROVIDER_OPTIONS.map((option) => {
+      const active = value === option.value;
+      return (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onClick={() => onChange(option.value)}
+          className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 ${
+            active ? 'border-[#B91C1C] bg-[#FEF2F2]' : 'border-[#E7E5E4] bg-white hover:bg-[#FAFAF9]'
+          }`}
+        >
+          <span
+            className={`mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full border-2 ${
+              active ? 'border-[#B91C1C]' : 'border-[#D6D3D1]'
+            }`}
+          >
+            {active && <span className="h-2 w-2 rounded-full bg-[#B91C1C]" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-[#1C1917]">{option.label}</span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-[#78716C]">{option.description}</span>
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
 export const PaymentsSection: React.FC<
   BaseProps & {
     settings: PublicStoreSettings;
@@ -267,6 +350,33 @@ export const PaymentsSection: React.FC<
   }
 > = ({ draft, setField, settings, pixError, mpBusy, mpToken, setMpToken, mpPublicKey, setMpPublicKey, connectMp, saveMp, disconnectMp }) => (
   <>
+    <SettingsCard
+      title="Como cobrar o PIX"
+      description="Escolha quem gera o QR Code que o cliente paga."
+      aside={
+        <StatusPill tone={draft.pixProvider === 'local' ? 'ok' : 'muted'}>
+          {draft.pixProvider === 'local' ? 'Chave da loja' : 'Mercado Pago'}
+        </StatusPill>
+      }
+    >
+      <PixProviderChoice value={draft.pixProvider} onChange={(next) => setField('pixProvider', next)} />
+      {draft.pixProvider === 'local' && !draft.pixKey.trim() && (
+        <FieldNote tone="danger">
+          Cadastre a chave PIX abaixo. Sem ela o cliente não consegue escolher PIX.
+        </FieldNote>
+      )}
+      {draft.pixProvider === 'local' && (
+        <FieldNote>
+          Ninguém avisa o sistema quando o PIX cai nesta modalidade: confirme cada pagamento no pedido, na tela da cozinha.
+        </FieldNote>
+      )}
+      {draft.pixProvider === 'mercadopago' && !settings.mercadoPagoConnected && draft.pixKey.trim() && (
+        <FieldNote tone="danger">
+          O Mercado Pago está desconectado. Enquanto isso, o PIX sai da sua chave abaixo.
+        </FieldNote>
+      )}
+    </SettingsCard>
+
     <SettingsCard
       title="Mercado Pago"
       description={
@@ -302,8 +412,8 @@ export const PaymentsSection: React.FC<
     </SettingsCard>
 
     <SettingsCard
-      title="PIX manual"
-      description="Sem o Mercado Pago, o cliente paga na sua chave e envia o comprovante."
+      title="Chave PIX da loja"
+      description="Usada quando a cobrança sai da sua chave, e como reserva se o Mercado Pago falhar."
       aside={<StatusPill tone={draft.pixKey.trim() ? 'ok' : 'muted'}>{draft.pixKey.trim() ? 'Chave cadastrada' : 'Sem chave'}</StatusPill>}
     >
       <Field
@@ -311,8 +421,9 @@ export const PaymentsSection: React.FC<
         value={draft.pixKey}
         onChange={(value) => setField('pixKey', value)}
         error={pixError}
-        placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+        placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
       />
+      <PixKeyReading value={draft.pixKey} />
       <FieldGrid>
         <Field label="Nome do recebedor" value={draft.pixMerchantName} onChange={(value) => setField('pixMerchantName', value)} />
         <Field label="Cidade do recebedor" value={draft.pixMerchantCity} onChange={(value) => setField('pixMerchantCity', value)} />
@@ -321,6 +432,10 @@ export const PaymentsSection: React.FC<
         <KeyRound className="h-3.5 w-3.5" />
         Gerar chave de teste
       </button>
+      <FieldNote>
+        A chave de teste só tem o formato certo: ela não existe em banco nenhum e não recebe dinheiro. Para receber de
+        verdade, use a chave que aparece no app do seu banco.
+      </FieldNote>
     </SettingsCard>
 
     <SettingsCard title="Pagamento na entrega" description="Formas que o cliente escolhe para pagar quando o pedido chega.">

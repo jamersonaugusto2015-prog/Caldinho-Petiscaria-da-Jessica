@@ -33,6 +33,7 @@ test('generatePixCopyPaste produces well-formed, ordered EMV fields', () => {
   const byId = Object.fromEntries(fields.map((f) => [f.id, f.value]));
 
   assert.equal(byId['00'], '01', 'payload format indicator');
+  assert.equal(byId['01'], '11', 'método de iniciação: QR estático');
   assert.match(byId['26'], /^0014br\.gov\.bcb\.pix0119lojista@example\.com$/);
   assert.equal(byId['52'], '0000', 'merchant category code');
   assert.equal(byId['53'], '986', 'BRL currency code');
@@ -40,12 +41,12 @@ test('generatePixCopyPaste produces well-formed, ordered EMV fields', () => {
   assert.equal(byId['58'], 'BR');
   assert.equal(byId['59'], 'CALDINHO DA JESSICA');
   assert.equal(byId['60'], 'RECIFE');
-  assert.equal(byId['62'], '0507CX-1234', 'txid subfield 05');
+  assert.equal(byId['62'], '0506CX1234', 'txid subfield 05, sem o hífen que o Bacen recusa');
   assert.match(byId['63'], /^[0-9A-F]{4}$/, 'CRC is 4 uppercase hex digits');
 
   // Ascending tag order end-to-end, as EMV/Bacen readers expect.
   const ids = fields.map((f) => f.id);
-  assert.deepEqual(ids, ['00', '26', '52', '53', '54', '58', '59', '60', '62', '63']);
+  assert.deepEqual(ids, ['00', '01', '26', '52', '53', '54', '58', '59', '60', '62', '63']);
 
   // The whole string must fully decode with nothing left over.
   const consumed = fields.reduce((sum, f) => sum + 4 + f.value.length, 0);

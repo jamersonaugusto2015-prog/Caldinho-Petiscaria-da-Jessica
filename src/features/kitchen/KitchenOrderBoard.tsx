@@ -18,6 +18,7 @@ import { useKitchenDrivers } from './KitchenDriversStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
 import { useKitchenReports } from './KitchenReportsStore';
 import { RevenueChart } from './RevenueChart';
+import { KitchenDeliveriesMap } from './KitchenDeliveriesMap';
 import { KitchenDriverPanel } from './KitchenDriverPanel';
 import { KitchenOrdersBoard } from './KitchenOrdersBoard';
 import { Heading, Panel, Empty, SwitchToggle } from './KitchenPanels';
@@ -159,6 +160,10 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
 
   if (activeTab === 'orders') {
     return <KitchenOrdersBoard />;
+  }
+
+  if (activeTab === 'mapa') {
+    return <KitchenDeliveriesMap />;
   }
 
   if (activeTab === 'clientes') {

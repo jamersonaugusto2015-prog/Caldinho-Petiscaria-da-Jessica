@@ -5,7 +5,9 @@ import {
   chatAlertFor,
   expandVibratePattern,
   isRideOffered,
+  newOrderSpeech,
   orderAlertFor,
+  SAMPLE_NEW_ORDER_SPEECH,
   URGENCY_CHANNELS,
 } from './orderAlerts';
 
@@ -43,6 +45,39 @@ test('pedido novo é a única coisa que grita na cozinha, e fala', () => {
   assert.ok(alert.channels.vibrate);
   assert.match(alert.title, /CX-1234/);
   assert.match(alert.body, /Jessica/);
+});
+
+test('a voz fala valor e destino, e nunca o código do pedido', () => {
+  const alert = orderAlertFor('kitchen', 'order:new', order({ total: 87.5 }));
+  assert.ok(alert);
+  assert.equal(alert.speech, 'Novo pedido. 87 reais e 50 centavos. Entrega.');
+  // O código serve para ler na tela; falado, vira ruído letra por letra.
+  assert.doesNotMatch(alert.speech!, /CX-/);
+});
+
+test('a retirada é dita, senão a cozinha embala para entrega o que ninguém vai buscar', () => {
+  const alert = orderAlertFor('kitchen', 'order:new', order({ fulfillment: 'pickup' }));
+  assert.match(alert!.speech!, /Retirada no balcão/);
+});
+
+test('valor redondo não fala centavo, e um real não vira "1 reais"', () => {
+  assert.equal(newOrderSpeech(40, false), 'Novo pedido. 40 reais. Entrega.');
+  assert.equal(newOrderSpeech(1, false), 'Novo pedido. 1 real. Entrega.');
+  assert.equal(newOrderSpeech(2.01, false), 'Novo pedido. 2 reais e 1 centavo. Entrega.');
+});
+
+test('o botão de testar som fala a mesma frase do alerta de verdade', () => {
+  assert.equal(SAMPLE_NEW_ORDER_SPEECH, newOrderSpeech(87.5, false));
+});
+
+test('só o pedido novo tem fala; o resto cai no título', () => {
+  const complaint = orderAlertFor(
+    'kitchen',
+    'order:updated',
+    order({ complaint: { text: 'veio frio', status: 'aberta', openedAt: 'x' } } as never),
+    { hadOpenComplaint: false }
+  );
+  assert.equal(complaint?.speech, undefined);
 });
 
 test('o mesmo pedido atualizado não repete o alerta de pedido novo', () => {

@@ -37,6 +37,7 @@ const settings: StoreSettings = {
   minOrderValue: 0,
   routeFactor: 1.35,
   driverFeePerDelivery: 0,
+  pixProvider: 'mercadopago',
   pixKey: '',
   pixMerchantName: 'Teste',
   pixMerchantCity: 'Recife',
