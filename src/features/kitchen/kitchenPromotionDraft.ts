@@ -1,6 +1,5 @@
-import type { Category, Product, Promotion, PromotionKind } from '../../types';
-import { discountedUnitPrice, marginPercent } from '../../shared/promotions';
-
+import type { Category, Product, Promotion, PromotionKind } from '../../../contract/catalog/types';
+import { discountedUnitPrice, marginPercent } from '../../../contract/catalog/promotions';
 /**
  * Rascunho e contas da tela de Promoções.
  *
@@ -50,7 +49,7 @@ export const PROMOTION_PRESETS: PromotionPreset[] = [
   {
     id: 'happy-hour',
     title: 'Happy hour',
-    hint: '20% de desconto de segunda a quinta, das 17h às 20h — enche a casa na hora parada.',
+    hint: '20% de desconto de segunda a quinta, das 17h às 20h, nas categorias escolhidas.',
     emoji: '🍻',
     build: () => ({
       ...emptyPromotion('desconto'),
@@ -64,7 +63,7 @@ export const PROMOTION_PRESETS: PromotionPreset[] = [
   {
     id: 'leve-3-pague-2',
     title: 'Leve 3, pague 2',
-    hint: 'A terceira unidade sai de graça. Sobe o número de itens por pedido sem baixar o preço da tabela.',
+    hint: 'O cliente leva 3 unidades e paga 2: a terceira sai de graça, nas categorias escolhidas.',
     emoji: '🎁',
     build: () => ({
       ...emptyPromotion('leve_pague'),
@@ -78,7 +77,7 @@ export const PROMOTION_PRESETS: PromotionPreset[] = [
   {
     id: 'frete-gratis',
     title: 'Frete grátis acima de R$ 60',
-    hint: 'O cliente completa o carrinho para não pagar a entrega. Sobe o ticket médio.',
+    hint: 'Pedidos acima de R$ 60 não pagam a taxa de entrega.',
     emoji: '🛵',
     build: () => ({
       ...emptyPromotion('frete'),
@@ -106,7 +105,7 @@ export const PROMOTION_PRESETS: PromotionPreset[] = [
   {
     id: 'brinde',
     title: 'Compre e ganhe',
-    hint: 'Acima de R$ 80, um item vai de brinde. Funciona bem com bebida ou sobremesa.',
+    hint: 'Pedidos acima de R$ 80 levam um item de brinde. Você escolhe qual.',
     emoji: '🥤',
     build: () => ({
       ...emptyPromotion('brinde'),

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Product, CartItemExtra, ComboChoice, ComboSlot, ComboSlotOption } from '../../types';
+import type { ComboChoice, ComboSlot, ComboSlotOption, Product } from '../../../contract/catalog/types';
+import type { CartItemExtra } from '../../../contract/order/types';
 import { useCart } from './CartStore';
 import { useClientShell } from './ClientStore';
-import { computeCartItemTotal } from '../../shared/pricing';
-import { bestProductPromotion } from '../../shared/promotions';
+import { computeCartItemTotal } from '../../../contract/pricing/pricing';
+import { bestProductPromotion } from '../../../contract/catalog/promotions';
 import {
   ArrowDown,
   Check,
@@ -20,13 +21,13 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { formatMoney } from '../../../contract/pricing/money';
 
 interface ProductModalProps {
   product: Product;
   onClose: () => void;
 }
 
-const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
 /** Soma as unidades escolhidas num bloco (ex.: 2× Feijão + 1× Camarão = 3). */
 function countSlotChoices(slotCounts: Record<string, number> | undefined): number {
@@ -230,7 +231,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10 md:via-black/20" />
 
             <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-              {product.isCaldinhoDoDia && (
+              {product.isFeatured && (
                 <Badge className="bg-[#FEF3C7] text-[#92400E]">
                   <Flame className="w-3 h-3" /> Do dia
                 </Badge>
@@ -264,12 +265,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
               </p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5">
                 <span className="text-lg font-extrabold">
-                  {money(promotion ? promotion.price : product.basePrice)}
+                  {formatMoney(promotion ? promotion.price : product.basePrice)}
                 </span>
                 {promotion ? (
                   <>
                     <span className="text-xs text-white/60 line-through">
-                      {money(product.basePrice)}
+                      {formatMoney(product.basePrice)}
                     </span>
                     <span className="rounded-full bg-[#059669] px-2 py-0.5 text-[10px] font-black">
                       {promotion.promo.badge ||
@@ -280,7 +281,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                   discountPercent && (
                     <>
                       <span className="text-xs text-white/60 line-through">
-                        {money(product.originalPrice!)}
+                        {formatMoney(product.originalPrice!)}
                       </span>
                       <span className="rounded-full bg-[#059669] px-2 py-0.5 text-[10px] font-black">
                         -{discountPercent}%
@@ -293,7 +294,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                 <span className="flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />~{product.prepTimeMinutes} min
                 </span>
-                {product.rating > 0 && (
+                {product.rating > 0 && (product.reviewsCount ?? 0) > 0 && (
                   <span className="flex items-center gap-1">
                     <Star className="w-3.5 h-3.5 fill-[#FBBF24] text-[#FBBF24]" />
                     {product.rating.toFixed(1)}
@@ -416,7 +417,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                                   <span className="flex items-center gap-2 shrink-0">
                                     {option.priceDelta != null && option.priceDelta > 0 && (
                                       <span className="text-[10px] font-extrabold text-[#B91C1C]">
-                                        +{money(option.priceDelta)}
+                                        +{formatMoney(option.priceDelta)}
                                       </span>
                                     )}
                                     {isSelected ? (
@@ -479,7 +480,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                     trailing={
                       selectedExtras.length > 0 ? (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#B91C1C]">
-                          {selectedExtras.length} · +{money(
+                          {selectedExtras.length} · +{formatMoney(
                             selectedExtras.reduce((sum, extra) => sum + extra.price, 0)
                           )}
                         </span>
@@ -514,7 +515,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                             <span className="text-xs font-bold text-[#1C1917] truncate">{extra.name}</span>
                           </span>
                           <span className="text-xs font-extrabold text-[#B91C1C] shrink-0">
-                            +{money(extra.price)}
+                            +{formatMoney(extra.price)}
                           </span>
                         </button>
                       );
@@ -552,7 +553,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                   value={observation}
                   onChange={(event) => setObservation(event.target.value)}
                   maxLength={200}
-                  placeholder="Ex: capricha no cheiro verde, maionese separada..."
+                  placeholder="Ex.: capricha no cheiro verde, maionese à parte"
                   className="w-full bg-[#FAFAF9] border border-[#E7E5E4] rounded-2xl p-3 text-xs text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]/40 focus:border-[#B91C1C] resize-none h-20"
                 />
                 <p className="text-right text-[10px] text-[#A8A29E] mt-1 tabular-nums">
@@ -574,23 +575,23 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                     className="w-full flex items-center gap-2 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-3 py-2 text-[11px] font-bold text-[#92400E] text-left"
                   >
                     <ArrowDown className="w-3.5 h-3.5 shrink-0" />
-                    Falta escolher “{missingSlot?.label}” — toque para ir até lá.
+                    Falta escolher “{missingSlot?.label}”. Toque para ir até lá.
                   </motion.button>
                 )}
               </AnimatePresence>
 
               {promotion && promoSaving > 0 && (
                 <p className="rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-2 text-[11px] font-bold text-[#047857]">
-                  🎉 {promotion.promo.name}: −{money(promoSaving)} descontado no carrinho.
+                  {promotion.promo.name}: −{formatMoney(promoSaving)} descontado no carrinho.
                 </p>
               )}
 
               {addOnTotal > 0 && (
                 <div className="flex items-center justify-between text-[11px] text-[#57534E]">
                   <span>
-                    {money(product.basePrice)} + {money(addOnTotal)} em adicionais
+                    {formatMoney(product.basePrice)} + {formatMoney(addOnTotal)} em adicionais
                   </span>
-                  <span className="font-bold text-[#1C1917]">{money(unitPrice)} cada</span>
+                  <span className="font-bold text-[#1C1917]">{formatMoney(unitPrice)} cada</span>
                 </div>
               )}
 
@@ -635,7 +636,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) 
                       {canAdd ? 'Adicionar ao carrinho' : 'Escolha o que falta'}
                     </span>
                   </span>
-                  <span className="text-sm font-extrabold tabular-nums">{money(totalItemPrice)}</span>
+                  <span className="text-sm font-extrabold tabular-nums">{formatMoney(totalItemPrice)}</span>
                 </button>
               </div>
             </div>

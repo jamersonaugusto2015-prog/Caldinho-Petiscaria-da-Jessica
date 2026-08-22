@@ -1,14 +1,12 @@
-import { CANCEL_REQUEST_RESPONSE_MINUTES } from '../../types';
-import type { Order } from '../../types';
-
+import { CANCEL_REQUEST_RESPONSE_MINUTES } from '../../../contract/constants';
+import type { Order } from '../../../contract/order/types';
 /** Minutos sem pagamento a partir dos quais um PIX é tratado como abandonado. */
 export const ABANDONED_PIX_MINUTES = 30;
 
 const MINUTE_MS = 60000;
 
-export const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
-export { PAYMENT_METHOD_LABEL } from '../../shared/payment';
+export { PAYMENT_METHOD_LABEL } from '../../../contract/payment/payment';
 
 export const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });

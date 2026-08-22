@@ -2,9 +2,8 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { RECIFE_CENTER } from '../../shared/defaults';
-import type { LocationFreshness } from '../../shared/driverFreshness';
-
+import { RECIFE_CENTER } from '../../../contract/shop/defaults';
+import type { LocationFreshness } from '../../../contract/driver/freshness';
 export interface GeoPoint {
   lat: number;
   lng: number;
@@ -75,14 +74,45 @@ interface PinLook {
   title?: string;
 }
 
-function pinIcon(emoji: string, bg: string, look: PinLook = {}): L.DivIcon {
+type PinGlyph = 'store' | 'home' | 'bike' | 'pin';
+
+/**
+ * Paths dos ícones lucide (Store, Home, Bike, MapPin) desenhados inline.
+ * Emoji renderizava diferente em cada sistema; o SVG é igual em todos.
+ */
+const PIN_GLYPH_PATHS: Record<PinGlyph, string> = {
+  store:
+    '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/>' +
+    '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>' +
+    '<path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/>' +
+    '<path d="M2 7h20"/>' +
+    '<path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>',
+  home:
+    '<path d="M3 9.5 12 2l9 7.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' +
+    '<polyline points="9 22 9 12 15 12 15 22"/>',
+  bike:
+    '<circle cx="18.5" cy="17.5" r="3.5"/>' +
+    '<circle cx="5.5" cy="17.5" r="3.5"/>' +
+    '<circle cx="15" cy="5" r="1"/>' +
+    '<path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+  pin:
+    '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>' +
+    '<circle cx="12" cy="10" r="3"/>',
+};
+
+function pinIcon(glyph: PinGlyph, bg: string, look: PinLook = {}): L.DivIcon {
   const style = look.faded
     ? `background:${bg};opacity:0.5;filter:grayscale(0.75);box-shadow:0 2px 6px rgba(0,0,0,0.2)`
     : `background:${bg}`;
   const title = look.title ? ` title="${look.title}"` : '';
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="17" height="17" fill="none" ' +
+    'stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    PIN_GLYPH_PATHS[glyph] +
+    '</svg>';
   return L.divIcon({
     className: 'live-map-pin',
-    html: `<div class="live-map-pin-dot${look.pulse ? ' live-map-pin-pulse' : ''}" style="${style}"${title}>${emoji}</div>`,
+    html: `<div class="live-map-pin-dot${look.pulse ? ' live-map-pin-pulse' : ''}" style="${style}"${title}>${svg}</div>`,
     iconSize: [34, 34],
     iconAnchor: [17, 34],
     popupAnchor: [0, -34],
@@ -186,13 +216,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         {onPick && <ClickHandler onPick={onPick} />}
         <FitBounds points={fitPoints} fitKey={fitKey} />
 
-        {store && <Marker position={[store.lat, store.lng]} icon={pinIcon('🏪', '#B91C1C')} />}
-        {customer && <Marker position={[customer.lat, customer.lng]} icon={pinIcon('🏠', '#059669')} />}
+        {store && <Marker position={[store.lat, store.lng]} icon={pinIcon('store', '#B91C1C')} />}
+        {customer && <Marker position={[customer.lat, customer.lng]} icon={pinIcon('home', '#059669')} />}
         {destinations.map((point, index) => (
           <Marker
             key={`dest-${index}-${point.lat},${point.lng}`}
             position={[point.lat, point.lng]}
-            icon={pinIcon('🏠', '#059669', { title: point.label })}
+            icon={pinIcon('home', '#059669', { title: point.label })}
           />
         ))}
         {driverPins.map((pin, index) => {
@@ -201,10 +231,10 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             <Marker
               key={pin.id ?? `moto-${index}`}
               position={[pin.lat, pin.lng]}
-              icon={pinIcon('🛵', '#7C3AED', {
+              icon={pinIcon('bike', '#7C3AED', {
                 pulse: live,
                 faded: !live,
-                title: `${pin.name || 'Motoboy'}${live ? '' : ' — última posição conhecida'}`,
+                title: `${pin.name || 'Motoboy'}${live ? '' : ' (última posição conhecida)'}`,
               })}
             />
           );
@@ -212,7 +242,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         {driver && (
           <Marker
             position={[driver.lat, driver.lng]}
-            icon={pinIcon('🛵', '#7C3AED', {
+            icon={pinIcon('bike', '#7C3AED', {
               pulse: driverIsLive,
               faded: !driverIsLive,
               title: driverIsLive ? 'Motoboy ao vivo' : 'Última posição conhecida',
@@ -223,7 +253,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <Marker
             draggable
             position={[pickPosition.lat, pickPosition.lng]}
-            icon={pinIcon('📍', '#D97706')}
+            icon={pinIcon('pin', '#D97706')}
             eventHandlers={{
               dragend: (e) => {
                 const { lat, lng } = (e.target as L.Marker).getLatLng();

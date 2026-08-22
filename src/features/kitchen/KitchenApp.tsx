@@ -28,7 +28,7 @@ const KitchenShell: React.FC = () => {
     const result = searchParams.get('mp');
     if (!result) return;
     setActiveTab('config');
-    triggerToast(result === 'ok' ? 'Mercado Pago conectado!' : searchParams.get('reason') || 'Falha ao conectar o Mercado Pago.');
+    triggerToast(result === 'ok' ? 'Mercado Pago conectado.' : searchParams.get('reason') || 'Falha ao conectar o Mercado Pago.');
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams, triggerToast]);
 
@@ -61,11 +61,11 @@ export const KitchenApp: React.FC = () => {
     return (
       <LoginGate
         role="kitchen"
-        title="Painel do Restaurante"
+        title="Painel da cozinha"
         icon={<Store className="w-8 h-8" />}
         accentClass="bg-[#B91C1C]"
         onLogin={refresh}
-        hint={expired ? 'Sua sessão expirou, entre novamente.' : undefined}
+        hint={expired ? 'Sua sessão expirou. Entre com o PIN de novo.' : undefined}
       />
     );
   }

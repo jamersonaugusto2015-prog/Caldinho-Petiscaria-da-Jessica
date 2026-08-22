@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useCart } from './CartStore';
 import { useClientShell, useCartTotals } from './ClientStore';
-import { formatKm, effectiveDistanceKm } from '../../shared/geo';
-import { formatAddressLine, isUsableAddress } from '../../shared/address';
-import { storeAddressLine } from '../../shared/fulfillment';
+import { formatKm, effectiveDistanceKm } from '../../../contract/pricing/geo';
+import { formatAddressLine, isUsableAddress } from '../../../contract/order/address';
+import { storeAddressLine } from '../../../contract/order/fulfillment';
 import { FulfillmentPicker } from './FulfillmentPicker';
-import { computeCartItemTotal } from '../../shared/pricing';
-import { formatComboChoices } from '../../shared/comboChoices';
+import { computeCartItemTotal } from '../../../contract/pricing/pricing';
+import { formatComboChoices } from '../../../contract/catalog/comboChoices';
 import { X, Trash2, Plus, Minus, Ticket, ArrowRight, ShoppingBag, MapPin } from 'lucide-react';
+import { formatMoney } from '../../../contract/pricing/money';
 
 interface CartDrawerProps {
   onOpenCheckout: () => void;
@@ -95,12 +96,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[#F5F5F4]/40 p-4">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#57534E]">
-              <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] flex items-center justify-center text-3xl mb-3 text-[#B91C1C]">
-                🍲
+              <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] flex items-center justify-center mb-3 text-[#B91C1C]">
+                <ShoppingBag className="w-7 h-7" />
               </div>
               <p className="text-base font-bold text-[#1C1917] mb-1">Seu carrinho está vazio</p>
               <p className="text-xs max-w-xs text-[#57534E]">
-                Que tal escolher um caldinho bem quente ou um petisco crocante no nosso cardápio?
+                Escolha um item no cardápio para começar.
               </p>
             </div>
           ) : (
@@ -152,13 +153,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
                   {item.observation && (
                     <div className="text-[10px] text-[#A8A29E] italic mt-0.5 line-clamp-1">
-                      Obs: "{item.observation}"
+                      Obs: “{item.observation}”
                     </div>
                   )}
 
                   <div className="flex items-center justify-between mt-2 pt-1 border-t border-[#F5F5F4]">
                     <span className="font-extrabold text-xs text-[#B91C1C]">
-                      R$ {computeCartItemTotal(item, settings.sizeOptions).toFixed(2)}
+                      {formatMoney(computeCartItemTotal(item, settings.sizeOptions))}
                     </span>
 
                     {/* A pílula de quantidade tem 20 px por botão: no dedo, tirar
@@ -236,7 +237,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                 </form>
               ) : (
                 <div className="bg-[#ECFDF5] border border-[#A7F3D0] p-2 rounded-2xl flex items-center justify-between text-xs text-[#059669]">
-                  <span className="font-bold">Cupom {appliedCoupon.code} aplicado!</span>
+                  <span className="font-bold">Cupom {appliedCoupon.code} aplicado</span>
                   <button onClick={removeCoupon} className="text-[#B91C1C] hover:underline font-bold text-[11px]">
                     Remover
                   </button>
@@ -247,7 +248,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
             {isPickupMode && (
               <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-3 text-[11px] text-[#065F46]">
-                <strong className="block text-xs font-extrabold">Retirada na loja — sem taxa</strong>
+                <strong className="block text-xs font-extrabold">Retirada na loja: sem taxa</strong>
                 <span className="block mt-0.5">{storeAddressLine(settings)}</span>
               </div>
             )}
@@ -255,13 +256,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
             <div className="space-y-1.5 text-xs text-[#57534E]">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span className="text-[#1C1917] font-semibold">R$ {subtotal.toFixed(2)}</span>
+                <span className="text-[#1C1917] font-semibold tabular-nums">{formatMoney(subtotal)}</span>
               </div>
 
               {discount > 0 && (
                 <div className="flex justify-between text-[#059669] font-bold">
                   <span>Desconto cupom</span>
-                  <span>- R$ {discount.toFixed(2)}</span>
+                  <span className="tabular-nums">- {formatMoney(discount)}</span>
                 </div>
               )}
 
@@ -269,9 +270,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                   de onde veio o desconto sem precisar perguntar. */}
               {appliedPromotions.map((promo) => (
                 <div key={promo.id} className="flex justify-between text-[#059669] font-bold">
-                  <span className="truncate pr-2">🎉 {promo.name}</span>
-                  <span className="shrink-0">
-                    {promo.kind === 'frete' ? 'Frete abatido' : `- R$ ${promo.discount.toFixed(2)}`}
+                  <span className="truncate pr-2">{promo.name}</span>
+                  <span className="shrink-0 tabular-nums">
+                    {promo.kind === 'frete' ? 'Frete abatido' : `- ${formatMoney(promo.discount)}`}
                   </span>
                 </div>
               ))}
@@ -289,8 +290,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                     ? 'Retirada na loja'
                     : `Taxa de entrega (${liveKm > 0 ? formatKm(liveKm) : '—'})`}
                 </span>
-                <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
-                  {isPickupMode ? 'Grátis' : outOfRange ? 'Fora da área' : `R$ ${deliveryFee.toFixed(2)}`}
+                <span className={`font-semibold tabular-nums ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                  {isPickupMode ? 'Grátis' : outOfRange ? 'Fora da área' : formatMoney(deliveryFee)}
                 </span>
               </div>
 
@@ -302,7 +303,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
 
               <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">
                 <span>Total do Pedido</span>
-                <span className="text-[#B91C1C]">{outOfRange ? '—' : `R$ ${total.toFixed(2)}`}</span>
+                <span className="text-[#B91C1C] tabular-nums">{outOfRange ? '—' : formatMoney(total)}</span>
               </div>
             </div>
 

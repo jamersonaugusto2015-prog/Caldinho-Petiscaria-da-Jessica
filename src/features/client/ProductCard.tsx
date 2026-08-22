@@ -1,17 +1,20 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Product } from '../../types';
+import type { Product } from '../../../contract/catalog/types';
 import { Star, Flame, Plus, Clock, Tag } from 'lucide-react';
-import { bestProductPromotion, productPromotionBadges } from '../../shared/promotions';
+import { bestProductPromotion, productPromotionBadges } from '../../../contract/catalog/promotions';
 import { useClientShell } from './ClientStore';
+import { formatMoney } from '../../../contract/pricing/money';
 
 interface ProductCardProps {
   product: Product;
   onSelect: (product: Product) => void;
   index?: number;
+  /** Primeiros cards da grade: carregam a imagem sem lazy e com prioridade alta (LCP). */
+  priority?: boolean;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, index = 0 }) => {
+export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, index = 0, priority = false }) => {
   const reduceMotion = useReducedMotion();
   const { promotions } = useClientShell();
   const promotion = bestProductPromotion(product, promotions);
@@ -19,7 +22,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
   const price = promotion ? promotion.price : product.basePrice;
   const strikePrice = promotion ? product.basePrice : product.originalPrice;
 
-  const primaryBadge = product.isCaldinhoDoDia
+  const primaryBadge = product.isFeatured
     ? { tone: 'hoje' as const, label: 'Hoje' }
     : product.isFlashPromo
       ? {
@@ -63,7 +66,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
           src={product.image}
           alt={product.name}
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.06]"
-          loading="lazy"
+          loading={priority ? undefined : 'lazy'}
+          fetchPriority={priority ? 'high' : undefined}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-black/10" />
 
@@ -93,7 +97,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
         </div>
 
         <div className="absolute right-2 top-2 flex items-center gap-0.5 rounded-full border border-white/70 bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-[#1C1917] shadow-xs backdrop-blur-sm">
-          {product.rating > 0 ? (
+          {product.reviewsCount > 0 && product.rating > 0 ? (
             <>
               <Star className="h-2.5 w-2.5 fill-[#D97706] text-[#D97706]" />
               <span>{product.rating.toFixed(1)}</span>
@@ -148,11 +152,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect, ind
 
         <div className="mt-auto flex items-baseline gap-1.5 pt-1">
           <span className={`text-[15px] font-black tabular-nums ${promotion ? 'text-[#059669]' : 'text-[#1C1917]'}`}>
-            R$ {price.toFixed(2)}
+            {formatMoney(price)}
           </span>
           {strikePrice && strikePrice > price && (
             <span className="text-[10px] font-semibold tabular-nums text-[#A8A29E] line-through">
-              R$ {strikePrice.toFixed(2)}
+              {formatMoney(strikePrice)}
             </span>
           )}
         </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertBanner } from '../../lib/alertBanner';
+import { AlertBanner } from '../../ui/alertBanner';
 import { KitchenOrderBoard } from './KitchenOrderBoard';
 import { KitchenCatalogEditor } from './KitchenCatalogEditor';
 import { KitchenStoreSettings } from './KitchenStoreSettings';
@@ -8,6 +8,7 @@ import { KitchenRequestsPanel } from './KitchenRequestsPanel';
 import { KitchenRatingsPanel } from './KitchenRatingsPanel';
 import { KitchenRefundsPanel } from './KitchenRefundsPanel';
 import { KitchenChatModal } from './KitchenChatModal';
+import { KitchenLoadError } from './KitchenLoadError';
 import type { KitchenTab } from './kitchenTabs';
 
 export type { KitchenTab } from './kitchenTabs';
@@ -21,6 +22,7 @@ export const KitchenView: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }) 
       {/* Fora do `space-y`: a região viva fica na página mesmo sem aviso, e
           dentro do espaçamento ela empurraria o quadro 24px para baixo o tempo todo. */}
       <AlertBanner variant="kitchen" />
+      <KitchenLoadError />
       <div className="space-y-6">
         {ORDER_TABS.includes(activeTab) && <KitchenOrderBoard activeTab={activeTab} />}
         {CATALOG_TABS.includes(activeTab) && <KitchenCatalogEditor activeTab={activeTab} />}

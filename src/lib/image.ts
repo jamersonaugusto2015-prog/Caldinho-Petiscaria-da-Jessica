@@ -1,13 +1,4 @@
-import {
-  IMAGE_MAX_DIMENSION,
-  IMAGE_TARGET_BYTES,
-  dataUrlBytes,
-  isDataUrlOf,
-  pickBestAttempt,
-  qualityLadder,
-  scaledSize,
-} from '../shared/imageEncoding';
-
+import { IMAGE_MAX_DIMENSION, IMAGE_TARGET_BYTES, dataUrlBytes, isDataUrlOf, pickBestAttempt, qualityLadder, scaledSize } from './imageEncoding';
 /** Carrega o arquivo como <img> já decodificado, com timeout e mensagens de erro amigáveis. */
 export function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import type { Server } from 'socket.io';
-import { Order } from '../src/types';
-
+import type { Order } from '../contract/order/types';
+import { customerRoom, driverRoom, driversRoom, kitchenRoom } from '../contract/shop/rooms';
 // Quem decide a audiência é `orderAudience.ts` e ele é testado sozinho, sem
 // `io` nenhum. O que sobra aqui é o adaptador: a mesma audiência, expressa em
 // salas do socket.io — inclusive o `.except()` do dono da corrida.
@@ -18,6 +18,9 @@ const DATA_DIR = mkdtempSync(path.join(os.tmpdir(), 'caldinho-order-events-test-
 process.env.DATA_DIR = DATA_DIR;
 
 const { emitOrder, stripCustomerContact, stripPaymentSecrets } = await import('./orderEvents');
+
+// Única loja usada neste arquivo: a migração 005_shops garante o id 1 em todo banco novo.
+const LOJA = 1;
 
 after(() => {
   rmSync(DATA_DIR, { recursive: true, force: true });
@@ -81,9 +84,9 @@ const forRoom = (sent: Emission[], room: string) => sent.filter((e) => e.rooms.i
 
 test('an assigned order reaches only its own driver with the customer contact', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ driverId: 'drv-1' }));
+  emitOrder(io, LOJA, 'order:updated', order({ driverId: 'drv-1' }));
 
-  const mine = forRoom(sent, 'driver:drv-1');
+  const mine = forRoom(sent, driverRoom(LOJA, 'drv-1'));
   assert.equal(mine.length, 1);
   assert.equal(mine[0].order.customerName, 'Ana Maria');
   assert.equal(mine[0].order.customerPhone, '81999998888');
@@ -92,11 +95,11 @@ test('an assigned order reaches only its own driver with the customer contact', 
 
 test('the other drivers get the same order without the customer contact', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ driverId: 'drv-1', driverPhone: '81988887777' }));
+  emitOrder(io, LOJA, 'order:updated', order({ driverId: 'drv-1', driverPhone: '81988887777' }));
 
-  const pool = forRoom(sent, 'drivers');
+  const pool = forRoom(sent, driversRoom(LOJA));
   assert.equal(pool.length, 1);
-  assert.deepEqual(pool[0].except, ['driver:drv-1']);
+  assert.deepEqual(pool[0].except, [driverRoom(LOJA, 'drv-1')]);
   assert.equal(pool[0].order.id, 'CX-TEST');
   assert.equal(pool[0].order.customerId, '');
   assert.equal(pool[0].order.driverPhone, undefined);
@@ -112,9 +115,9 @@ test('the other drivers get the same order without the customer contact', () => 
 
 test('an open ride reaches the whole pool already redacted', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:new', order({ status: 'pronto', driverId: undefined }));
+  emitOrder(io, LOJA, 'order:new', order({ status: 'pronto', driverId: undefined }));
 
-  const pool = forRoom(sent, 'drivers');
+  const pool = forRoom(sent, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   assert.deepEqual(pool[0].except, []);
   // O motoboy decide pelo bairro, pela distância e pela taxa; o nome, o telefone
@@ -129,19 +132,19 @@ test('an open ride reaches the whole pool already redacted', () => {
 
 test('customerId does not survive the redaction', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:new', order({ status: 'pronto', driverId: undefined }));
+  emitOrder(io, LOJA, 'order:new', order({ status: 'pronto', driverId: undefined }));
 
   // Com o id do cliente na mão, a rota do cliente devolvia o resto do pedido.
-  assert.equal(forRoom(sent, 'drivers')[0].order.customerId, '');
+  assert.equal(forRoom(sent, driversRoom(LOJA))[0].order.customerId, '');
 });
 
 test('an order the kitchen sent out with no driver still reaches the pool', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ status: 'saiu_entrega', driverId: undefined }));
+  emitOrder(io, LOJA, 'order:updated', order({ status: 'saiu_entrega', driverId: undefined }));
 
   // Sem este evento a corrida some da cozinha e continua listada como disponível
   // na tela de todos os motoboys até um refetch.
-  const pool = forRoom(sent, 'drivers');
+  const pool = forRoom(sent, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   assert.equal(pool[0].order.status, 'saiu_entrega');
   assert.equal(pool[0].order.customerName, '');
@@ -149,26 +152,26 @@ test('an order the kitchen sent out with no driver still reaches the pool', () =
 
 test('a delivered order reaches the pool so the card leaves the list', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ status: 'entregue', driverId: 'drv-1' }));
+  emitOrder(io, LOJA, 'order:updated', order({ status: 'entregue', driverId: 'drv-1' }));
 
-  const pool = forRoom(sent, 'drivers');
+  const pool = forRoom(sent, driversRoom(LOJA));
   assert.equal(pool.length, 1);
-  assert.deepEqual(pool[0].except, ['driver:drv-1']);
+  assert.deepEqual(pool[0].except, [driverRoom(LOJA, 'drv-1')]);
   assert.equal(pool[0].order.customerName, '');
 });
 
 test('a pickup order never reaches the drivers', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ status: 'pronto', driverId: undefined, fulfillment: 'pickup' }));
+  emitOrder(io, LOJA, 'order:updated', order({ status: 'pronto', driverId: undefined, fulfillment: 'pickup' }));
 
-  assert.equal(forRoom(sent, 'drivers').length, 0);
+  assert.equal(forRoom(sent, driversRoom(LOJA)).length, 0);
 });
 
 test('a cancelled unassigned order reaches the pool stripped of the customer contact', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ status: 'cancelado', driverId: undefined }));
+  emitOrder(io, LOJA, 'order:updated', order({ status: 'cancelado', driverId: undefined }));
 
-  const pool = forRoom(sent, 'drivers');
+  const pool = forRoom(sent, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   // O card precisa sumir da lista, mas ninguém vai entregar este pedido: nome,
   // telefone e endereço não têm por que ir para a sala compartilhada.
@@ -186,16 +189,16 @@ test('a cancelled unassigned order reaches the pool stripped of the customer con
 
 test('orders drivers have no business seeing are not sent to them at all', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:new', order({ status: 'recebido', driverId: undefined }));
+  emitOrder(io, LOJA, 'order:new', order({ status: 'recebido', driverId: undefined }));
 
-  assert.equal(forRoom(sent, 'drivers').length, 0);
-  assert.equal(forRoom(sent, 'kitchen').length, 1);
-  assert.equal(forRoom(sent, 'customer:cust-1').length, 1);
+  assert.equal(forRoom(sent, driversRoom(LOJA)).length, 0);
+  assert.equal(forRoom(sent, kitchenRoom(LOJA)).length, 1);
+  assert.equal(forRoom(sent, customerRoom(LOJA, 'cust-1')).length, 1);
 });
 
 test('no driver room ever receives the PIX payment secrets', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ driverId: 'drv-1' }));
+  emitOrder(io, LOJA, 'order:updated', order({ driverId: 'drv-1' }));
 
   for (const emission of sent) {
     if (emission.rooms.some((room) => room.startsWith('driver'))) {
@@ -203,20 +206,20 @@ test('no driver room ever receives the PIX payment secrets', () => {
       assert.equal(emission.order.payment.pixQrCode, undefined);
     }
   }
-  assert.equal(forRoom(sent, 'kitchen')[0].order.payment.pixCopyPaste, 'segredo');
+  assert.equal(forRoom(sent, kitchenRoom(LOJA))[0].order.payment.pixCopyPaste, 'segredo');
 });
 
 test('the customer keeps receiving their own full order', () => {
   const { io, sent } = fakeIo();
-  emitOrder(io, 'order:updated', order({ driverId: 'drv-1' }));
+  emitOrder(io, LOJA, 'order:updated', order({ driverId: 'drv-1' }));
 
-  const mine = forRoom(sent, 'customer:cust-1');
+  const mine = forRoom(sent, customerRoom(LOJA, 'cust-1'));
   assert.equal(mine.length, 1);
   assert.equal(mine[0].order.customerName, 'Ana Maria');
 });
 
 test('the socket fan-out is exactly the audience, room for room', async () => {
-  const { orderAudience } = await import('./orderAudience');
+  const { orderAudience } = await import('../contract/order/audience');
   for (const sample of [
     order({ driverId: 'drv-1' }),
     order({ status: 'pronto', driverId: undefined }),
@@ -225,8 +228,8 @@ test('the socket fan-out is exactly the audience, room for room', async () => {
     order({ status: 'entregue', driverId: 'drv-1', customerId: 'anon' }),
   ]) {
     const { io, sent } = fakeIo();
-    emitOrder(io, 'order:updated', sample);
-    const audience = orderAudience(sample);
+    emitOrder(io, LOJA, 'order:updated', sample);
+    const audience = orderAudience(LOJA, sample);
     assert.equal(sent.length, audience.length);
     audience.forEach((recipient, index) => {
       assert.deepEqual(sent[index].rooms, [recipient.room]);

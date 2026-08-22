@@ -17,11 +17,11 @@ import {
   Store,
   X,
 } from 'lucide-react';
-import type { Order, OrderStatus } from '../../types';
-import { isPickup } from '../../shared/fulfillment';
-import { actionLabel, canTransition, isClosed, nextStatus } from '../../shared/orderFlow';
-import { needsCardMachine, paymentLabel } from '../../shared/payment';
-import { comboChoiceLines } from '../../shared/comboChoices';
+import type { Order, OrderStatus } from '../../../contract/order/types';
+import { isPickup } from '../../../contract/order/fulfillment';
+import { actionLabel, canTransition, isClosed, nextStatus } from '../../../contract/order/flow';
+import { needsCardMachine, paymentLabel } from '../../../contract/payment/payment';
+import { comboChoiceLines } from '../../../contract/catalog/comboChoices';
 import { whatsAppLink } from '../../lib/whatsapp';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
@@ -29,16 +29,8 @@ import { useKitchenChat } from './KitchenChatStore';
 import { KitchenCancelOrderModal } from './KitchenCancelOrderModal';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
 import { useNow } from './useNow';
-import {
-  ABANDONED_PIX_MINUTES,
-  hasPendingCancelRequest,
-  isAbandonedPix,
-  isOrderLate,
-  money,
-  owesRefund,
-  refundFailed,
-  shortDate,
-} from './kitchenOrderRules';
+import { ABANDONED_PIX_MINUTES, hasPendingCancelRequest, isAbandonedPix, isOrderLate, owesRefund, refundFailed, shortDate } from './kitchenOrderRules';
+import { formatMoney } from '../../../contract/pricing/money';
 
 interface ColumnMeta {
   id: OrderStatus;
@@ -452,7 +444,7 @@ const PaymentLine: React.FC<{ order: Order; onConfirmPayment: () => void }> = ({
     <span className="block text-[#57534E]">
       {paymentLabel(order.payment, order.fulfillment)}
       {needsCardMachine(order.payment) && <strong className="text-[#7C3AED]"> · levar maquininha</strong>}
-      {changeForAmount ? <strong className="text-[#B45309]"> · troco p/ {money(changeForAmount)}</strong> : null}
+      {changeForAmount ? <strong className="text-[#B45309]"> · troco p/ {formatMoney(changeForAmount)}</strong> : null}
     </span>
   );
   const wrap = (node: React.ReactNode) => (
@@ -465,7 +457,7 @@ const PaymentLine: React.FC<{ order: Order; onConfirmPayment: () => void }> = ({
     return wrap(
       <span className="block font-bold text-[#B91C1C]">
         <AlertTriangle className="mr-1 inline h-3 w-3" />
-        Devolução pendente de {money(order.total)}
+        Devolução pendente de {formatMoney(order.total)}
       </span>
     );
   if (refundStatus === 'falhou')
@@ -601,7 +593,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
                 `truncate` não corta nada — o código do pedido empurrava o valor
                 para fora do card em vez de virar reticências. */}
             <strong className="min-w-0 truncate text-[11px] font-black tracking-tight text-[#1C1917]">{order.id}</strong>
-            <span className="shrink-0 text-sm font-extrabold tabular-nums text-[#B91C1C]">{money(order.total)}</span>
+            <span className="shrink-0 text-sm font-extrabold tabular-nums text-[#B91C1C]">{formatMoney(order.total)}</span>
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#78716C]">
             <span className="min-w-0 flex-1 truncate font-bold text-[#57534E]">{order.customerName}</span>
@@ -629,7 +621,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
           {owed && (
             <Flag tone="alert">
               <AlertTriangle className="h-2.5 w-2.5" />
-              Devolver {money(order.total)}
+              Devolver {formatMoney(order.total)}
             </Flag>
           )}
           {late && (
@@ -714,7 +706,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
                         </span>
                       )}
                     </span>
-                    <strong className="shrink-0 tabular-nums">{money(item.itemTotalPrice)}</strong>
+                    <strong className="shrink-0 tabular-nums">{formatMoney(item.itemTotalPrice)}</strong>
                   </div>
                 ))}
               </div>
@@ -740,7 +732,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
             disabled={busy}
             className="w-full rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] py-1.5 text-[11px] font-bold text-[#B91C1C] transition-colors duration-200 hover:bg-[#FEE2E2] disabled:opacity-40"
           >
-            {busy ? 'Cancelando...' : 'Cancelar pedido abandonado'}
+            {busy ? 'Cancelando…' : 'Cancelar pedido abandonado'}
           </button>
         </div>
       )}

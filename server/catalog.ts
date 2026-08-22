@@ -1,23 +1,23 @@
 import { db } from './db';
 import { DomainError } from './errors';
-import { Category, ComboSlot, ComboSlotOption, Coupon, ExtraOption, Product } from '../src/types';
-
+import type { Category, ComboSlot, ComboSlotOption, Coupon, ExtraOption, Product } from '../contract/catalog/types';
+import type { ShopId } from '../contract/shop/types';
 // ---------- Categorias ----------
-export function listCategories(): Category[] {
-  const rows = db.prepare('SELECT data FROM categories').all() as { data: string }[];
+export function listCategories(shopId: ShopId): Category[] {
+  const rows = db.prepare('SELECT data FROM categories WHERE shop_id = ?').all(shopId) as { data: string }[];
   const cats = rows.map((r) => JSON.parse(r.data) as Category);
   cats.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
   return cats;
 }
 
-export function getCategory(id: string): Category | null {
-  const row = db.prepare('SELECT data FROM categories WHERE id = ?').get(id) as
+export function getCategory(shopId: ShopId, id: string): Category | null {
+  const row = db.prepare('SELECT data FROM categories WHERE shop_id = ? AND id = ?').get(shopId, id) as
     | { data: string }
     | undefined;
   return row ? (JSON.parse(row.data) as Category) : null;
 }
 
-export function normalizeCategory(b: Record<string, unknown>, existing?: Category): Category | null {
+export function normalizeCategory(shopId: ShopId, b: Record<string, unknown>, existing?: Category): Category | null {
   const label = typeof b.label === 'string' ? b.label.trim() : existing?.label;
   if (!label) return null;
   const emoji = typeof b.emoji === 'string' && b.emoji ? b.emoji.slice(0, 8) : existing?.emoji || '🍽️';
@@ -35,33 +35,38 @@ export function normalizeCategory(b: Record<string, unknown>, existing?: Categor
   };
 }
 
-function nextCategorySort(): number {
-  const all = db.prepare('SELECT data FROM categories').all() as { data: string }[];
+function nextCategorySort(shopId: ShopId): number {
+  const all = db.prepare('SELECT data FROM categories WHERE shop_id = ?').all(shopId) as { data: string }[];
   return all.reduce((m, r) => Math.max(m, (JSON.parse(r.data) as Category).sort ?? 0), -1) + 1;
 }
 
-export function createCategory(body: Record<string, unknown>): Category {
-  const cat = normalizeCategory(body);
+export function createCategory(shopId: ShopId, body: Record<string, unknown>): Category {
+  const cat = normalizeCategory(shopId, body);
   if (!cat) throw new DomainError(400, 'Informe o nome da categoria.');
-  cat.sort = nextCategorySort();
-  db.prepare('INSERT INTO categories (id, data) VALUES (?, ?)').run(cat.id, JSON.stringify(cat));
+  cat.sort = nextCategorySort(shopId);
+  db.prepare('INSERT INTO categories (shop_id, id, data) VALUES (?, ?, ?)').run(shopId, cat.id, JSON.stringify(cat));
   return cat;
 }
 
-export function updateCategory(id: string, body: Record<string, unknown>): Category {
-  const existing = getCategory(id);
+export function updateCategory(shopId: ShopId, id: string, body: Record<string, unknown>): Category {
+  const existing = getCategory(shopId, id);
   if (!existing) throw new DomainError(404, 'Categoria não encontrada.');
-  const cat = normalizeCategory(body, existing);
+  const cat = normalizeCategory(shopId, body, existing);
   if (!cat) throw new DomainError(400, 'Informe o nome da categoria.');
-  db.prepare('UPDATE categories SET data = ? WHERE id = ?').run(JSON.stringify(cat), cat.id);
+  db.prepare('UPDATE categories SET data = ? WHERE shop_id = ? AND id = ?').run(JSON.stringify(cat), shopId, cat.id);
   return cat;
 }
 
-export function deleteCategory(id: string): void {
-  const existing = getCategory(id);
+export function deleteCategory(shopId: ShopId, id: string): void {
+  const existing = getCategory(shopId, id);
   if (!existing) throw new DomainError(404, 'Categoria não encontrada.');
   const used = (
-    db.prepare('SELECT COUNT(*) AS c FROM products WHERE data LIKE ?').get(`%"category":"${id}"%`) as {
+    // Era `WHERE data LIKE '%"category":"..."%'` — varredura de TEXTO em cima do
+    // JSON, que casava também com uma observação do cliente que citasse a
+    // categoria. `json_extract` lê o campo de verdade e usa o índice da 014.
+    db.prepare(
+      "SELECT COUNT(*) AS c FROM products WHERE shop_id = ? AND json_extract(data, '$.category') = ?"
+    ).get(shopId, id) as {
       c: number;
     }
   ).c;
@@ -71,28 +76,33 @@ export function deleteCategory(id: string): void {
       `Não é possível excluir: ${used} produto(s) usam esta categoria. Mova-os ou remova-os primeiro.`
     );
   }
-  db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+  db.prepare('DELETE FROM categories WHERE shop_id = ? AND id = ?').run(shopId, id);
 }
 
 // ---------- Produtos ----------
-export function listProducts(): Product[] {
-  const rows = db.prepare('SELECT data FROM products ORDER BY rowid').all() as { data: string }[];
+export function listProducts(shopId: ShopId): Product[] {
+  const rows = db.prepare('SELECT data FROM products WHERE shop_id = ? ORDER BY rowid').all(shopId) as { data: string }[];
   return rows.map((r) => JSON.parse(r.data) as Product);
 }
 
-export function getProduct(id: string): Product | null {
-  const row = db.prepare('SELECT data FROM products WHERE id = ?').get(id) as
+export function getProduct(shopId: ShopId, id: string): Product | null {
+  const row = db.prepare('SELECT data FROM products WHERE shop_id = ? AND id = ?').get(shopId, id) as
     | { data: string }
     | undefined;
   return row ? (JSON.parse(row.data) as Product) : null;
 }
 
-export function createProduct(body: unknown): Product {
+export function createProduct(shopId: ShopId, body: unknown): Product {
   const p = body as Product;
   if (!p?.id || !p.name || typeof p.basePrice !== 'number') {
-    throw new DomainError(400, 'Dados do produto inválidos.');
+    throw new DomainError(400, 'Informe o nome e o preço do produto.');
   }
-  db.prepare('INSERT INTO products (id, data) VALUES (?, ?)').run(p.id, JSON.stringify(p));
+  // Id repetido dava um 500 cru de "UNIQUE constraint failed". Um 409 legível
+  // diz o que aconteceu — e o id do produto vem do editor, então colide de vez.
+  if (getProduct(shopId, p.id)) {
+    throw new DomainError(409, 'Já existe um produto com esse identificador.');
+  }
+  db.prepare('INSERT INTO products (shop_id, id, data) VALUES (?, ?, ?)').run(shopId, p.id, JSON.stringify(p));
   return p;
 }
 
@@ -137,8 +147,8 @@ export function normalizeComboSlots(raw: unknown): ComboSlot[] {
     });
 }
 
-export function updateProduct(id: string, body: Record<string, unknown>): Product {
-  const p = getProduct(id);
+export function updateProduct(shopId: ShopId, id: string, body: Record<string, unknown>): Product {
+  const p = getProduct(shopId, id);
   if (!p) throw new DomainError(404, 'Produto não encontrado.');
   const b = body;
   if (typeof b.basePrice === 'number') p.basePrice = b.basePrice;
@@ -157,52 +167,52 @@ export function updateProduct(id: string, body: Record<string, unknown>): Produc
   if (typeof b.hasSizeOption === 'boolean') p.hasSizeOption = b.hasSizeOption;
   if (typeof b.isPopular === 'boolean') p.isPopular = b.isPopular;
   if (typeof b.isFlashPromo === 'boolean') p.isFlashPromo = b.isFlashPromo;
-  if (typeof b.isCaldinhoDoDia === 'boolean') p.isCaldinhoDoDia = b.isCaldinhoDoDia;
+  if (typeof b.isFeatured === 'boolean') p.isFeatured = b.isFeatured;
   if (Array.isArray(b.allowedExtras)) p.allowedExtras = normalizeExtras(b.allowedExtras);
   if (Array.isArray(b.comboSlots)) p.comboSlots = normalizeComboSlots(b.comboSlots);
-  db.prepare('UPDATE products SET data = ? WHERE id = ?').run(JSON.stringify(p), p.id);
+  db.prepare('UPDATE products SET data = ? WHERE shop_id = ? AND id = ?').run(JSON.stringify(p), shopId, p.id);
   return p;
 }
 
-export function deleteProduct(id: string): void {
-  const p = getProduct(id);
+export function deleteProduct(shopId: ShopId, id: string): void {
+  const p = getProduct(shopId, id);
   if (!p) throw new DomainError(404, 'Produto não encontrado.');
-  db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  db.prepare('DELETE FROM products WHERE shop_id = ? AND id = ?').run(shopId, id);
 }
 
 /** Promoção do dia: qualquer produto pode ser o destaque. `null` desmarca todos. */
-export function setCaldinhoDoDia(id: string | null): void {
-  const rows = db.prepare('SELECT data FROM products').all() as { data: string }[];
+export function setFeaturedProduct(shopId: ShopId, id: string | null): void {
+  const rows = db.prepare('SELECT data FROM products WHERE shop_id = ?').all(shopId) as { data: string }[];
   const tx = db.transaction(() => {
     for (const r of rows) {
       const p: Product = JSON.parse(r.data);
-      p.isCaldinhoDoDia = id !== null && p.id === id;
-      db.prepare('UPDATE products SET data = ? WHERE id = ?').run(JSON.stringify(p), p.id);
+      p.isFeatured = id !== null && p.id === id;
+      db.prepare('UPDATE products SET data = ? WHERE shop_id = ? AND id = ?').run(JSON.stringify(p), shopId, p.id);
     }
   });
   tx();
 }
 
-export function clearCaldinhoDoDia(): void {
-  setCaldinhoDoDia(null);
+export function clearFeaturedProduct(shopId: ShopId): void {
+  setFeaturedProduct(shopId, null);
 }
 
 // ---------- Cupons ----------
 /** Ordem de inserção — usada pela intake para localizar um cupom pelo código, onde a ordem não importa. */
-export function listCoupons(): Coupon[] {
-  const rows = db.prepare('SELECT data FROM coupons').all() as { data: string }[];
+export function listCoupons(shopId: ShopId): Coupon[] {
+  const rows = db.prepare('SELECT data FROM coupons WHERE shop_id = ?').all(shopId) as { data: string }[];
   return rows.map((r) => JSON.parse(r.data) as Coupon);
 }
 
-export function listCouponsSorted(): Coupon[] {
-  const rows = db.prepare('SELECT data FROM coupons ORDER BY code').all() as { data: string }[];
+export function listCouponsSorted(shopId: ShopId): Coupon[] {
+  const rows = db.prepare('SELECT data FROM coupons WHERE shop_id = ? ORDER BY code').all(shopId) as { data: string }[];
   return rows.map((r) => JSON.parse(r.data) as Coupon);
 }
 
-export function saveCoupon(body: unknown): Coupon {
+export function saveCoupon(shopId: ShopId, body: unknown): Coupon {
   const c = body as Coupon;
   if (!c?.code || !(typeof c.discountPercent === 'number' || typeof c.discountFixed === 'number')) {
-    throw new DomainError(400, 'Dados do cupom inválidos.');
+    throw new DomainError(400, 'Informe o código do cupom e o desconto.');
   }
   const coupon: Coupon = {
     code: c.code.trim().toUpperCase(),
@@ -212,11 +222,12 @@ export function saveCoupon(body: unknown): Coupon {
     description: c.description?.trim() || 'Cupom de desconto',
   };
   db.prepare(
-    'INSERT INTO coupons (code, data) VALUES (?, ?) ON CONFLICT(code) DO UPDATE SET data = excluded.data'
-  ).run(coupon.code, JSON.stringify(coupon));
+    `INSERT INTO coupons (shop_id, code, data) VALUES (?, ?, ?)
+     ON CONFLICT(shop_id, code) DO UPDATE SET data = excluded.data`
+  ).run(shopId, coupon.code, JSON.stringify(coupon));
   return coupon;
 }
 
-export function deleteCoupon(code: string): void {
-  db.prepare('DELETE FROM coupons WHERE code = ?').run(code.toUpperCase());
+export function deleteCoupon(shopId: ShopId, code: string): void {
+  db.prepare('DELETE FROM coupons WHERE shop_id = ? AND code = ?').run(shopId, code.toUpperCase());
 }

@@ -60,7 +60,7 @@ export const KitchenChatModal: React.FC = () => {
         {/* `overscroll-contain`: chegar ao fim da conversa e continuar puxando
             arrastava a página atrás da folha (e disparava o recarregar do Safari). */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-2 bg-[#F5F5F4]">
-          {loadingThread && messages.length === 0 && <Empty text="Carregando a conversa..." />}
+          {loadingThread && messages.length === 0 && <Empty text="Carregando a conversa…" />}
           {!loadingThread && messages.length === 0 && <Empty text="Nenhuma mensagem ainda." />}
           {messages.map((message) => {
             const mine = message.sender === 'store';
@@ -94,7 +94,7 @@ export const KitchenChatModal: React.FC = () => {
             className="input min-w-0 flex-1"
           />
           <button className="btn-primary shrink-0" disabled={!draft.trim() || sending}>
-            {sending ? 'Enviando...' : 'Enviar'}
+            {sending ? 'Enviando…' : 'Enviar'}
           </button>
         </form>
       </div>

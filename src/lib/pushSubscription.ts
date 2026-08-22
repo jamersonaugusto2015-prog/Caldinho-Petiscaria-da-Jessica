@@ -1,4 +1,5 @@
-import { api, driverApi, kitchenApi, type ApiClient } from './api';
+import { api, driverApi, kitchenApi, readRoleTokens, type ApiClient } from './api';
+import { clearPushIdentity, savePushIdentity } from './pushIdentityStore';
 import { appRole, isIos, isStandalone, type AppRole } from './appShell';
 
 /**
@@ -242,6 +243,17 @@ async function subscribeNow(identity: PushIdentity): Promise<PushSubscribeResult
     customerId: customerId || undefined,
   });
 
+  // O crachá fica guardado DEPOIS do POST dar certo: só faz sentido guardar uma
+  // credencial que o servidor acabou de aceitar. É o que o service worker vai
+  // ler quando o navegador rotacionar a chave e disparar
+  // `pushsubscriptionchange` — sem isso ele reenvia sem identidade nenhuma,
+  // leva 401, e o aparelho some da lista de push sem ninguém perceber.
+  await savePushIdentity({
+    role: identity.role,
+    roleToken: identity.role === 'client' ? undefined : readRoleTokens()[identity.role],
+    customerId: identity.role === 'client' ? customerId : undefined,
+  });
+
   return { status: 'subscribed', endpoint: subscription.endpoint };
 }
 
@@ -285,6 +297,9 @@ export async function dropPushSubscription(): Promise<void> {
 
     await api.post<{ ok: boolean }>('/push/unsubscribe', { endpoint: subscription.endpoint }).catch(() => undefined);
     await subscription.unsubscribe().catch(() => undefined);
+    // Sem isto o crachá sobrevive ao logout e o service worker reinscreveria o
+    // aparelho na sala de quem acabou de sair.
+    await clearPushIdentity().catch(() => undefined);
     lastStatus = 'idle';
   } catch {
     /* sair sem conseguir desinscrever não pode travar o logout */

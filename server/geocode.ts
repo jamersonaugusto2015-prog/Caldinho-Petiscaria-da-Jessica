@@ -5,6 +5,17 @@ export interface IpThrottle {
   shouldThrottle(ip: string, limit: number, windowMs: number): boolean;
 }
 
+/**
+ * A chave do freio inclui a LOJA quando quem chama a informa.
+ *
+ * Sem ela, o movimento da loja A gastaria a cota do IP compartilhado e a loja B
+ * receberia 429 sem ter feito nada. Um wi-fi de prédio ou uma operadora móvel
+ * põe centenas de pessoas atrás do mesmo endereço.
+ */
+export function throttleKey(shopId: number, ip: string | undefined): string {
+  return `${shopId}:${ip || 'desconhecido'}`;
+}
+
 export function createIpThrottle(now: () => number = Date.now): IpThrottle {
   const hits = new Map<string, number[]>();
   return {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Driver, Order, OrderStatus, StoreSettings } from '../src/types';
+import type { Driver } from '../contract/driver/types';
+import type { Order, OrderStatus } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
 import { DomainError } from './errors';
 import { applyOrderEvent } from './orderLifecycle';
 
@@ -199,7 +201,7 @@ test('um status que não existe no fluxo continua sendo status inválido', () =>
         { type: 'advance', status: 'a_caminho_da_lua' as OrderStatus, actor: 'kitchen' },
         deps([], { count: 0 })
       ),
-    /Status inválido/
+    /não existe para este pedido/
   );
 });
 

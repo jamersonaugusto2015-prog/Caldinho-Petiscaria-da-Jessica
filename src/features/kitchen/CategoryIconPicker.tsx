@@ -1,13 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, Search, Smile, X } from 'lucide-react';
-import {
-  CATEGORY_ICON_GROUPS,
-  normalizeSearch,
-  searchCategoryIcons,
-  type CategoryIcon,
-} from '../../shared/categories';
-
+import { CATEGORY_ICON_GROUPS, normalizeSearch, searchCategoryIcons, type CategoryIcon } from '../../../contract/catalog/categories';
 const RECENT_KEY = 'caldinho:category-icons:recent';
 const RECENT_MAX = 12;
 
@@ -220,7 +214,7 @@ const IconPopover: React.FC<{
             <input
               ref={searchRef}
               className="input pl-9 py-2"
-              placeholder="Buscar: camarão, cerveja, doce..."
+              placeholder="Buscar: camarão, cerveja, doce…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -279,7 +273,7 @@ const IconPopover: React.FC<{
 
         {results && (
           <section>
-            {query && <GroupTitle>{results.length} resultado(s)</GroupTitle>}
+            {query && <GroupTitle>{results.length} {results.length === 1 ? 'resultado' : 'resultados'}</GroupTitle>}
             <div className="grid grid-cols-8 gap-1">
               {results.map((icon, index) => (
                 <IconButton
@@ -355,7 +349,7 @@ const IconButton: React.FC<{
     aria-label={icon.name}
     aria-pressed={selected}
     onClick={() => onPick(icon.char)}
-    className="relative aspect-square rounded-xl text-xl flex items-center justify-center transition-[background-color,transform] duration-150 hover:scale-110 hover:bg-[#F5F5F4] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1C1917]/30"
+    className="relative aspect-square rounded-xl text-xl flex items-center justify-center transition-[background-color,transform] duration-150 hover:bg-[#F5F5F4] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1C1917]/30"
     style={selected ? { backgroundColor: `${color}26` } : undefined}
   >
     <span className="leading-none">{icon.char}</span>

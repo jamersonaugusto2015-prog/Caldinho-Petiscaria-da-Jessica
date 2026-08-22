@@ -11,7 +11,7 @@ import {
   UtensilsCrossed,
   Wallet,
 } from 'lucide-react';
-import type { Order, OrderStatus } from '../../types';
+import type { Order, OrderStatus } from '../../../contract/order/types';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenCatalog } from './KitchenCatalogStore';
 import { useKitchenDrivers } from './KitchenDriversStore';
@@ -23,8 +23,9 @@ import { KitchenDriverPanel } from './KitchenDriverPanel';
 import { KitchenOrdersBoard } from './KitchenOrdersBoard';
 import { Heading, Panel, Empty, SwitchToggle } from './KitchenPanels';
 import { OrderReceiptModal } from '../../components/print/OrderReceiptModal';
-import { money, pendingRefundTotal, shortDateTime } from './kitchenOrderRules';
+import { pendingRefundTotal, shortDateTime } from './kitchenOrderRules';
 import type { KitchenTab } from './kitchenTabs';
+import { formatMoney } from '../../../contract/pricing/money';
 
 const ACTIVE_STATUSES: OrderStatus[] = ['recebido', 'em_preparo', 'pronto', 'saiu_entrega'];
 
@@ -46,7 +47,6 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-
   const activeOrders = useMemo(() => orders.filter((order) => ACTIVE_STATUSES.includes(order.status)), [orders]);
   const totalRevenue = useMemo(
     () => orders.reduce((sum, order) => sum + (order.status === 'cancelado' ? 0 : order.total), 0),
@@ -67,17 +67,16 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
   }, [orders]);
   const refundDue = useMemo(() => pendingRefundTotal(orders), [orders]);
 
-
   if (activeTab === 'dashboard') {
     const pausedCount = products.filter((product) => !product.available).length;
     return (
       <div className="space-y-4 sm:space-y-5">
-        <Heading icon={<BarChart3 />} title="Dashboard" subtitle="Visão geral da loja em tempo real." />
+        <Heading icon={<BarChart3 />} title="Dashboard" subtitle="Vendas, fila e cardápio de hoje." />
 
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-          <Metric className="col-span-2 lg:col-span-1" icon={<Wallet className="w-4 h-4" />} label="Vendas" value={money(totalRevenue)} />
+          <Metric className="col-span-2 lg:col-span-1" icon={<Wallet className="w-4 h-4" />} label="Vendas" value={formatMoney(totalRevenue)} />
           <Metric icon={<ClipboardList className="w-4 h-4" />} label="Pedidos ativos" value={String(activeOrders.length)} />
-          <Metric icon={<TrendingUp className="w-4 h-4" />} label="Ticket médio" value={money(averageTicket)} accent />
+          <Metric icon={<TrendingUp className="w-4 h-4" />} label="Ticket médio" value={formatMoney(averageTicket)} accent />
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
@@ -113,7 +112,7 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
                       {order.customerName} · {shortDateTime(order.createdAt)}
                     </span>
                   </span>
-                  <span className="shrink-0 text-xs font-extrabold tabular-nums">{money(order.total)}</span>
+                  <span className="shrink-0 text-xs font-extrabold tabular-nums">{formatMoney(order.total)}</span>
                 </button>
               ))}
             </div>
@@ -123,7 +122,7 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
           <Panel title="Status do cardápio">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 -mt-2 mb-2 text-[11px] font-bold">
               <span className="text-emerald-700">{products.length - pausedCount} no ar</span>
-              <span className="text-[#B91C1C]">{pausedCount} pausado(s)</span>
+              <span className="text-[#B91C1C]">{pausedCount} {pausedCount === 1 ? 'pausado' : 'pausados'}</span>
               <span className="text-[#57534E] font-normal">Use o interruptor para pausar ou reativar.</span>
             </div>
             <div className="max-h-80 overflow-y-auto overscroll-contain pr-1">
@@ -169,14 +168,14 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
   if (activeTab === 'clientes') {
     return (
       <div className="space-y-4">
-        <Heading icon={<Users />} title="Clientes" subtitle={`${customers.length} cliente(s) identificados.`} />
+        <Heading icon={<Users />} title="Clientes" subtitle={`${customers.length} ${customers.length === 1 ? 'cliente identificado' : 'clientes identificados'}.`} />
         <Panel>
           {customers.map((customer) => (
             <div key={customer.phone || customer.name} className="flex items-center gap-3 py-3 border-b last:border-0 border-[#F5F5F4]">
               <div className="w-9 h-9 rounded-full bg-[#FEF2F2] text-[#B91C1C] flex items-center justify-center font-black">{customer.name[0]}</div>
               <div className="flex-1 min-w-0"><div className="font-extrabold text-sm truncate">{customer.name}</div><div className="text-[11px] text-[#57534E]">{customer.phone || '—'}</div></div>
               <div className="text-center text-xs"><strong>{customer.count}</strong><span className="block text-[9px] text-[#57534E]">pedidos</span></div>
-              <div className="text-right text-xs font-extrabold text-[#B91C1C]">{money(customer.total)}</div>
+              <div className="text-right text-xs font-extrabold text-[#B91C1C]">{formatMoney(customer.total)}</div>
             </div>
           ))}
           {customers.length === 0 && <Empty text="Nenhum cliente ainda." />}
@@ -192,13 +191,13 @@ export const KitchenOrderBoard: React.FC<{ activeTab: KitchenTab }> = ({ activeT
   if (activeTab === 'financeiro') {
     const points = period === 'daily' ? trends?.daily : period === 'weekly' ? trends?.weekly : trends?.monthly;
     return (
-      <div className="space-y-4"><Heading icon={<Wallet />} title="Financeiro" subtitle="Receita, pedidos e formas de pagamento." /><div className="flex gap-1 bg-[#F5F5F4] rounded-full p-1 w-fit">{(['daily', 'weekly', 'monthly'] as const).map((option) => <button key={option} onClick={() => setPeriod(option)} className={`px-3 py-1.5 rounded-full text-xs font-bold pointer-coarse:min-h-11 ${period === option ? 'bg-[#1C1917] text-white' : ''}`}>{option === 'daily' ? 'Diário' : option === 'weekly' ? 'Semanal' : 'Mensal'}</button>)}</div><Panel title="Faturamento">{points ? <RevenueChart points={points} periodLabel={period === 'daily' ? 'diário' : period === 'weekly' ? 'semanal' : 'mensal'} /> : <Empty text="Carregando dados..." />}</Panel><div className="grid grid-cols-1 sm:grid-cols-4 gap-3"><Metric label="Faturamento total" value={money(totalRevenue)} /><Metric label="Pedidos" value={String(completedOrders.length)} /><Metric label="Ticket médio" value={money(averageTicket)} accent /><Metric label="A devolver" value={money(refundDue)} accent={refundDue > 0} /></div><p className="text-[11px] text-[#57534E]">O faturamento não conta os pedidos cancelados. O dinheiro já cobrado deles aparece em "A devolver" até a devolução ser feita.</p></div>
+      <div className="space-y-4"><Heading icon={<Wallet />} title="Financeiro" subtitle="Receita, pedidos e formas de pagamento." /><div className="flex gap-1 bg-[#F5F5F4] rounded-full p-1 w-fit">{(['daily', 'weekly', 'monthly'] as const).map((option) => <button key={option} onClick={() => setPeriod(option)} className={`px-3 py-1.5 rounded-full text-xs font-bold pointer-coarse:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 ${period === option ? 'bg-[#1C1917] text-white' : ''}`}>{option === 'daily' ? 'Diário' : option === 'weekly' ? 'Semanal' : 'Mensal'}</button>)}</div><Panel title="Faturamento">{points ? <RevenueChart points={points} periodLabel={period === 'daily' ? 'diário' : period === 'weekly' ? 'semanal' : 'mensal'} /> : <Empty text="Carregando o faturamento…" />}</Panel><div className="grid grid-cols-1 sm:grid-cols-4 gap-3"><Metric label="Faturamento total" value={formatMoney(totalRevenue)} /><Metric label="Pedidos" value={String(completedOrders.length)} /><Metric label="Ticket médio" value={formatMoney(averageTicket)} accent /><Metric label="A devolver" value={formatMoney(refundDue)} accent={refundDue > 0} /></div><p className="text-[11px] text-[#57534E]">O faturamento não conta os pedidos cancelados. O dinheiro já cobrado deles aparece em "A devolver" até a devolução ser feita.</p></div>
     );
   }
 
   if (activeTab === 'relatorios') {
     return (
-      <div className="space-y-4"><Heading icon={<BarChart3 />} title="Relatórios" subtitle="Desempenho e vendas por período." /><Panel><div className="flex flex-wrap items-center gap-2 mb-4 min-w-0"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="input" /><span className="text-xs">até</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="input" /><button className="btn-primary" onClick={() => void loadReport(from, to)}>Gerar</button></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><Metric label="Faturado" value={money(report?.totalRevenue || 0)} /><Metric label="Pedidos" value={String(report?.totalOrders || 0)} /><Metric label="Ticket médio" value={money(report?.avgTicket || 0)} accent /><Metric label="Nota média" value={report?.avgRating ? report.avgRating.toFixed(1) : '—'} /></div></Panel><div className="grid grid-cols-1 lg:grid-cols-2 gap-3"><Panel title="Por horário">{report && report.hourlyDistribution.length ? report.hourlyDistribution.map((item) => <div key={item.hour} className="flex items-center gap-2 text-xs py-1"><span className="w-12">{item.hour}</span><div className="h-2 rounded bg-[#B91C1C]" style={{ width: `${Math.max(4, item.orders * 12)}px` }} /><strong>{item.orders}</strong></div>) : <Empty text="Sem dados." />}</Panel><Panel title="Mais vendidos">{report && report.topSellingProducts.length ? report.topSellingProducts.map((item, index) => <div key={item.name} className="flex items-center gap-2 text-xs py-2 border-b last:border-0 border-[#F5F5F4]"><strong className="text-[#B91C1C]">#{index + 1}</strong><span className="min-w-0 flex-1 truncate" title={item.name}>{item.name}</span><span>{item.count} un · {money(item.total)}</span></div>) : <Empty text="Sem dados." />}</Panel></div></div>
+      <div className="space-y-4"><Heading icon={<BarChart3 />} title="Relatórios" subtitle="Desempenho e vendas por período." /><Panel><div className="flex flex-wrap items-center gap-2 mb-4 min-w-0"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="input" /><span className="text-xs">até</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="input" /><button className="btn-primary" onClick={() => void loadReport(from, to)}>Gerar</button></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3"><Metric label="Faturado" value={formatMoney(report?.totalRevenue || 0)} /><Metric label="Pedidos" value={String(report?.totalOrders || 0)} /><Metric label="Ticket médio" value={formatMoney(report?.avgTicket || 0)} accent /><Metric label="Nota média" value={report?.avgRating ? report.avgRating.toFixed(1) : '—'} /></div></Panel><div className="grid grid-cols-1 lg:grid-cols-2 gap-3"><Panel title="Por horário">{report && report.hourlyDistribution.length ? report.hourlyDistribution.map((item) => <div key={item.hour} className="flex items-center gap-2 text-xs py-1"><span className="w-12">{item.hour}</span><div className="h-2 rounded bg-[#B91C1C]" style={{ width: `${Math.max(4, item.orders * 12)}px` }} /><strong>{item.orders}</strong></div>) : <Empty text="Sem dados." />}</Panel><Panel title="Mais vendidos">{report && report.topSellingProducts.length ? report.topSellingProducts.map((item, index) => <div key={item.name} className="flex items-center gap-2 text-xs py-2 border-b last:border-0 border-[#F5F5F4]"><strong className="text-[#B91C1C]">#{index + 1}</strong><span className="min-w-0 flex-1 truncate" title={item.name}>{item.name}</span><span>{item.count} un · {formatMoney(item.total)}</span></div>) : <Empty text="Sem dados." />}</Panel></div></div>
     );
   }
 

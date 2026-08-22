@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Driver, Order } from '../src/types';
+import type { Driver } from '../contract/driver/types';
+import type { Order } from '../contract/order/types';
 import {
   DriverLocationDeps,
   LOCATION_STALE_AFTER_MS,

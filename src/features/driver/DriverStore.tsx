@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { Driver, Order, PublicStoreSettings } from '../../types';
+import type { Driver } from '../../../contract/driver/types';
+import type { Order } from '../../../contract/order/types';
+import type { PublicStoreSettings } from '../../../contract/shop/types';
 import { driverApi as api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
-import { AlertBannerProvider, bannerTextFor, useAlertBanner } from '../../lib/alertBanner';
+import { AlertBannerProvider, bannerTextFor, useAlertBanner } from '../../ui/alertBanner';
 import { useAlertChannel, useAlertMemory, type AlertChannel } from '../../lib/alertChannel';
-import { orderAlertFor, type AlertUrgency } from '../../shared/orderAlerts';
+import { orderAlertFor, type AlertUrgency } from '../../../contract/order/alerts';
 import { getDriverProfile, getStoredRoleToken, saveDriverProfile } from '../../lib/auth';
 import { socket } from '../../lib/socket';
 import { usePageLifecycle } from '../../lib/pageLifecycle';
 import { useDriverLocation, useWakeLock, DriverLocationStatus } from './useDriverLocation';
+import { formatMoney } from '../../../contract/pricing/money';
 
 /**
  * O que a tela do motoboy mostra sobre a própria presença.
@@ -277,7 +280,7 @@ const DriverStore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       } catch {
         // Sem gravar no servidor a presença não vale: volta ao estado anterior.
         setIsOnline(!next);
-        triggerToast('Não foi possível atualizar sua presença.');
+        triggerToast('Não deu para mudar sua presença. Você continua como estava. Toque de novo.');
         return false;
       }
     },
@@ -309,7 +312,11 @@ const DriverStore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       triggerToast(`Corrida ${orderId} aceita. Vá à loja e pegue no balcão.`);
       if (!isOnline) await setOnlinePresence(true);
     } catch (err) {
-      triggerToast(err instanceof Error ? err.message : 'Erro ao aceitar corrida.');
+      triggerToast(
+        err instanceof Error
+          ? err.message
+          : 'Não deu para aceitar a corrida. Outro motoboy pode ter pegado antes. Atualize a lista.'
+      );
     }
   };
 
@@ -319,9 +326,11 @@ const DriverStore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     try {
       const updated = await api.patch<Order>(`/orders/${orderId}/status`, { status: 'saiu_entrega' });
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
-      triggerToast('Pedido com você! Saiu para entrega — siga para o endereço do cliente.');
+      triggerToast('Pedido com você. Siga para o endereço do cliente.');
     } catch (err) {
-      triggerToast(err instanceof Error ? err.message : 'Erro ao sair para entrega.');
+      triggerToast(
+        err instanceof Error ? err.message : 'Não deu para registrar a saída. Confira a internet e toque de novo.'
+      );
     }
   };
 
@@ -331,9 +340,11 @@ const DriverStore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       const updated = await api.patch<Order>(`/orders/${orderId}/status`, { status: 'entregue' });
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
       const fee = feeForOrder(updated);
-      triggerToast(`Entrega concluída. + R$ ${fee.toFixed(2)} nos ganhos de hoje.`);
+      triggerToast(`Entrega concluída. + ${formatMoney(fee)} nos ganhos de hoje.`);
     } catch (err) {
-      triggerToast(err instanceof Error ? err.message : 'Erro ao confirmar entrega.');
+      triggerToast(
+        err instanceof Error ? err.message : 'Não deu para confirmar a entrega. Confira a internet e toque de novo.'
+      );
     }
   };
 

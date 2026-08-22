@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Order } from '../../types';
+import type { Order } from '../../../contract/order/types';
 import { api } from '../../lib/api';
 
 const POLL_INTERVAL_MS = 4000;

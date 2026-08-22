@@ -228,22 +228,6 @@ summary,
   }
 }
 
-/* Google Material Symbols (ícones do splash) */
-.splash-icon {
-  font-family: 'Material Symbols Outlined';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 72px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0;
-}
-
 /* Barra de rolagem fina: a nativa do Chrome no desktop é larga e cinza,
    e come a borda arredondada dos painéis. */
 .scroll-slim {
@@ -582,24 +566,10 @@ summary,
 }
 
 /* ---------- Tela 404 animada ---------- */
-@keyframes nfFloat {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(0, -28px, 0) scale(1.08);
-  }
-}
-
 @keyframes nfGround {
   to {
     background-position-x: -160px;
   }
-}
-
-.nf-float {
-  animation: nfFloat 9s ease-in-out infinite;
 }
 
 .nf-ground {
@@ -612,7 +582,6 @@ summary,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nf-float,
   .nf-ground {
     animation: none;
   }

@@ -1,17 +1,46 @@
-import { Order, RevenuePoint, SalesReport } from '../src/types';
-import { round2 } from '../src/shared/geo';
-
+import type { Order } from '../contract/order/types';
+import type { RevenuePoint, RevenueTrends, SalesReport } from '../contract/report/types';
+// `roundMoney` é a regra única de dinheiro; o `round2` do módulo geo que
+// morava aqui era um segundo dialeto (Math.round puro) aplicado à receita.
+import { roundMoney as round2 } from '../contract/pricing/money';
 /**
- * Usa os getters locais de Date (getFullYear/getMonth/getDate/getHours), então o resultado
- * depende do fuso do processo — em produção `TZ=America/Recife`, para que um pedido feito
- * pouco antes da meia-noite local caia no dia certo.
+ * O dia a que um instante pertence, no fuso DA LOJA.
+ *
+ * Antes isto usava os getters locais de `Date`, que seguem o fuso do PROCESSO.
+ * Com uma loja em Recife e outra em Manaus no mesmo servidor, o pedido das
+ * 23h50 de uma cairia no dia seguinte da outra — e o relatório de faturamento
+ * de cada uma estaria errado em um dia, todo dia.
+ *
+ * `timeZone` vazio = o fuso do processo, que é o comportamento de sempre.
  */
-export function localDateKey(iso: string): string {
+export function localDateKey(iso: string, timeZone?: string): string {
   const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  if (!timeZone) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  // `en-CA` porque ele formata data como `AAAA-MM-DD`, que é exatamente a chave
+  // que queremos — sem montar a string peça por peça.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** A hora do dia no fuso da loja. Usada na distribuição por hora do relatório. */
+export function localHour(iso: string, timeZone?: string): number {
+  const d = new Date(iso);
+  if (!timeZone) return d.getHours();
+  const hora = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    hour12: false,
+  }).format(d);
+  return Number(hora) || 0;
 }
 
 export function startOfWeek(d: Date): Date {
@@ -25,6 +54,8 @@ export function startOfWeek(d: Date): Date {
 export interface ReportRange {
   from?: string;
   to?: string;
+  /** Fuso IANA da loja. Vazio = o fuso do processo. */
+  timeZone?: string;
 }
 
 export function buildSalesReport(orders: Order[], range: ReportRange = {}): SalesReport {
@@ -32,7 +63,7 @@ export function buildSalesReport(orders: Order[], range: ReportRange = {}): Sale
   const to = String(range.to || '').slice(0, 10);
 
   const inRange = (o: Order) => {
-    const key = localDateKey(o.createdAt);
+    const key = localDateKey(o.createdAt, range.timeZone);
     if (from && key < from) return false;
     if (to && key > to) return false;
     return true;
@@ -57,7 +88,7 @@ export function buildSalesReport(orders: Order[], range: ReportRange = {}): Sale
 
   const hourlyMap = new Map<number, number>();
   for (const o of active) {
-    const hour = new Date(o.createdAt).getHours();
+    const hour = localHour(o.createdAt, range.timeZone);
     hourlyMap.set(hour, (hourlyMap.get(hour) || 0) + 1);
   }
   const hourlyDistribution = [...hourlyMap.entries()]
@@ -78,12 +109,6 @@ export function buildSalesReport(orders: Order[], range: ReportRange = {}): Sale
     hourlyDistribution,
     avgRating,
   };
-}
-
-export interface RevenueTrends {
-  daily: RevenuePoint[];
-  weekly: RevenuePoint[];
-  monthly: RevenuePoint[];
 }
 
 export function buildRevenueTrends(orders: Order[], now: Date = new Date()): RevenueTrends {

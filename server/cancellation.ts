@@ -1,11 +1,12 @@
 import { Server } from 'socket.io';
-import { CancelActor, Order } from '../src/types';
-import { getSettings } from './db';
+import type { CancelActor, Order } from '../contract/order/types';
 import { emitOrder, orderEventContext } from './orderEvents';
 import { applyOrderEvent } from './orderLifecycle';
 import { loadDriver, saveOrder } from './orderStore';
-import { earnStamp, releaseFreeItems } from './loyalty';
+import { releaseFreeItems } from './loyalty';
 import { markRefundDue } from './payment';
+import { orderLifecycleDeps } from './domain/deps';
+import type { ShopId } from '../contract/shop/types';
 
 export interface CancelOrderRequest {
   order: Order;
@@ -30,16 +31,14 @@ export interface CancelOrderRequest {
  * `orderLifecycle` antes de devolver o token de novo. Isso importa porque o
  * cliente pode já ter gasto o token devolvido num pedido novo.
  */
-export function cancelOrder(io: Server, request: CancelOrderRequest): Order {
+export function cancelOrder(io: Server, shopId: ShopId, request: CancelOrderRequest): Order {
   const { reason, by } = request;
 
   const result = applyOrderEvent(
     request.order,
     { type: 'cancel', reason },
     {
-      getSettings,
-      getDriver: loadDriver,
-      earnStamp,
+      ...orderLifecycleDeps(shopId),
       // O cancelamento grava uma vez só, no fim, depois de anexar quem cancelou
       // e a devolução pendente. Sem isso o pedido iria ao banco pela metade.
       saveOrder: () => {},
@@ -52,12 +51,12 @@ export function cancelOrder(io: Server, request: CancelOrderRequest): Order {
 
   // O brinde já tinha sido consumido na criação do pedido; sem isso o cliente
   // perde os selos por um pedido que nunca chegou.
-  releaseFreeItems(order.items);
+  releaseFreeItems(shopId, order.items);
 
   markRefundDue(order);
 
-  saveOrder(order);
-  emitOrder(io, 'order:updated', order, orderEventContext(request.before ?? request.order));
+  saveOrder(shopId, order);
+  emitOrder(io, shopId, 'order:updated', order, orderEventContext(request.before ?? request.order));
   return order;
 }
 

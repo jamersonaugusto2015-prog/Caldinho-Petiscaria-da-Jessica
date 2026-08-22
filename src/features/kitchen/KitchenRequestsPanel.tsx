@@ -1,22 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Clock, Inbox, MessageCircle } from 'lucide-react';
-import type { Order } from '../../types';
+import type { Order, OrderStatus } from '../../../contract/order/types';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenChat } from './KitchenChatStore';
 import { Heading, Panel, Empty } from './KitchenPanels';
 import { useNow } from './useNow';
-import {
-  cancelRequestDeadline,
-  countdownLabel,
-  hasOpenComplaint,
-  hasPendingCancelRequest,
-  isCancelRequestOverdue,
-  isOrderLate,
-  money,
-  shortDateTime,
-} from './kitchenOrderRules';
+import { cancelRequestDeadline, countdownLabel, hasOpenComplaint, hasPendingCancelRequest, isCancelRequestOverdue, isOrderLate, shortDateTime } from './kitchenOrderRules';
+import { formatMoney } from '../../../contract/pricing/money';
 
 type ResolveMode = 'accept' | 'refuse';
+
+/** Mesmos rótulos do quadro de pedidos (STATUS_PILL em KitchenOrderBoard). */
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  recebido: 'Novo',
+  em_preparo: 'Em preparo',
+  pronto: 'Pronto',
+  saiu_entrega: 'A caminho',
+  entregue: 'Concluído',
+  cancelado: 'Cancelado',
+};
 
 export const KitchenRequestsPanel: React.FC = () => {
   const { orders, busyOrderId, resolveCancelRequest, resolveComplaint } = useKitchenOrders();
@@ -49,7 +51,7 @@ export const KitchenRequestsPanel: React.FC = () => {
     [orders, unread]
   );
 
-  const subtitle = `${requests.length} cancelamento(s), ${complaints.length} reclamação(ões), ${totalUnread} mensagem(ns) não lida(s).`;
+  const subtitle = `${requests.length} ${requests.length === 1 ? 'cancelamento' : 'cancelamentos'}, ${complaints.length} ${complaints.length === 1 ? 'reclamação' : 'reclamações'}, ${totalUnread} ${totalUnread === 1 ? 'mensagem não lida' : 'mensagens não lidas'}.`;
 
   return (
     <div className="space-y-4">
@@ -81,7 +83,7 @@ export const KitchenRequestsPanel: React.FC = () => {
                 <span className="text-[11px] text-[#57534E]">{shortDateTime(order.complaint!.openedAt)}</span>
               </div>
               <div className="text-[11px] text-[#57534E]">
-                {order.customerName} · {money(order.total)}
+                {order.customerName} · {formatMoney(order.total)}
               </div>
               <p className="text-xs text-[#1C1917] italic">“{order.complaint!.text}”</p>
               <div className="flex gap-2">
@@ -171,7 +173,7 @@ const CancelRequestRow: React.FC<{
       </div>
 
       <div className="text-[11px] text-[#57534E]">
-        {order.customerName} · {money(order.total)} · pedido às {shortDateTime(order.createdAt)}
+        {order.customerName} · {formatMoney(order.total)} · pedido às {shortDateTime(order.createdAt)}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -186,7 +188,7 @@ const CancelRequestRow: React.FC<{
           </span>
         )}
         <span className="text-[9px] font-black uppercase px-2 py-1 rounded-full bg-[#F5F5F4] text-[#57534E]">
-          {order.status.replace('_', ' ')}
+          {STATUS_LABEL[order.status]}
         </span>
       </div>
 
@@ -195,7 +197,7 @@ const CancelRequestRow: React.FC<{
       {order.payment.isPaid && (
         <p className="flex items-start gap-1.5 text-[11px] font-bold text-[#B91C1C]">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          Aceitar vai gerar uma devolução de {money(order.total)}.
+          Aceitar vai gerar uma devolução de {formatMoney(order.total)}.
         </p>
       )}
 
@@ -243,7 +245,7 @@ const ResolveRequestModal: React.FC<{
             {accepting ? 'Aceitar o cancelamento?' : 'Recusar o cancelamento?'}
           </h3>
           <p className="text-xs text-[#57534E]">
-            {order.id} · {order.customerName} · {money(order.total)}
+            {order.id} · {order.customerName} · {formatMoney(order.total)}
           </p>
         </div>
 
@@ -256,7 +258,7 @@ const ResolveRequestModal: React.FC<{
             }`}
           >
             {order.payment.isPaid
-              ? `Este pedido está pago. Cancelar vai gerar uma devolução de ${money(order.total)}.`
+              ? `Este pedido está pago. Cancelar vai gerar uma devolução de ${formatMoney(order.total)}.`
               : 'O pedido será cancelado. Não há dinheiro a devolver.'}
           </div>
         ) : (
@@ -278,7 +280,7 @@ const ResolveRequestModal: React.FC<{
             Voltar
           </button>
           <button className={accepting ? 'btn-danger flex-1' : 'btn-primary flex-1'} disabled={!ready || busy}>
-            {busy ? 'Enviando...' : accepting ? 'Aceitar e cancelar' : 'Recusar'}
+            {busy ? 'Enviando…' : accepting ? 'Aceitar e cancelar' : 'Recusar'}
           </button>
         </div>
       </form>

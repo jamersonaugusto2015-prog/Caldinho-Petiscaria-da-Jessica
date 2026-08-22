@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import type { Order } from '../../types';
-import { money } from './kitchenOrderRules';
+import type { Order } from '../../../contract/order/types';
+import { formatMoney } from '../../../contract/pricing/money';
 
 const PRESET_REASONS = [
   'Faltou ingrediente',
@@ -44,7 +44,7 @@ export const KitchenCancelOrderModal: React.FC<{
           <div>
             <h3 className="font-extrabold text-lg">Cancelar pedido {order.id}</h3>
             <p className="text-xs text-[#57534E]">
-              {order.customerName} · {money(order.total)}
+              {order.customerName} · {formatMoney(order.total)}
             </p>
           </div>
 
@@ -52,7 +52,7 @@ export const KitchenCancelOrderModal: React.FC<{
             <div className="flex gap-2 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] p-3 text-[#B91C1C]">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="text-xs font-extrabold leading-snug">
-                Este pedido está pago. Cancelar vai gerar uma devolução de {money(order.total)}.
+                Este pedido está pago. Cancelar vai gerar uma devolução de {formatMoney(order.total)}.
               </p>
             </div>
           )}
@@ -93,7 +93,7 @@ export const KitchenCancelOrderModal: React.FC<{
             Voltar
           </button>
           <button className="btn-danger flex-1" disabled={!ready || busy}>
-            {busy ? 'Cancelando...' : order.payment.isPaid ? 'Cancelar e devolver' : 'Cancelar pedido'}
+            {busy ? 'Cancelando…' : order.payment.isPaid ? 'Cancelar e devolver' : 'Cancelar pedido'}
           </button>
         </div>
       </form>

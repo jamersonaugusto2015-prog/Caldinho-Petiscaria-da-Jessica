@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, readRoleTokens, writeRoleTokens, UNAUTHORIZED_EVENT } from './api';
 import type { ApiRole } from './api';
-import { Driver } from '../types';
+import type { Driver } from '../../contract/driver/types';
 import { dropPushSubscription } from './pushSubscription';
 
 type AuthRole = ApiRole;

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Soup } from 'lucide-react';
 import gsap from 'gsap';
 
 interface SplashScreenProps {
@@ -10,7 +11,10 @@ interface SplashScreenProps {
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
   onComplete,
-  storeName = 'Caldinho Express',
+  // Sem nome de loja fixo: numa plataforma com várias lojas, um padrão com
+  // nome próprio faria a loja B piscar o nome da loja A na abertura, antes de
+  // as configurações chegarem.
+  storeName = '',
   storeLogo = '',
   city,
 }) => {
@@ -112,8 +116,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
          sobra até em iPhone SE, então nada chega perto do relógio do sistema.
          Deitado é outra história — aí o notch fica na lateral e comia a borda
          do nome da loja. O fundo continua sangrando até a borda porque ele é
-         gradiente do próprio elemento, que o padding não recorta. */
-      className="fixed inset-0 z-[100] bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#B91C1C] px-safe flex flex-col items-center justify-center overflow-hidden"
+         pintado no próprio elemento, que o padding não recorta. */
+      className="fixed inset-0 z-[100] bg-[#B91C1C] px-safe flex flex-col items-center justify-center overflow-hidden"
     >
       {/* Logo da empresa (ou tigela padrão) com vapor saindo do topo */}
       <div ref={logoWrapRef} className="relative flex items-center justify-center select-none">
@@ -148,9 +152,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             className="w-28 h-28 object-contain drop-shadow-[0_8px_24px_rgba(253,230,138,0.45)]"
           />
         ) : (
-          <span className="splash-icon text-[#FDE68A] drop-shadow-[0_8px_24px_rgba(253,230,138,0.45)]">
-            soup_kitchen
-          </span>
+          <Soup
+            strokeWidth={1.75}
+            className="h-[72px] w-[72px] text-[#FDE68A] drop-shadow-[0_8px_24px_rgba(253,230,138,0.45)]"
+          />
         )}
       </div>
 
@@ -179,12 +184,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         ref={taglineRef}
         className="mt-2.5 text-[11px] font-bold uppercase tracking-[0.35em] text-[#FEE2E2]/80 text-center px-6"
       >
-        {city ? `${city} • Sabor Regional` : 'Sabor Regional'}
+        {city}
       </p>
 
       {/* Barra de progresso */}
       <div className="mt-8 w-48 h-1.5 rounded-full bg-white/20 overflow-hidden">
-        <div ref={barRef} className="h-full w-full rounded-full bg-gradient-to-r from-[#D97706] to-[#FDE68A]" />
+        <div ref={barRef} className="h-full w-full rounded-full bg-[#FDE68A]" />
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { devShopHeader } from './devShop';
 const BASE = '/api';
 const TIMEOUT_MS = 15000;
 const ROLE_TOKEN_KEY = 'ce_role_token';
@@ -42,6 +43,10 @@ function expireSession(role: ApiRole): void {
 async function request<T>(path: string, options: RequestInit = {}, role?: ApiRole): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Em produção este objeto é vazio: a loja vem da ORIGEM, e o servidor
+    // ignora o header. Só o desenvolvimento precisa dele — `localhost:3000` não
+    // tem subdomínio para carregar a loja.
+    ...devShopHeader(),
     ...(options.headers as Record<string, string> | undefined),
   };
   if (role) {

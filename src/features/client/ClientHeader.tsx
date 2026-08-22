@@ -5,9 +5,9 @@ import { useCart } from './CartStore';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell } from './ClientStore';
 import { api } from '../../lib/api';
-import { AlertBanner, AlertPermissionPrompt } from '../../lib/alertBanner';
+import { AlertBanner, AlertPermissionPrompt } from '../../ui/alertBanner';
 import { useInstallAffordance, useUpdateReady } from '../../lib/appShell';
-import { computeDeliveryFee, effectiveDistanceKm, formatKm } from '../../shared/geo';
+import { computeDeliveryFee, effectiveDistanceKm, formatKm } from '../../../contract/pricing/geo';
 import {
   MapPin,
   Search,
@@ -26,10 +26,9 @@ import {
   Store,
   Trash2,
 } from 'lucide-react';
-import { formatAddressLine, isUsableAddress } from '../../shared/address';
-import { storeAddressLine } from '../../shared/fulfillment';
-import { LOYALTY_STAMP_COST } from '../../shared/constants';
-
+import { formatAddressLine, isUsableAddress } from '../../../contract/order/address';
+import { storeAddressLine } from '../../../contract/order/fulfillment';
+import { formatMoney } from '../../../contract/pricing/money';
 /**
  * O mapa entra por `lazy`: o Leaflet e o CSS dele somam ~170 kB e só aparecem
  * quando o cliente abre o formulário de endereço para marcar o pino. Importado
@@ -309,7 +308,7 @@ export const ClientHeader: React.FC = () => {
               title="Cartão fidelidade"
             >
               <Award className="w-3.5 h-3.5 text-[#FDE68A]" strokeWidth={2.5} />
-              {loyaltyPoints}/{LOYALTY_STAMP_COST}
+              {loyaltyPoints}/{settings.loyaltyStampCost || 10}
             </span>
           )}
         </div>
@@ -356,7 +355,7 @@ export const ClientHeader: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar no cardápio"
-              className="w-full h-10 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] pl-9 pr-10 text-[13px] font-medium text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:bg-white focus:border-[#B91C1C] focus:ring-2 focus:ring-[#B91C1C]/15 transition-colors"
+              className="w-full h-10 rounded-xl bg-[#F5F5F4] border border-[#E7E5E4] pl-9 pr-10 text-[13px] font-medium text-[#1C1917] placeholder-[#A8A29E] focus-visible:outline-none focus-visible:bg-white focus-visible:border-[#B91C1C] focus-visible:ring-2 focus-visible:ring-[#B91C1C]/15 transition-colors"
             />
             {/* 32 px é menos que o dedo: quem quer limpar a busca acerta o
                 campo e o teclado sobe de novo. O ícone fica no mesmo lugar
@@ -456,7 +455,7 @@ export const ClientHeader: React.FC = () => {
                 <span>Endereço de Entrega</span>
               </h3>
               <p className="text-xs text-[#57534E] mb-4">
-                Escolha para onde entregaremos seu caldinho fumegante.
+                Escolha o endereço de entrega.
               </p>
 
               {!isAddressFormOpen ? (
@@ -502,7 +501,7 @@ export const ClientHeader: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm(`Remover o endereço "${addr.label}" (${addr.street}, ${addr.number})?`)) {
+                            if (window.confirm(`Remover o endereço “${addr.label}” (${addr.street}, ${addr.number})?`)) {
                               removeAddress(addr.id);
                             }
                           }}
@@ -535,7 +534,7 @@ export const ClientHeader: React.FC = () => {
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
                         placeholder="Ex: Casa"
-                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                       />
                     </div>
                     <div>
@@ -547,7 +546,7 @@ export const ClientHeader: React.FC = () => {
                           value={newCep}
                           onChange={(e) => setNewCep(e.target.value.replace(/\D/g, '').slice(0, 8))}
                           placeholder="50000000"
-                          className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl px-2.5 py-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                          className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl px-2.5 py-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                         />
                         <button
                           type="button"
@@ -573,7 +572,7 @@ export const ClientHeader: React.FC = () => {
                         value={newStreet}
                         onChange={(e) => setNewStreet(e.target.value)}
                         placeholder="Ex: Av. Conselheiro Aguiar"
-                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                         required
                       />
                     </div>
@@ -584,7 +583,7 @@ export const ClientHeader: React.FC = () => {
                         value={newNumber}
                         onChange={(e) => setNewNumber(e.target.value)}
                         placeholder="100"
-                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                         required
                       />
                     </div>
@@ -596,7 +595,7 @@ export const ClientHeader: React.FC = () => {
                       value={newNeighborhood}
                       onChange={(e) => setNewNeighborhood(e.target.value)}
                       placeholder="Ex: Pina, Boa Viagem, Derby"
-                      className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                      className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                       required
                     />
                   </div>
@@ -607,7 +606,7 @@ export const ClientHeader: React.FC = () => {
                       value={newComplement}
                       onChange={(e) => setNewComplement(e.target.value)}
                       placeholder="Apt 201 / Próximo ao mercado"
-                      className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                      className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-xl p-2.5 text-[#1C1917] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]"
                     />
                   </div>
 
@@ -644,7 +643,7 @@ export const ClientHeader: React.FC = () => {
                         )}
                       </span>
                       {feePreview != null && feePreview >= 0 && (
-                        <span className="shrink-0">Entrega: R$ {feePreview.toFixed(2)}</span>
+                        <span className="shrink-0">Entrega: {formatMoney(feePreview)}</span>
                       )}
                     </div>
                   )}

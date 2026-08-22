@@ -1,5 +1,4 @@
-import type { PublicStoreSettings } from '../../types';
-
+import type { PublicStoreSettings } from '../../../contract/shop/types';
 /**
  * O que o formulário de configurações edita. Segredos (PIN, service account)
  * entram como campos vazios: o servidor só recebe o que foi digitado agora.

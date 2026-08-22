@@ -1,9 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Order, OrderStatus } from '../../types';
+import type { Order, OrderStatus } from '../../../contract/order/types';
 import { kitchenApi as api } from '../../lib/api';
 import { mergeById } from '../../lib/liveSession';
 import { useAlertMemory } from '../../lib/alertChannel';
-import { orderAlertFor } from '../../shared/orderAlerts';
+import { orderAlertFor } from '../../../contract/order/alerts';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { useKitchenSoundAlert } from './KitchenSoundStore';
 import { useKitchenReportsSync } from './KitchenReportsStore';
@@ -13,6 +13,11 @@ interface KitchenOrdersContextType {
   newOrderFlashId: string | null;
   /** Pedido com uma ação de cancelamento/devolução em andamento, para travar o botão. */
   busyOrderId: string | null;
+  /** true só durante a primeira carga; uma recarga em segundo plano não acende de novo. */
+  loading: boolean;
+  /** erro da carga inicial — some assim que os pedidos chegam uma vez. */
+  error: string | null;
+  reload: () => void;
   updateOrderStatus: (orderId: string, newStatus: OrderStatus, driverName?: string) => Promise<void>;
   cancelOrder: (orderId: string, reason?: string) => Promise<void>;
   confirmPayment: (orderId: string) => Promise<void>;
@@ -40,21 +45,46 @@ export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refetch = useCallback(() => {
-    api
-      .get<Order[]>('/orders')
-      .then((list) => {
-        // A lista recarregada é o "já sabíamos disso": sem semear a memória, a
-        // reconexão faria todo cancelamento pendente gritar de novo.
-        memory.seed(list);
-        setOrders(list);
-      })
-      .catch(() => {});
-  }, [memory]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOrders = useCallback(
+    (isInitial: boolean) => {
+      if (isInitial) {
+        setLoading(true);
+        setError(null);
+      }
+      api
+        .get<Order[]>('/orders')
+        .then((list) => {
+          // A lista recarregada é o "já sabíamos disso": sem semear a memória, a
+          // reconexão faria todo cancelamento pendente gritar de novo.
+          memory.seed(list);
+          setOrders(list);
+          if (isInitial) setError(null);
+        })
+        .catch(() => {
+          if (isInitial) {
+            setError('Não deu para carregar os pedidos. Confira a conexão e tente de novo.');
+          } else {
+            // Recarga em segundo plano: os pedidos na tela continuam sendo os
+            // últimos confirmados — só avisa que podem estar desatualizados.
+            triggerToast('Não deu para atualizar os pedidos. Mostrando os últimos carregados.');
+          }
+        })
+        .finally(() => {
+          if (isInitial) setLoading(false);
+        });
+    },
+    [memory, triggerToast]
+  );
+
+  const refetch = useCallback(() => fetchOrders(false), [fetchOrders]);
+  const loadInitial = useCallback(() => fetchOrders(true), [fetchOrders]);
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    loadInitial();
+  }, [loadInitial]);
 
   const applyOrder = useCallback(
     (order: Order) => {
@@ -121,7 +151,7 @@ export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const updated = await api.patch<Order>(`/orders/${orderId}/payment`, {});
         applyOrder(updated);
-        triggerToast('💰 Pagamento confirmado!');
+        triggerToast('Pagamento confirmado.');
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao confirmar pagamento.');
       }
@@ -176,7 +206,7 @@ export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const updated = await api.post<Order>(`/orders/${orderId}/refund`, {});
         applyOrder(updated);
-        triggerToast(`💸 Devolução do pedido ${orderId} concluída.`);
+        triggerToast(`Devolução do pedido ${orderId} concluída.`);
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao devolver o dinheiro.');
         // A falha grava `refundError` no pedido: recarrega para a tela mostrar o motivo.
@@ -193,6 +223,9 @@ export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       orders,
       newOrderFlashId,
       busyOrderId,
+      loading,
+      error,
+      reload: loadInitial,
       updateOrderStatus,
       cancelOrder,
       confirmPayment,
@@ -204,6 +237,9 @@ export const KitchenOrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       orders,
       newOrderFlashId,
       busyOrderId,
+      loading,
+      error,
+      loadInitial,
       updateOrderStatus,
       cancelOrder,
       confirmPayment,

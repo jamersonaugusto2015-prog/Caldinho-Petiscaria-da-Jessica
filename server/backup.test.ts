@@ -13,7 +13,7 @@ const testDataDir = mkdtempSync(path.join(os.tmpdir(), 'caldinho-backup-test-'))
 process.env.DATA_DIR = testDataDir;
 
 const { runBackup, assertValidSnapshot } = await import('./backup');
-const { db } = await import('./db');
+const { db, LOJA_PADRAO } = await import('./db');
 
 function backupsDir(): string {
   return path.join(testDataDir, 'backups');
@@ -26,9 +26,9 @@ function leftoverBackupFiles(): string[] {
 
 test('runBackup reports a clear, actionable error when no service account key is configured', async () => {
   delete process.env.BACKUP_SERVICE_ACCOUNT;
-  db.prepare("DELETE FROM meta WHERE key = 'backup_service_account'").run();
+  db.prepare("DELETE FROM shop_secrets WHERE shop_id = ? AND key = 'backup_service_account'").run(LOJA_PADRAO);
 
-  const result = await runBackup();
+  const result = await runBackup(LOJA_PADRAO);
 
   assert.equal(result.ok, false);
   assert.match(result.error ?? '', /chave.*conta de serviço/i);
@@ -44,14 +44,14 @@ test('runBackup fails clearly (not silently ok:true) when the service account ke
     private_key: 'not-a-real-key',
   });
 
-  const result = await runBackup();
+  const result = await runBackup(LOJA_PADRAO);
 
   assert.equal(result.ok, false);
   assert.ok(result.error, 'must report a reason the kitchen can act on');
   const status = (
-    db.prepare("SELECT value FROM meta WHERE key = 'backup_last_status'").get() as
-      | { value: string }
-      | undefined
+    db
+      .prepare("SELECT value FROM meta WHERE shop_id = ? AND key = 'backup_last_status'")
+      .get(LOJA_PADRAO) as { value: string } | undefined
   )?.value;
   assert.ok(status?.startsWith('error:'), `expected a recorded error status, got: ${status}`);
   // db.backup() runs before the auth call resolves in this path? No — auth is awaited first,
@@ -84,7 +84,7 @@ test('assertValidSnapshot accepts a real SQLite backup produced by db.backup()',
 
 test('runBackup cleans up the local snapshot directory even when it fails fast', async () => {
   delete process.env.BACKUP_SERVICE_ACCOUNT;
-  db.prepare("DELETE FROM meta WHERE key = 'backup_service_account'").run();
-  await runBackup();
+  db.prepare("DELETE FROM shop_secrets WHERE shop_id = ? AND key = 'backup_service_account'").run(LOJA_PADRAO);
+  await runBackup(LOJA_PADRAO);
   assert.deepEqual(leftoverBackupFiles(), []);
 });

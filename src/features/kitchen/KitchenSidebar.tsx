@@ -92,7 +92,7 @@ export const KitchenSidebar: React.FC<{
             type="button"
             onClick={toggleRailPin}
             aria-pressed={railPinned}
-            title={railPinned ? 'Soltar o menu — volta a fechar sozinho' : 'Fixar o menu aberto'}
+            title={railPinned ? 'Soltar o menu (volta a fechar sozinho)' : 'Fixar o menu aberto'}
             className={`hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#F87171]/70 lg:flex ${
               railPinned
                 ? 'bg-[#B91C1C]/25 text-[#FCA5A5]'

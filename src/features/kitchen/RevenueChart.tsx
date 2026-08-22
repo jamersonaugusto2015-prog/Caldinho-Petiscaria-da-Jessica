@@ -1,5 +1,5 @@
 import React from 'react';
-import { RevenuePoint } from '../../types';
+import type { RevenuePoint } from '../../../contract/report/types';
 import { TrendingUp, CalendarDays, Crown, ShoppingBag } from 'lucide-react';
 
 interface RevenueChartProps {
@@ -70,22 +70,28 @@ export const RevenueChart: React.FC<RevenueChartProps> = ({ points, periodLabel 
           {points.map((p, i) => {
             const pct = Math.max((p.revenue / max) * 100, p.revenue > 0 ? 3 : 1);
             const isBest = i === bestIdx && best.revenue > 0;
+            const ordersLabel = `${p.orders} ${p.orders === 1 ? 'pedido' : 'pedidos'}`;
             return (
-              <div key={p.date} className="flex-1 flex flex-col justify-end items-center group relative h-full">
+              /* Botão em vez de div: no tablet não existe hover, então o valor
+                 da barra só aparece com o toque ou o foco. */
+              <button
+                key={p.date}
+                type="button"
+                aria-label={`${p.label}: ${fmtBRL(p.revenue)}, ${ordersLabel}`}
+                className="flex-1 flex flex-col justify-end items-center group relative h-full rounded-t-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
+              >
                 {/* tooltip */}
-                <div className="absolute bottom-full mb-1.5 hidden group-hover:block z-10 bg-[#1C1917] text-white text-[9px] font-bold px-2 py-1 rounded-lg whitespace-nowrap shadow-lg pointer-events-none">
+                <div className="absolute bottom-full mb-1.5 hidden group-hover:block group-focus-visible:block z-10 bg-[#1C1917] text-white text-[9px] font-bold px-2 py-1 rounded-lg whitespace-nowrap shadow-lg pointer-events-none">
                   {p.label}: {fmtBRL(p.revenue)}
-                  <span className="block text-[8px] text-[#A8A29E]">{p.orders} pedido(s)</span>
+                  <span className="block text-[8px] text-[#A8A29E]">{ordersLabel}</span>
                 </div>
                 <div
-                  className={`w-full rounded-t-md transition-all duration-300 ${
-                    isBest
-                      ? 'bg-gradient-to-t from-[#D97706] to-[#FBBF24]'
-                      : 'bg-gradient-to-t from-[#991B1B] to-[#DC2626] group-hover:from-[#7F1D1D]'
+                  className={`w-full rounded-t-md transition-colors ${
+                    isBest ? 'bg-[#D97706]' : 'bg-[#B91C1C] group-hover:bg-[#7F1D1D]'
                   }`}
                   style={{ height: `${pct}%` }}
                 />
-              </div>
+              </button>
             );
           })}
         </div>

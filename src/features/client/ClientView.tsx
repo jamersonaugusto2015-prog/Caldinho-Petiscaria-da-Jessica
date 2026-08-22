@@ -12,9 +12,40 @@ import { ChatModal } from './ChatModal';
 import { LoyaltySection } from './LoyaltySection';
 import { ClosedStoreModal } from './ClosedStoreModal';
 import { ClientFloatingNav, ClientTab } from './ClientFloatingNav';
-import { Category, OpeningHour, Order, Product } from '../../types';
+import type { Category, Product } from '../../../contract/catalog/types';
+import type { Order } from '../../../contract/order/types';
+import type { OpeningHour } from '../../../contract/shop/types';
 import { Link } from 'react-router-dom';
-import { Flame, Sparkles, ShoppingBag, ClipboardList, Search, ChevronRight, Clock, Store, Bike } from 'lucide-react';
+import {
+  Flame,
+  LayoutGrid,
+  ShoppingBag,
+  ClipboardList,
+  Search,
+  ChevronRight,
+  Clock,
+  Store,
+  Bike,
+  Soup,
+  Fish,
+  CupSoda,
+  Package,
+  Utensils,
+  type LucideIcon,
+} from 'lucide-react';
+import { formatMoney } from '../../../contract/pricing/money';
+
+/**
+ * Ícones do fallback de categorias (quando o banco ainda não tem categorias).
+ * Categoria vinda do banco tem emoji escolhido pela cozinha e continua sendo
+ * renderizada como emoji; só o fallback hardcoded usa ícones lucide.
+ */
+const FALLBACK_CATEGORY_ICONS: Record<string, LucideIcon> = {
+  caldinhos: Soup,
+  petiscos: Fish,
+  bebidas: CupSoda,
+  combos: Package,
+};
 
 function formatTodayHours(hours: OpeningHour | null): string {
   if (!hours) return 'Fechado hoje';
@@ -61,7 +92,7 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void; index?: number }> 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, delay: reduceMotion ? 0 : Math.min(index, 6) * 0.05, ease: [0.16, 1, 0.3, 1] }}
       whileTap={reduceMotion ? undefined : { scale: 0.985 }}
-      className="w-full rounded-2xl border border-[#E7E5E4] bg-white p-4 text-left shadow-sm transition hover:border-[#B91C1C]/35"
+      className="w-full rounded-2xl border border-[#E7E5E4] bg-white p-4 text-left shadow-sm transition hover:border-[#B91C1C]/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -81,7 +112,7 @@ const OrderCard: React.FC<{ order: Order; onOpen: () => void; index?: number }> 
           {order.items.map((i) => i.product.name).join(', ')}
         </span>
         <span className="shrink-0 text-xs font-extrabold text-[#B91C1C]">
-          R$ {order.total.toFixed(2)}
+          {formatMoney(order.total)}
         </span>
       </div>
       <div className="mt-1 text-[10px] text-[#A8A29E]">
@@ -110,15 +141,15 @@ export const ClientView: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [view, setView] = useState<ClientTab>('inicio');
 
-  const caldinhoDoDia = products.find((p) => p.isCaldinhoDoDia && p.available) || null;
+  const caldinhoDoDia = products.find((p) => p.isFeatured && p.available) || null;
 
   const categoryList: Category[] = categories.length > 0 ? [...categories].sort((a, b) => a.sort - b.sort) : [];
   if (categoryList.length === 0) {
-    const known: Record<string, { label: string; emoji: string; color: string }> = {
-      caldinhos: { label: 'Caldinhos', emoji: '🍲', color: '#C2410C' },
-      petiscos: { label: 'Petiscos', emoji: '🍤', color: '#7C3AED' },
-      bebidas: { label: 'Bebidas', emoji: '🥤', color: '#2563EB' },
-      combos: { label: 'Combos', emoji: '🍱', color: '#059669' },
+    const known: Record<string, { label: string; color: string }> = {
+      caldinhos: { label: 'Caldinhos', color: '#C2410C' },
+      petiscos: { label: 'Petiscos', color: '#7C3AED' },
+      bebidas: { label: 'Bebidas', color: '#2563EB' },
+      combos: { label: 'Combos', color: '#059669' },
     };
     const seen = new Set<string>();
     for (const p of products) {
@@ -128,7 +159,8 @@ export const ClientView: React.FC = () => {
       categoryList.push({
         id,
         label: known[id]?.label || id,
-        emoji: known[id]?.emoji || '🍽️',
+        // Emoji vazio: o render troca por um ícone lucide do fallback.
+        emoji: '',
         color: known[id]?.color || '#B91C1C',
         sort: categoryList.length,
       });
@@ -201,7 +233,7 @@ export const ClientView: React.FC = () => {
                   <p className="line-clamp-1 text-sm font-extrabold text-white drop-shadow">{caldinhoDoDia.name}</p>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs font-black text-[#FDE68A]">
-                      R$ {caldinhoDoDia.basePrice.toFixed(2)}
+                      {formatMoney(caldinhoDoDia.basePrice)}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[11px] font-black text-[#B91C1C] shadow-lg">
                       <ShoppingBag className="h-3.5 w-3.5" />
@@ -218,10 +250,10 @@ export const ClientView: React.FC = () => {
               type="button"
               onClick={() => setSelectedCategory('all')}
               aria-pressed={selectedCategory === 'all'}
-              className="relative flex shrink-0 flex-col items-center gap-1.5 py-1 transition-all active:scale-95"
+              className="relative flex shrink-0 flex-col items-center gap-1.5 rounded-2xl py-1 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
             >
               <div
-                className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-xl transition-all ${
+                className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-xl transition-colors ${
                   selectedCategory === 'all' ? 'shadow-md shadow-[#B91C1C]/15' : ''
                 }`}
                 style={{ backgroundColor: selectedCategory === 'all' ? '#FEE2E2' : '#FEF2F2' }}
@@ -236,7 +268,7 @@ export const ClientView: React.FC = () => {
                 {selectedCategory === 'all' && reduceMotion && (
                   <span className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]" />
                 )}
-                <Sparkles
+                <LayoutGrid
                   className="relative h-7 w-7"
                   style={{ color: selectedCategory === 'all' ? '#B91C1C' : '#DC2626' }}
                   strokeWidth={2}
@@ -259,10 +291,10 @@ export const ClientView: React.FC = () => {
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
                   aria-pressed={isSelected}
-                  className="relative flex shrink-0 flex-col items-center gap-1.5 py-1 transition-all active:scale-95"
+                  className="relative flex shrink-0 flex-col items-center gap-1.5 rounded-2xl py-1 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
                 >
                   <div
-                    className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-2xl transition-all ${
+                    className={`relative flex h-14 w-14 items-center justify-center rounded-2xl text-2xl transition-colors ${
                       isSelected ? 'shadow-md shadow-[#B91C1C]/15' : ''
                     }`}
                     style={{ backgroundColor: isSelected ? '#FEE2E2' : `${cat.color}1A` }}
@@ -277,7 +309,20 @@ export const ClientView: React.FC = () => {
                     {isSelected && reduceMotion && (
                       <span className="absolute inset-0 rounded-2xl ring-2 ring-[#B91C1C]" />
                     )}
-                    <span className="relative">{cat.emoji}</span>
+                    {cat.emoji ? (
+                      <span className="relative">{cat.emoji}</span>
+                    ) : (
+                      (() => {
+                        const FallbackIcon = FALLBACK_CATEGORY_ICONS[cat.id] ?? Utensils;
+                        return (
+                          <FallbackIcon
+                            className="relative h-7 w-7"
+                            style={{ color: isSelected ? '#B91C1C' : cat.color }}
+                            strokeWidth={2}
+                          />
+                        );
+                      })()
+                    )}
                   </div>
                   <span
                     className={`max-w-[64px] truncate text-center text-[10px] font-semibold leading-tight ${
@@ -295,7 +340,7 @@ export const ClientView: React.FC = () => {
             <div className="mb-3 flex items-end justify-between gap-2">
               <h3 className="text-base font-extrabold leading-tight text-[#1C1917]">
                 {selectedCategory === 'all'
-                  ? 'Mais vendidos'
+                  ? 'Cardápio'
                   : categoryList.find((c) => c.id === selectedCategory)?.label}
               </h3>
               <span className="text-[11px] font-bold text-[#B91C1C]">{filteredProducts.length} itens</span>
@@ -314,6 +359,7 @@ export const ClientView: React.FC = () => {
                       key={product.id}
                       product={product}
                       index={i}
+                      priority={i < 2}
                       onSelect={(p) => setSelectedProduct(p)}
                     />
                   ))}
@@ -345,7 +391,7 @@ export const ClientView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setView('inicio')}
-                className="mt-4 rounded-full bg-[#B91C1C] px-5 py-2.5 text-xs font-extrabold text-white shadow-md"
+                className="mt-4 rounded-full bg-[#B91C1C] px-5 py-2.5 text-xs font-extrabold text-white shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 focus-visible:ring-offset-2"
               >
                 Ver cardápio
               </button>
@@ -369,7 +415,7 @@ export const ClientView: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar caldinho, petisco, bebida..."
+              placeholder="Buscar caldinho, petisco, bebida…"
               className="w-full rounded-2xl border border-[#E7E5E4] bg-white py-3.5 pl-10 pr-4 text-sm font-medium text-[#1C1917] placeholder-[#A8A29E] shadow-sm focus:border-[#B91C1C] focus:outline-none focus:ring-2 focus:ring-[#B91C1C]/15"
             />
           </div>
@@ -377,7 +423,7 @@ export const ClientView: React.FC = () => {
           {searchQuery.trim() === '' ? (
             <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">
               <p className="mb-1 text-lg font-bold text-[#1C1917]">Digite para buscar</p>
-              <p className="text-xs">Encontre seu caldinho preferido em segundos.</p>
+              <p className="text-xs">Digite o nome de um prato ou bebida.</p>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="rounded-2xl border border-[#E7E5E4] bg-white p-8 text-center text-[#57534E]">

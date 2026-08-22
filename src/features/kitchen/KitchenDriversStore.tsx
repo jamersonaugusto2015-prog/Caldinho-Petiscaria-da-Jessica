@@ -1,11 +1,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Driver } from '../../types';
+import type { Driver } from '../../../contract/driver/types';
 import { kitchenApi as api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useKitchenToast } from './KitchenNotificationsStore';
 
 interface KitchenDriversContextType {
   drivers: Driver[];
+  /** true só durante a primeira carga; uma recarga em segundo plano não acende de novo. */
+  loading: boolean;
+  /** erro da carga inicial — some assim que os motoboys chegam uma vez. */
+  error: string | null;
+  reload: () => void;
   createDriver: (d: Pick<Driver, 'name' | 'phone' | 'password' | 'bikeModel' | 'plate' | 'active'>) => Promise<void>;
   updateDriver: (id: string, patch: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
@@ -22,13 +27,41 @@ export const KitchenDriversProvider: React.FC<{ children: React.ReactNode }> = (
   const triggerToast = useKitchenToast();
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
-  const refetch = useCallback(() => {
-    api.get<Driver[]>('/drivers').then(setDrivers).catch(() => {});
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDrivers = useCallback(
+    (isInitial: boolean) => {
+      if (isInitial) {
+        setLoading(true);
+        setError(null);
+      }
+      api
+        .get<Driver[]>('/drivers')
+        .then((list) => {
+          setDrivers(list);
+          if (isInitial) setError(null);
+        })
+        .catch(() => {
+          if (isInitial) {
+            setError('Não deu para carregar os motoboys. Confira a conexão e tente de novo.');
+          } else {
+            triggerToast('Não deu para atualizar os motoboys. Mostrando os últimos carregados.');
+          }
+        })
+        .finally(() => {
+          if (isInitial) setLoading(false);
+        });
+    },
+    [triggerToast]
+  );
+
+  const refetch = useCallback(() => fetchDrivers(false), [fetchDrivers]);
+  const loadInitial = useCallback(() => fetchDrivers(true), [fetchDrivers]);
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    loadInitial();
+  }, [loadInitial]);
 
   useSocketEvent('drivers:updated', refetch);
 
@@ -37,7 +70,7 @@ export const KitchenDriversProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         const created = await api.post<Driver>('/drivers', data);
         setDrivers((prev) => [...prev, created]);
-        triggerToast(`🛵 Motoboy ${created.name} cadastrado!`);
+        triggerToast(`Motoboy ${created.name} cadastrado.`);
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao criar motoboy.');
       }
@@ -50,7 +83,7 @@ export const KitchenDriversProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         const updated = await api.patch<Driver>(`/drivers/${id}`, patch);
         setDrivers((prev) => prev.map((d) => (d.id === id ? updated : d)));
-        triggerToast('✅ Motoboy atualizado!');
+        triggerToast('Motoboy atualizado.');
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao atualizar motoboy.');
       }
@@ -63,7 +96,7 @@ export const KitchenDriversProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         await api.delete(`/drivers/${id}`);
         setDrivers((prev) => prev.filter((d) => d.id !== id));
-        triggerToast('🗑️ Motoboy removido.');
+        triggerToast('Motoboy removido.');
       } catch (err) {
         triggerToast(err instanceof Error ? err.message : 'Erro ao remover motoboy.');
       }
@@ -72,8 +105,8 @@ export const KitchenDriversProvider: React.FC<{ children: React.ReactNode }> = (
   );
 
   const value = useMemo<KitchenDriversContextType>(
-    () => ({ drivers, createDriver, updateDriver, deleteDriver }),
-    [drivers, createDriver, updateDriver, deleteDriver]
+    () => ({ drivers, loading, error, reload: loadInitial, createDriver, updateDriver, deleteDriver }),
+    [drivers, loading, error, loadInitial, createDriver, updateDriver, deleteDriver]
   );
 
   const sync = useMemo<KitchenDriversSyncContextType>(() => ({ refetch }), [refetch]);

@@ -1,14 +1,12 @@
 import webpush from 'web-push';
-import { ChatMessage, Order } from '../src/types';
-import {
-  AlertContext,
-  OrderAlert,
-  OrderAlertEvent,
-  chatAlertFor,
-  orderAlertFor,
-} from '../src/shared/orderAlerts';
-import { db } from './db';
-import { AudienceRole, OrderRecipient, orderAudience } from './orderAudience';
+import type { ChatMessage, Order } from '../contract/order/types';
+import { AlertContext, OrderAlert, OrderAlertEvent, chatAlertFor, orderAlertFor } from '../contract/order/alerts';
+import { db, getMetaValue, getSettings } from './db';
+import { AudienceRole, OrderRecipient, orderAudience } from '../contract/order/audience';
+import { config } from './config';
+import type { ShopId } from '../contract/shop/types';
+import { getServerConfig, setServerConfig, type ServerConfigKey } from './infra/secrets';
+import { driverRoom, driversRoom } from '../contract/shop/rooms';
 
 /**
  * Push: o segundo transporte da audiência do pedido.
@@ -39,18 +37,20 @@ export interface VapidKeys {
 
 let cachedVapid: VapidKeys | null = null;
 
+/**
+ * O par VAPID sai de `server_config`, não de `meta`.
+ *
+ * Ele identifica o SERVIDOR DE PUSH para o navegador — não a loja. Uma chave
+ * por loja quebraria push de verdade: a inscrição guardada no navegador foi
+ * assinada com uma chave pública específica, e trocá-la mata em silêncio todos
+ * os inscritos daquela loja.
+ */
 function metaGet(key: string): string | null {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined;
-  return row ? row.value : null;
+  return getServerConfig(key as ServerConfigKey) || null;
 }
 
 function metaPutIfAbsent(key: string, value: string): void {
-  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').run(
-    key,
-    value
-  );
+  if (!getServerConfig(key as ServerConfigKey)) setServerConfig(key as ServerConfigKey, value);
 }
 
 /**
@@ -68,12 +68,10 @@ export function vapidKeys(): VapidKeys {
   if (cachedVapid) return cachedVapid;
 
   const subject =
-    process.env.VAPID_SUBJECT?.trim() ||
-    process.env.APP_URL?.trim() ||
-    'mailto:contato@caldinhodajessica.com.br';
+    config.VAPID_SUBJECT || config.APP_URL || 'mailto:contato@caldinhodajessica.com.br';
 
-  const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
-  const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
+  const envPublic = config.VAPID_PUBLIC_KEY;
+  const envPrivate = config.VAPID_PRIVATE_KEY;
   if (envPublic && envPrivate) {
     cachedVapid = { publicKey: envPublic, privateKey: envPrivate, subject };
     return cachedVapid;
@@ -132,19 +130,22 @@ export function isPushSubscription(value: unknown): value is StoredSubscription 
  * qualquer navegador a chave da sala privada de um motoboy.
  */
 export function savePushSubscription(input: {
+  shopId: ShopId;
   room: string;
   role: AudienceRole;
   subscription: StoredSubscription;
 }): void {
   db.prepare(
-    `INSERT INTO push_subscriptions (endpoint, room, role, data, created_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO push_subscriptions (endpoint, shop_id, room, role, data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(endpoint) DO UPDATE SET
+       shop_id = excluded.shop_id,
        room = excluded.room,
        role = excluded.role,
        data = excluded.data`
   ).run(
     input.subscription.endpoint,
+    input.shopId,
     input.room,
     input.role,
     JSON.stringify(input.subscription),
@@ -162,16 +163,23 @@ export function deletePushSubscription(endpoint: string): void {
  * recebendo cada corrida nova no bolso — com o token já revogado, mas com o
  * bairro, a distância e a taxa de toda a operação.
  */
-export function deletePushSubscriptionsForDriver(driverId: string): void {
+export function deletePushSubscriptionsForDriver(shopId: ShopId, driverId: string): void {
   if (!driverId) return;
-  db.prepare('DELETE FROM push_subscriptions WHERE room = ?').run(`driver:${driverId}`);
+  // A sala vem de `driverRoom`, não de um template escrito à mão. Quando o
+  // prefixo da loja entrou nas salas, esta linha ainda montava `driver:<id>` e
+  // deixou de casar com nada: demitir alguém parou de apagar o push dele, e o
+  // celular do ex-funcionário continuaria recebendo cada corrida nova.
+  db.prepare('DELETE FROM push_subscriptions WHERE shop_id = ? AND room = ?').run(
+    shopId,
+    driverRoom(shopId, driverId)
+  );
 }
 
-export function countPushSubscriptions(room: string): number {
+export function countPushSubscriptions(shopId: ShopId, room: string): number {
   return (
-    db.prepare('SELECT COUNT(*) AS c FROM push_subscriptions WHERE room = ?').get(room) as {
-      c: number;
-    }
+    db
+      .prepare('SELECT COUNT(*) AS c FROM push_subscriptions WHERE shop_id = ? AND room = ?')
+      .get(shopId, room) as { c: number }
   ).c;
 }
 
@@ -181,19 +189,27 @@ export function countPushSubscriptions(room: string): number {
  * é todo mundo com papel de motoboy, menos a sala que o `except` desconta. É
  * assim que o dono da corrida não recebe a versão redigida por cima da dele.
  */
-function rowsFor(room: string, except?: string): SubscriptionRow[] {
-  if (room === 'drivers') {
+function rowsFor(shopId: ShopId, room: string, except?: string): SubscriptionRow[] {
+  // A sala compartilhada dos motoboys é DERIVADA do papel, não guardada: nenhum
+  // navegador se inscreve nela. Sem o `shop_id` na consulta, ela alcançaria os
+  // motoboys de todas as lojas — cada corrida nova de uma tocando no celular da
+  // equipe da outra, com bairro, distância e taxa.
+  if (room === driversRoom(shopId)) {
     return except
       ? (db
-          .prepare("SELECT endpoint, data FROM push_subscriptions WHERE role = 'driver' AND room <> ?")
-          .all(except) as SubscriptionRow[])
+          .prepare(
+            "SELECT endpoint, data FROM push_subscriptions WHERE shop_id = ? AND role = 'driver' AND room <> ?"
+          )
+          .all(shopId, except) as SubscriptionRow[])
       : (db
-          .prepare("SELECT endpoint, data FROM push_subscriptions WHERE role = 'driver'")
-          .all() as SubscriptionRow[]);
+          .prepare(
+            "SELECT endpoint, data FROM push_subscriptions WHERE shop_id = ? AND role = 'driver'"
+          )
+          .all(shopId) as SubscriptionRow[]);
   }
   return db
-    .prepare('SELECT endpoint, data FROM push_subscriptions WHERE room = ?')
-    .all(room) as SubscriptionRow[];
+    .prepare('SELECT endpoint, data FROM push_subscriptions WHERE shop_id = ? AND room = ?')
+    .all(shopId, room) as SubscriptionRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +231,12 @@ function rowsFor(room: string, except?: string): SubscriptionRow[] {
 export type OrderPushContext = Omit<AlertContext, 'driverId'>;
 
 export interface PushEnvelope {
+  /**
+   * A loja dona deste envio. Sem ela, a sala derivada `drivers` alcançaria a
+   * equipe de TODAS as lojas — cada corrida nova de uma tocando no bolso da
+   * outra, com bairro, distância e taxa.
+   */
+  shopId: ShopId;
   room: string;
   except?: string;
   role: AudienceRole;
@@ -222,17 +244,46 @@ export interface PushEnvelope {
   payload: string;
 }
 
-function envelopeFor(recipient: OrderRecipient, alert: OrderAlert | null): PushEnvelope | null {
+/**
+ * A marca da loja que o `sw.js` precisa para desenhar a notificação: hoje ele
+ * carrega "Caldinho da Jessica" e os ícones de UMA loja só, gravados em
+ * constantes fixas (ver `public/sw.js`). Sem isto no payload, o push da
+ * pizzaria chegava com o nome e o ícone do caldinho.
+ */
+interface PushBranding {
+  storeName: string;
+  /** Prefixo dos ícones da loja (ex.: `/api/uploads/2/icons`). Vazio = os padrões do `sw.js`. */
+  iconBase: string;
+}
+
+function pushBrandingFor(shopId: ShopId): PushBranding {
+  return {
+    storeName: getSettings(shopId).storeName,
+    iconBase: getMetaValue(shopId, 'brand_icon_base'),
+  };
+}
+
+function envelopeFor(
+  shopId: ShopId,
+  recipient: OrderRecipient,
+  alert: OrderAlert | null,
+  branding: PushBranding
+): PushEnvelope | null {
   // `null` é a resposta mais comum da tabela: a maior parte dos eventos é
   // sincronização de estado, não notícia. E `system: false` é o alerta que
   // existe na tela mas não vale atravessar o app fechado.
   if (!alert || !alert.channels.system) return null;
   return {
+    shopId,
     room: recipient.room,
     except: recipient.except,
     role: recipient.role,
     alert,
-    payload: JSON.stringify(alert),
+    // `storeName`/`iconBase` viajam ao lado dos campos do alerta — não dentro
+    // dele — para o `sw.js` continuar lendo `payload.title` etc. direto, sem
+    // reestruturar nada. `iconBase` vazio vira `undefined` e o `JSON.stringify`
+    // o omite: um push de loja sem ícone próprio não engorda por um campo inútil.
+    payload: JSON.stringify({ ...alert, storeName: branding.storeName, iconBase: branding.iconBase || undefined }),
   };
 }
 
@@ -242,30 +293,39 @@ function envelopeFor(recipient: OrderRecipient, alert: OrderAlert | null): PushE
  * `recipient.order`, a vista do destinatário, nunca sobre o pedido cru.
  */
 export function orderPushEnvelopes(
+  shopId: ShopId,
   event: OrderAlertEvent,
   order: Order,
   ctx: OrderPushContext = {}
 ): PushEnvelope[] {
   const envelopes: PushEnvelope[] = [];
-  for (const recipient of orderAudience(order)) {
+  // Uma consulta só para o evento inteiro, não uma por destinatário: um pedido
+  // pode ter três ou quatro destinatários (cozinha, cliente, pool de motoboys).
+  const branding = pushBrandingFor(shopId);
+  for (const recipient of orderAudience(shopId, order)) {
     const alert = orderAlertFor(recipient.role, event, recipient.order, {
       ...ctx,
       // A identidade do motoboy sai da audiência. O pool não tem dono, então
       // vai sem `driverId` e só recebe o alerta de corrida oferecida.
       driverId: recipient.driverId,
     });
-    const envelope = envelopeFor(recipient, alert);
+    const envelope = envelopeFor(shopId, recipient, alert, branding);
     if (envelope) envelopes.push(envelope);
   }
   return envelopes;
 }
 
 /** Mensagem do chat. O motoboy não recebe: `chatAlertFor` já devolve `null`. */
-export function chatPushEnvelopes(order: Order, message: ChatMessage): PushEnvelope[] {
+export function chatPushEnvelopes(
+  shopId: ShopId,
+  order: Order,
+  message: ChatMessage
+): PushEnvelope[] {
   const envelopes: PushEnvelope[] = [];
-  for (const recipient of orderAudience(order)) {
-    if (recipient.room === 'drivers') continue;
-    const envelope = envelopeFor(recipient, chatAlertFor(recipient.role, message));
+  const branding = pushBrandingFor(shopId);
+  for (const recipient of orderAudience(shopId, order)) {
+    if (recipient.room === driversRoom(shopId)) continue;
+    const envelope = envelopeFor(shopId, recipient, chatAlertFor(recipient.role, message), branding);
     if (envelope) envelopes.push(envelope);
   }
   return envelopes;
@@ -287,7 +347,7 @@ async function deliver(envelope: PushEnvelope): Promise<void> {
   const { subject, publicKey, privateKey } = vapidKeys();
   if (!publicKey || !privateKey) return;
 
-  const rows = rowsFor(envelope.room, envelope.except);
+  const rows = rowsFor(envelope.shopId, envelope.room, envelope.except);
   await Promise.all(
     rows.map(async (row) => {
       try {
@@ -339,20 +399,21 @@ export function sendPushEnvelopes(envelopes: PushEnvelope[]): void {
 }
 
 export function sendOrderPush(
+  shopId: ShopId,
   order: Order,
   event: OrderAlertEvent,
   ctx: OrderPushContext = {}
 ): void {
   try {
-    sendPushEnvelopes(orderPushEnvelopes(event, order, ctx));
+    sendPushEnvelopes(orderPushEnvelopes(shopId, event, order, ctx));
   } catch (err) {
     console.error('[push] falha ao montar o alerta do pedido', err);
   }
 }
 
-export function sendChatPush(order: Order, message: ChatMessage): void {
+export function sendChatPush(shopId: ShopId, order: Order, message: ChatMessage): void {
   try {
-    sendPushEnvelopes(chatPushEnvelopes(order, message));
+    sendPushEnvelopes(chatPushEnvelopes(shopId, order, message));
   } catch (err) {
     console.error('[push] falha ao montar o alerta do chat', err);
   }

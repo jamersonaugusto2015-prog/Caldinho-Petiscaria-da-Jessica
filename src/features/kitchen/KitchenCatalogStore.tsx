@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Product, Coupon, Category, Promotion } from '../../types';
+import type { Category, Coupon, Product, Promotion } from '../../../contract/catalog/types';
 import { kitchenApi as api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useKitchenToast } from './KitchenNotificationsStore';
@@ -9,12 +9,17 @@ interface KitchenCatalogContextType {
   categories: Category[];
   coupons: Coupon[];
   promotions: Promotion[];
+  /** true só durante a primeira carga; uma recarga em segundo plano não acende de novo. */
+  loading: boolean;
+  /** erro da carga inicial — some assim que o cardápio chega uma vez. */
+  error: string | null;
+  reload: () => void;
   toggleProductAvailability: (id: string, currentlyAvailable: boolean) => Promise<void>;
   updateProductPrice: (id: string, newPrice: number) => Promise<void>;
   updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   addProduct: (p: Product) => Promise<void>;
-  toggleCaldinhoDoDia: (product: Product) => Promise<void>;
+  toggleFeatured: (product: Product) => Promise<void>;
   updateProductImage: (id: string, imageUrl: string) => Promise<void>;
   saveCategory: (cat: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
@@ -51,37 +56,53 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
   const promotionsRef = useRef(promotions);
   promotionsRef.current = promotions;
 
-  const fetchProducts = useCallback(() => {
-    api.get<Product[]>('/products').then(setProducts).catch(() => {});
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchCategories = useCallback(() => {
-    api.get<Category[]>('/categories').then(setCategories).catch(() => {});
-  }, []);
-
-  const fetchCoupons = useCallback(() => {
-    api.get<Coupon[]>('/coupons').then(setCoupons).catch(() => {});
-  }, []);
-
-  const fetchPromotions = useCallback(() => {
-    api.get<Promotion[]>('/promotions').then(setPromotions).catch(() => {});
-  }, []);
+  // Cada fetch devolve a própria promise sem engolir o erro: quem chama decide
+  // se é a carga inicial (tela de erro) ou uma recarga de fundo (aviso e mantém a lista).
+  const fetchProducts = useCallback(() => api.get<Product[]>('/products').then(setProducts), []);
+  const fetchCategories = useCallback(() => api.get<Category[]>('/categories').then(setCategories), []);
+  const fetchCoupons = useCallback(() => api.get<Coupon[]>('/coupons').then(setCoupons), []);
+  const fetchPromotions = useCallback(() => api.get<Promotion[]>('/promotions').then(setPromotions), []);
 
   const refetch = useCallback(() => {
-    fetchProducts();
-    fetchCategories();
-    fetchCoupons();
-    fetchPromotions();
+    // Recarga de fundo (reconexão): a lista que já está na tela não some por causa
+    // de uma falha — só um aviso único, mesmo se mais de um recurso falhar junto.
+    void Promise.allSettled([fetchProducts(), fetchCategories(), fetchCoupons(), fetchPromotions()]).then(
+      (results) => {
+        if (results.some((r) => r.status === 'rejected')) {
+          triggerToast('Não deu para atualizar o cardápio. Mostrando os últimos dados carregados.');
+        }
+      }
+    );
+  }, [fetchProducts, fetchCategories, fetchCoupons, fetchPromotions, triggerToast]);
+
+  const loadInitial = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([fetchProducts(), fetchCategories(), fetchCoupons(), fetchPromotions()])
+      .then(() => setError(null))
+      .catch(() => setError('Não deu para carregar o cardápio. Confira a conexão e tente de novo.'))
+      .finally(() => setLoading(false));
   }, [fetchProducts, fetchCategories, fetchCoupons, fetchPromotions]);
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    loadInitial();
+  }, [loadInitial]);
 
-  useSocketEvent('products:updated', fetchProducts);
-  useSocketEvent('categories:updated', fetchCategories);
-  useSocketEvent('coupons:updated', fetchCoupons);
-  useSocketEvent('promotions:updated', fetchPromotions);
+  useSocketEvent('products:updated', () =>
+    void fetchProducts().catch(() => triggerToast('Não deu para atualizar os produtos. Mostrando os últimos carregados.'))
+  );
+  useSocketEvent('categories:updated', () =>
+    void fetchCategories().catch(() => triggerToast('Não deu para atualizar as categorias. Mostrando as últimas carregadas.'))
+  );
+  useSocketEvent('coupons:updated', () =>
+    void fetchCoupons().catch(() => triggerToast('Não deu para atualizar os cupons. Mostrando os últimos carregados.'))
+  );
+  useSocketEvent('promotions:updated', () =>
+    void fetchPromotions().catch(() => triggerToast('Não deu para atualizar as promoções. Mostrando as últimas carregadas.'))
+  );
 
   const toggleProductAvailability = useCallback(
     async (id: string, currentlyAvailable: boolean) => {
@@ -89,7 +110,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         const updated = await api.patch<Product>(`/products/${id}`, { available: !currentlyAvailable });
         setProducts((prev) => prev.map((x) => (x.id === id ? updated : x)));
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao atualizar produto.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para atualizar o produto. Confira a conexão e tente de novo.');
       }
     },
     [triggerToast]
@@ -101,7 +122,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         const updated = await api.patch<Product>(`/products/${id}`, { basePrice: newPrice });
         setProducts((prev) => prev.map((x) => (x.id === id ? updated : x)));
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao atualizar preço.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para atualizar o preço. Tente de novo.');
       }
     },
     [triggerToast]
@@ -112,9 +133,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         const updated = await api.patch<Product>(`/products/${id}`, patch);
         setProducts((prev) => prev.map((x) => (x.id === id ? updated : x)));
-        triggerToast('✅ Produto atualizado!');
+        triggerToast('Produto atualizado.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao atualizar produto.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para atualizar o produto. Confira a conexão e tente de novo.');
       }
     },
     [triggerToast]
@@ -125,9 +146,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         await api.delete(`/products/${id}`);
         setProducts((prev) => prev.filter((x) => x.id !== id));
-        triggerToast('🗑️ Produto removido.');
+        triggerToast('Produto removido.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao remover produto.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para remover o produto. Confira a conexão e tente de novo.');
       }
     },
     [triggerToast]
@@ -139,28 +160,28 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         const created = await api.post<Product>('/products', p);
         setProducts((prev) => [created, ...prev]);
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao criar produto.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para criar o produto. Tente de novo.');
       }
     },
     [triggerToast]
   );
 
   // Qualquer produto pode ser a promoção do dia; clicar no que já está marcado desmarca.
-  const toggleCaldinhoDoDia = useCallback(
+  const toggleFeatured = useCallback(
     async (product: Product) => {
-      const isCurrent = Boolean(product.isCaldinhoDoDia);
+      const isCurrent = Boolean(product.isFeatured);
       try {
-        if (isCurrent) await api.delete(`/products/${product.id}/caldinho-do-dia`);
-        else await api.post(`/products/${product.id}/caldinho-do-dia`);
+        if (isCurrent) await api.delete(`/products/${product.id}/destaque`);
+        else await api.post(`/products/${product.id}/destaque`);
         const list = await api.get<Product[]>('/products');
         setProducts(list);
         triggerToast(
           isCurrent
-            ? '🔕 Promoção do dia removida.'
-            : `🔥 ${product.name || 'Produto'} agora é a Promoção do Dia.`
+            ? 'Promoção do dia removida.'
+            : `${product.name || 'Produto'} agora é a promoção do dia.`
         );
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao definir a Promoção do Dia.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para mudar a promoção do dia. Tente de novo.');
       }
     },
     [triggerToast]
@@ -171,9 +192,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         const updated = await api.patch<Product>(`/products/${id}`, { image: imageUrl });
         setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
-        triggerToast('🖼️ Imagem da promoção atualizada!');
+        triggerToast('Imagem da promoção atualizada.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao atualizar imagem.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar a imagem. Confira a conexão e tente de novo.');
       }
     },
     [triggerToast]
@@ -190,9 +211,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         }
         const list = await api.get<Category[]>('/categories');
         setCategories(list);
-        triggerToast('Categoria salva!');
+        triggerToast('Categoria salva.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao salvar categoria.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar a categoria. Tente de novo.');
       }
     },
     [triggerToast]
@@ -205,7 +226,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         setCategories((prev) => prev.filter((c) => c.id !== id));
         triggerToast('Categoria removida.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao remover categoria.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para remover a categoria. Tente de novo.');
       }
     },
     [triggerToast]
@@ -227,7 +248,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         const list = await api.get<Category[]>('/categories');
         setCategories(list);
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao reordenar.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar a nova ordem. Tente de novo.');
       }
     },
     [triggerToast]
@@ -256,7 +277,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         setCategories(list);
       } catch (err) {
         setCategories(current);
-        triggerToast(err instanceof Error ? err.message : 'Erro ao reordenar.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar a nova ordem. Tente de novo.');
       }
     },
     [triggerToast]
@@ -269,9 +290,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         await api.post<Coupon>('/coupons', c);
         const list = await api.get<Coupon[]>('/coupons');
         setCoupons(list);
-        triggerToast(`🎟️ Cupom ${c.code} salvo!`);
+        triggerToast(`Cupom ${c.code} salvo.`);
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao salvar cupom.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar o cupom. Tente de novo.');
       }
     },
     [triggerToast]
@@ -282,9 +303,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         await api.delete(`/coupons/${encodeURIComponent(code)}`);
         setCoupons((prev) => prev.filter((c) => c.code !== code));
-        triggerToast('🎟️ Cupom removido.');
+        triggerToast('Cupom removido.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao remover cupom.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para remover o cupom. Tente de novo.');
       }
     },
     [triggerToast]
@@ -300,10 +321,10 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         if (exists) await api.patch<Promotion>(`/promotions/${encodeURIComponent(promo.id)}`, promo);
         else await api.post<Promotion>('/promotions', promo);
         setPromotions(await api.get<Promotion[]>('/promotions'));
-        triggerToast('📣 Promoção salva!');
+        triggerToast('Promoção salva.');
         return true;
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao salvar promoção.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para salvar a promoção. Confira a conexão e tente de novo.');
         return false;
       }
     },
@@ -315,9 +336,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         await api.delete(`/promotions/${encodeURIComponent(id)}`);
         setPromotions((prev) => prev.filter((p) => p.id !== id));
-        triggerToast('🗑️ Promoção removida.');
+        triggerToast('Promoção removida.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao remover promoção.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para remover a promoção. Tente de novo.');
       }
     },
     [triggerToast]
@@ -331,7 +352,7 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
         });
         setPromotions((prev) => prev.map((p) => (p.id === promo.id ? updated : p)));
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao pausar promoção.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para pausar ou ativar a promoção. Tente de novo.');
       }
     },
     [triggerToast]
@@ -342,9 +363,9 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         const updated = await api.post<Promotion>(`/promotions/${encodeURIComponent(id)}/reset-uses`, {});
         setPromotions((prev) => prev.map((p) => (p.id === id ? updated : p)));
-        triggerToast('🔄 Contador de usos zerado.');
+        triggerToast('Contador de usos zerado.');
       } catch (err) {
-        triggerToast(err instanceof Error ? err.message : 'Erro ao zerar o contador.');
+        triggerToast(err instanceof Error ? err.message : 'Não deu para zerar o contador. Tente de novo.');
       }
     },
     [triggerToast]
@@ -356,12 +377,15 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       categories,
       coupons,
       promotions,
+      loading,
+      error,
+      reload: loadInitial,
       toggleProductAvailability,
       updateProductPrice,
       updateProduct,
       deleteProduct,
       addProduct,
-      toggleCaldinhoDoDia,
+      toggleFeatured,
       updateProductImage,
       saveCategory,
       deleteCategory,
@@ -379,12 +403,15 @@ export const KitchenCatalogProvider: React.FC<{ children: React.ReactNode }> = (
       categories,
       coupons,
       promotions,
+      loading,
+      error,
+      loadInitial,
       toggleProductAvailability,
       updateProductPrice,
       updateProduct,
       deleteProduct,
       addProduct,
-      toggleCaldinhoDoDia,
+      toggleFeatured,
       updateProductImage,
       saveCategory,
       deleteCategory,

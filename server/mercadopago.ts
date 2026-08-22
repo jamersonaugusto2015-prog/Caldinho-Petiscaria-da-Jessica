@@ -1,37 +1,72 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
-import { db } from './db';
+import { toApiAmount } from '../contract/pricing/money';
+import { config } from './config';
+import { deleteSecret, getSecret, setSecret, type ShopSecretKey } from './infra/secrets';
+import type { ShopId } from '../contract/shop/types';
+import { LOJA_PADRAO } from './db';
 
 const TOKEN_URL = 'https://api.mercadopago.com/oauth/token';
 const PAYMENTS_URL = 'https://api.mercadopago.com/v1/payments';
 const AUTH_URL = 'https://auth.mercadopago.com/authorization';
 
-if (!process.env.MP_WEBHOOK_SECRET) {
+if (!config.MP_WEBHOOK_SECRET) {
   console.warn(
     '⚠️  MP_WEBHOOK_SECRET não configurado: a verificação de assinatura do webhook do Mercado Pago está DESATIVADA. Qualquer requisição para /api/mercadopago/webhook será aceita sem checar a origem.'
   );
 }
 
-type PendingAuth = { verifier: string; expiresAt: number };
+/**
+ * O `state` do OAuth guarda a LOJA.
+ *
+ * O Mercado Pago devolve o usuário em `/mercadopago/callback` sem credencial
+ * nenhuma: só com o `code` e o `state`. Se a loja fosse lida do `Host` do
+ * callback, bastaria abrir o callback no host errado para conectar a conta do
+ * Mercado Pago de uma loja na outra.
+ *
+ * O `state` é criado por `startOAuth`, que roda numa requisição de cozinha
+ * AUTENTICADA — é a única entrada confiável deste fluxo, e é onde a loja é
+ * decidida.
+ */
+type PendingAuth = { verifier: string; expiresAt: number; shopId: ShopId };
 const pendingAuth = new Map<string, PendingAuth>();
 
-function metaGet(key: string, fallback = ''): string {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
-  return row?.value ?? fallback;
+/**
+ * As credenciais do Mercado Pago são SEGREDO e moram em `shop_secrets`, não em
+ * `meta` (migração `019_shop_secrets`).
+ *
+ * A razão é concreta: `GET /settings` serializa a `meta` inteira para o painel.
+ * Enquanto o `mp_access_token` morasse lá, não vazá-lo dependia de alguém
+ * lembrar de removê-lo da resposta — e um `io.emit` sem sala já vazou a chave
+ * PIX exatamente assim.
+ */
+function segredo(shopId: ShopId, key: string, fallback = ''): string {
+  return getSecret(shopId, key as ShopSecretKey, fallback);
 }
 
-function metaSet(key: string, value: string): void {
-  db.prepare(
-    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  ).run(key, value);
+/**
+ * As credenciais do ambiente (`MP_ACCESS_TOKEN`, `MP_PUBLIC_KEY`) valem para
+ * UMA loja só: a que existia antes do multi-tenant.
+ *
+ * Elas são variáveis do SERVIDOR. Sem esta trava, toda loja nova nasceria
+ * "conectada ao Mercado Pago" com a credencial da primeira — e cobraria na
+ * conta dela. O painel mostraria "conectado" numa loja que nunca conectou
+ * nada, que é a pior versão do erro: ninguém vai procurar o que já parece
+ * certo.
+ */
+function credencialDoAmbiente(shopId: ShopId, valor: string | undefined): string {
+  return shopId === LOJA_PADRAO ? valor || '' : '';
 }
 
-function metaDel(...keys: string[]): void {
-  const stmt = db.prepare('DELETE FROM meta WHERE key = ?');
-  for (const key of keys) stmt.run(key);
+function gravaSegredo(shopId: ShopId, key: string, value: string): void {
+  setSecret(shopId, key as ShopSecretKey, value);
+}
+
+function apagaSegredos(shopId: ShopId, ...keys: string[]): void {
+  for (const key of keys) deleteSecret(shopId, key as ShopSecretKey);
 }
 
 export function isOAuthConfigured(): boolean {
-  return !!(process.env.MP_CLIENT_ID && process.env.MP_CLIENT_SECRET);
+  return !!(config.MP_CLIENT_ID && config.MP_CLIENT_SECRET);
 }
 
 function looksLikeHttpUrl(value: string): boolean {
@@ -60,32 +95,48 @@ export function isPublicWebhookUrl(url?: string): boolean {
   }
 }
 
+/**
+ * A URL pública desta requisição — e é dela que sai o `notification_url` de cada
+ * cobrança.
+ *
+ * A ORDEM INVERTEU no multi-tenant: o `Host` da requisição vem PRIMEIRO.
+ *
+ * `MP_REDIRECT_URI` e `APP_URL` são variáveis de ambiente, uma para o servidor
+ * inteiro. Com duas lojas, elas apontariam as duas para o mesmo endereço — e o
+ * webhook de um pagamento da loja B chegaria no host da loja A. Como é o `Host`
+ * que resolve a loja (`middleware/tenant.ts`), isso significa o pagamento de
+ * uma loja sendo processado com a credencial da outra.
+ *
+ * As variáveis continuam existindo como último recurso: em desenvolvimento e em
+ * fila de trabalho (backup, scheduler) não há requisição nenhuma para consultar.
+ */
 export function publicBaseUrl(reqHost?: string, proto?: string): string {
-  const redirect = process.env.MP_REDIRECT_URI?.trim();
+  if (reqHost) return `${proto === 'https' ? 'https' : 'http'}://${reqHost}`;
+
+  const redirect = config.MP_REDIRECT_URI;
   if (redirect && looksLikeHttpUrl(redirect)) {
     return redirect.replace(/\/api\/mercadopago\/callback\/?$/, '');
   }
-  const app = process.env.APP_URL?.trim().replace(/^["']|["']$/g, '');
+  const app = config.APP_URL;
   if (app && looksLikeHttpUrl(app)) return app.replace(/\/$/, '');
-  const cors = process.env.CORS_ORIGIN?.trim();
+  const cors = config.CORS_ORIGIN;
   if (cors && cors !== 'true' && looksLikeHttpUrl(cors.split(',')[0].trim())) {
     return cors.split(',')[0].trim().replace(/\/$/, '');
   }
-  if (reqHost) return `${proto === 'https' ? 'https' : 'http'}://${reqHost}`;
   return 'http://localhost:3001';
 }
 
 export function redirectUri(reqHost?: string, proto?: string): string {
-  if (process.env.MP_REDIRECT_URI) return process.env.MP_REDIRECT_URI;
+  if (config.MP_REDIRECT_URI) return config.MP_REDIRECT_URI;
   return `${publicBaseUrl(reqHost, proto)}/api/mercadopago/callback`;
 }
 
-export function isTestMode(): boolean {
-  const token = metaGet('mp_access_token') || process.env.MP_ACCESS_TOKEN || '';
+export function isTestMode(shopId: ShopId): boolean {
+  const token = segredo(shopId, 'mp_access_token') || credencialDoAmbiente(shopId, config.MP_ACCESS_TOKEN);
   if (tokenLooksLive(token)) return false;
-  if (process.env.MP_TEST === 'true' || tokenLooksTest(token)) return true;
-  if (process.env.MP_TEST === 'false') return false;
-  return process.env.NODE_ENV !== 'production';
+  if (config.MP_TEST === true || tokenLooksTest(token)) return true;
+  if (config.MP_TEST === false) return false;
+  return !config.isProduction;
 }
 
 function tokenLooksLive(token: string): boolean {
@@ -96,44 +147,44 @@ function tokenLooksTest(token: string): boolean {
   return token.startsWith('TEST-');
 }
 
-export function isMercadoPagoConnected(): boolean {
-  const token = metaGet('mp_access_token') || process.env.MP_ACCESS_TOKEN || '';
+export function isMercadoPagoConnected(shopId: ShopId): boolean {
+  const token = segredo(shopId, 'mp_access_token') || credencialDoAmbiente(shopId, config.MP_ACCESS_TOKEN);
   if (!token) return false;
-  if (isTestMode() && tokenLooksLive(token)) return false;
+  if (isTestMode(shopId) && tokenLooksLive(token)) return false;
   return true;
 }
 
-export function mercadoPagoUserId(): string {
-  return metaGet('mp_user_id');
+export function mercadoPagoUserId(shopId: ShopId): string {
+  return segredo(shopId, 'mp_user_id');
 }
 
-export function saveManualAccessToken(raw: string): void {
+export function saveManualAccessToken(shopId: ShopId, raw: string): void {
   const token = raw.trim();
   if (!token) throw new Error('Cole o Access Token.');
-  if (isTestMode() && !tokenLooksTest(token)) {
+  if (isTestMode(shopId) && !tokenLooksTest(token)) {
     throw new Error(
       'Modo teste: cole o Access Token que começa com TEST- (Credenciais de teste no painel). Não use APP_USR-.'
     );
   }
-  if (!isTestMode() && !tokenLooksLive(token) && !tokenLooksTest(token)) {
+  if (!isTestMode(shopId) && !tokenLooksLive(token) && !tokenLooksTest(token)) {
     throw new Error('Token inválido. Use um Access Token do Mercado Pago.');
   }
-  metaSet('mp_access_token', token);
-  metaSet('mp_connected_at', new Date().toISOString());
-  if (tokenLooksTest(token)) metaSet('mp_user_id', 'teste');
+  gravaSegredo(shopId, 'mp_access_token', token);
+  gravaSegredo(shopId, 'mp_connected_at', new Date().toISOString());
+  if (tokenLooksTest(token)) gravaSegredo(shopId, 'mp_user_id', 'teste');
 }
 
-export function savePublicKey(raw: string): void {
+export function savePublicKey(shopId: ShopId, raw: string): void {
   const key = raw.trim();
   if (!key) {
-    metaDel('mp_public_key');
+    apagaSegredos(shopId, 'mp_public_key');
     return;
   }
-  metaSet('mp_public_key', key);
+  gravaSegredo(shopId, 'mp_public_key', key);
 }
 
-export function getPublicKey(): string {
-  return metaGet('mp_public_key') || process.env.MP_PUBLIC_KEY || '';
+export function getPublicKey(shopId: ShopId): string {
+  return segredo(shopId, 'mp_public_key') || credencialDoAmbiente(shopId, config.MP_PUBLIC_KEY);
 }
 
 function buildPkce(): { verifier: string; challenge: string } {
@@ -142,16 +193,16 @@ function buildPkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-export function startOAuth(reqHost?: string, proto?: string): { url: string } {
+export function startOAuth(shopId: ShopId, reqHost?: string, proto?: string): { url: string } {
   if (!isOAuthConfigured()) {
     throw new Error('Defina MP_CLIENT_ID e MP_CLIENT_SECRET no servidor.');
   }
   const state = randomBytes(16).toString('hex');
   const { verifier, challenge } = buildPkce();
-  pendingAuth.set(state, { verifier, expiresAt: Date.now() + 10 * 60 * 1000 });
+  pendingAuth.set(state, { verifier, expiresAt: Date.now() + 10 * 60 * 1000, shopId });
 
   const params = new URLSearchParams({
-    client_id: process.env.MP_CLIENT_ID!,
+    client_id: config.MP_CLIENT_ID ?? '',
     response_type: 'code',
     platform_id: 'mp',
     state,
@@ -173,15 +224,15 @@ type TokenResponse = {
   error_description?: string;
 };
 
-function saveTokens(data: TokenResponse): void {
+function saveTokens(shopId: ShopId, data: TokenResponse): void {
   if (!data.access_token) throw new Error(data.message || data.error_description || 'Token do Mercado Pago vazio.');
-  metaSet('mp_access_token', data.access_token);
-  if (data.refresh_token) metaSet('mp_refresh_token', data.refresh_token);
+  gravaSegredo(shopId, 'mp_access_token', data.access_token);
+  if (data.refresh_token) gravaSegredo(shopId, 'mp_refresh_token', data.refresh_token);
   const expiresIn = Number(data.expires_in) || 180 * 24 * 3600;
-  metaSet('mp_token_expires_at', new Date(Date.now() + expiresIn * 1000).toISOString());
-  if (data.user_id != null) metaSet('mp_user_id', String(data.user_id));
-  if (data.public_key) metaSet('mp_public_key', data.public_key);
-  metaSet('mp_connected_at', new Date().toISOString());
+  gravaSegredo(shopId, 'mp_token_expires_at', new Date(Date.now() + expiresIn * 1000).toISOString());
+  if (data.user_id != null) gravaSegredo(shopId, 'mp_user_id', String(data.user_id));
+  if (data.public_key) gravaSegredo(shopId, 'mp_public_key', data.public_key);
+  gravaSegredo(shopId, 'mp_connected_at', new Date().toISOString());
 }
 
 export async function finishOAuth(
@@ -195,28 +246,32 @@ export async function finishOAuth(
   if (!pending || pending.expiresAt < Date.now()) {
     throw new Error('Sessão OAuth expirada. Tente conectar de novo.');
   }
+  // A loja sai do `state`, não do `Host` do callback: o Mercado Pago devolve o
+  // usuário aqui sem credencial nenhuma.
+  const shopId = pending.shopId;
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      client_id: process.env.MP_CLIENT_ID,
-      client_secret: process.env.MP_CLIENT_SECRET,
+      client_id: config.MP_CLIENT_ID,
+      client_secret: config.MP_CLIENT_SECRET,
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri(reqHost, proto),
       code_verifier: pending.verifier,
-      test_token: isTestMode() ? 'true' : 'false',
+      test_token: isTestMode(shopId) ? 'true' : 'false',
     }),
   });
   const data = (await res.json()) as TokenResponse;
   if (!res.ok) {
     throw new Error(data.message || data.error_description || 'Falha ao trocar o código do Mercado Pago.');
   }
-  saveTokens(data);
+  saveTokens(shopId, data);
 }
 
-export function disconnectMercadoPago(): void {
-  metaDel(
+export function disconnectMercadoPago(shopId: ShopId): void {
+  apagaSegredos(
+    shopId,
     'mp_access_token',
     'mp_refresh_token',
     'mp_token_expires_at',
@@ -226,38 +281,38 @@ export function disconnectMercadoPago(): void {
   );
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refresh = metaGet('mp_refresh_token');
+async function refreshAccessToken(shopId: ShopId): Promise<string | null> {
+  const refresh = segredo(shopId, 'mp_refresh_token');
   if (!refresh || !isOAuthConfigured()) return null;
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      client_id: process.env.MP_CLIENT_ID,
-      client_secret: process.env.MP_CLIENT_SECRET,
+      client_id: config.MP_CLIENT_ID,
+      client_secret: config.MP_CLIENT_SECRET,
       grant_type: 'refresh_token',
       refresh_token: refresh,
     }),
   });
   const data = (await res.json()) as TokenResponse;
   if (!res.ok || !data.access_token) return null;
-  saveTokens(data);
+  saveTokens(shopId, data);
   return data.access_token;
 }
 
-export async function getAccessToken(): Promise<string | null> {
-  const stored = metaGet('mp_access_token');
-  const expiresAt = metaGet('mp_token_expires_at');
+export async function getAccessToken(shopId: ShopId): Promise<string | null> {
+  const stored = segredo(shopId, 'mp_access_token');
+  const expiresAt = segredo(shopId, 'mp_token_expires_at');
   if (stored) {
-    if (isTestMode() && tokenLooksLive(stored)) return null;
+    if (isTestMode(shopId) && tokenLooksLive(stored)) return null;
     const soon = Date.now() + 60 * 60 * 1000;
     if (!expiresAt || new Date(expiresAt).getTime() > soon) return stored;
-    const refreshed = await refreshAccessToken();
+    const refreshed = await refreshAccessToken(shopId);
     if (refreshed) return refreshed;
     return stored;
   }
-  const envToken = process.env.MP_ACCESS_TOKEN || '';
-  if (envToken && isTestMode() && tokenLooksLive(envToken)) return null;
+  const envToken = credencialDoAmbiente(shopId, config.MP_ACCESS_TOKEN);
+  if (envToken && isTestMode(shopId) && tokenLooksLive(envToken)) return null;
   return envToken || null;
 }
 
@@ -272,21 +327,24 @@ export type MpPixCharge = {
 };
 
 export async function createPixCharge(opts: {
+  /** A loja que vai RECEBER o dinheiro. Sem ela, a cobrança cai na conta errada. */
+  shopId: ShopId;
   orderId: string;
   amount: number;
   description: string;
   payerName: string;
   notificationUrl?: string;
 }): Promise<MpPixCharge> {
-  const token = await getAccessToken();
+  const { shopId } = opts;
+  const token = await getAccessToken(shopId);
   if (!token) {
     throw new Error(
-      isTestMode()
+      isTestMode(shopId)
         ? 'Modo teste: cole um Access Token TEST- nas configurações da cozinha. APP_USR- não funciona em teste.'
         : 'Mercado Pago não está conectado.'
     );
   }
-  if (isTestMode() && tokenLooksLive(token)) {
+  if (isTestMode(shopId) && tokenLooksLive(token)) {
     throw new Error('Modo teste: não use credenciais live (APP_USR-). Cole o token TEST- do painel.');
   }
 
@@ -301,11 +359,11 @@ export async function createPixCharge(opts: {
   const testEmail = `test_user_${opts.orderId.toLowerCase().replace(/[^a-z0-9]/g, '')}@testuser.com`;
   const liveEmail = `pedido.${opts.orderId.toLowerCase().replace(/[^a-z0-9]/g, '')}@caldinho.app`;
   const body = {
-    transaction_amount: Number(opts.amount.toFixed(2)),
+    transaction_amount: toApiAmount(opts.amount),
     description: opts.description.slice(0, 255),
     payment_method_id: 'pix',
     payer: {
-      email: isTestMode() || tokenLooksTest(token) ? testEmail : liveEmail,
+      email: isTestMode(shopId) || tokenLooksTest(token) ? testEmail : liveEmail,
       first_name: firstName.slice(0, 60),
       last_name: lastName.slice(0, 60),
     },
@@ -364,6 +422,8 @@ export type MpCardCharge = {
 };
 
 export async function createCardCharge(opts: {
+  /** A loja que vai RECEBER o dinheiro. Sem ela, a cobrança cai na conta errada. */
+  shopId: ShopId;
   orderId: string;
   amount: number;
   description: string;
@@ -376,12 +436,13 @@ export async function createCardCharge(opts: {
   identificationNumber: string;
   notificationUrl?: string;
 }): Promise<MpCardCharge> {
-  const token = await getAccessToken();
+  const { shopId } = opts;
+  const token = await getAccessToken(shopId);
   if (!token) throw new Error('Mercado Pago não está conectado.');
 
   const body: Record<string, unknown> = {
     token: opts.cardToken,
-    transaction_amount: Number(opts.amount.toFixed(2)),
+    transaction_amount: toApiAmount(opts.amount),
     description: opts.description.slice(0, 255),
     installments: Math.max(1, Math.floor(opts.installments || 1)),
     payment_method_id: opts.paymentMethodId,
@@ -435,8 +496,8 @@ export type MpPayment = {
   externalReference: string;
 };
 
-export async function fetchPayment(paymentId: string): Promise<MpPayment | null> {
-  const token = await getAccessToken();
+export async function fetchPayment(shopId: ShopId, paymentId: string): Promise<MpPayment | null> {
+  const token = await getAccessToken(shopId);
   if (!token) return null;
   const res = await fetch(`${PAYMENTS_URL}/${encodeURIComponent(paymentId)}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
@@ -470,14 +531,14 @@ const REFUND_TIMEOUT_MS = 20000;
  * numa resposta duvidosa — marcar 'devolvido' sem devolução é perder o dinheiro
  * e o registro ao mesmo tempo.
  */
-export async function refundPayment(paymentId: string, amount?: number): Promise<MpRefund> {
+export async function refundPayment(shopId: ShopId, paymentId: string, amount?: number): Promise<MpRefund> {
   const id = String(paymentId || '').trim();
   if (!id) throw new Error('Pagamento sem identificador no Mercado Pago.');
-  const token = await getAccessToken();
+  const token = await getAccessToken(shopId);
   if (!token) throw new Error('Mercado Pago não está conectado.');
 
   const partial = typeof amount === 'number' && Number.isFinite(amount) && amount > 0;
-  const body = partial ? { amount: Number(amount.toFixed(2)) } : {};
+  const body = partial ? { amount: toApiAmount(amount) } : {};
 
   let res: Response;
   try {
@@ -544,15 +605,31 @@ export function parseWebhookPaymentId(body: unknown, query: Record<string, unkno
  * Verifica a assinatura do webhook conforme documentado pelo Mercado Pago:
  * header `x-signature` traz `ts=<epoch>,v1=<hmac hex>` e o manifest assinado é
  * `id:<data.id em minúsculas>;request-id:<x-request-id>;ts:<ts>;`.
- * Sem MP_WEBHOOK_SECRET configurado, a verificação fica desativada (aviso já
- * emitido na inicialização) e a requisição é aceita como antes.
+ *
+ * O segredo é DA LOJA. Cada loja conecta a própria conta do Mercado Pago, e o
+ * painel do MP gera um segredo por conta — um segredo global só validaria a
+ * assinatura de uma delas, e "assinatura inválida" num webhook de pagamento
+ * significa dinheiro que entrou e pedido que nunca foi marcado como pago.
+ *
+ * `MP_WEBHOOK_SECRET` do ambiente continua valendo como padrão: é o segredo da
+ * loja que existia antes do multi-tenant, e tirá-lo derrubaria a verificação
+ * dela num deploy.
+ *
+ * Sem segredo nenhum a verificação fica DESATIVADA (o boot avisa) e a
+ * requisição é aceita — o comportamento de antes.
  */
 export function verifyWebhookSignature(
+  shopId: ShopId,
   xSignature: string | undefined,
   xRequestId: string | undefined,
   dataId: string
 ): boolean {
-  const secret = process.env.MP_WEBHOOK_SECRET;
+  // O env vale SÓ para a loja padrão, como o access token e a public key acima
+  // (credencialDoAmbiente): uma loja nova que conecta o próprio Mercado Pago
+  // assina com o SEGREDO DELA, e o env da primeira loja rejeitaria — em
+  // silêncio — todo webhook dela.
+  const secret =
+    segredo(shopId, 'mp_webhook_secret') || credencialDoAmbiente(shopId, config.MP_WEBHOOK_SECRET);
   if (!secret) return true;
   if (!xSignature || !dataId) return false;
 

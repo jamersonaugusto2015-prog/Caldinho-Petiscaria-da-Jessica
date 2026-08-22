@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "caldinho-petiscaria",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,14 +8,14 @@
     "dev:web": "vite --port=3000 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
-    "test": "tsx --test server/*.test.ts src/shared/*.test.ts",
+    "test": "tsx --test \"server/**/*.test.ts\" \"contract/**/*.test.ts\" \"src/**/*.test.ts\"",
     "preview": "vite preview",
     "start": "tsx server/index.ts",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "platform:admin": "tsx scripts/platform-admin.ts"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/canvas-confetti": "^1.9.0",
     "@vitejs/plugin-react": "^5.0.4",
@@ -35,7 +35,8 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "vite": "^6.2.3",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -43,6 +44,8 @@
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.4",

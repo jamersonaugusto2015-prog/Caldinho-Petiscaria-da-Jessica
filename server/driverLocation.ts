@@ -1,11 +1,6 @@
-import { Driver, Order } from '../src/types';
-import {
-  LOCATION_STALE_AFTER_MS,
-  locationFreshness as freshnessOf,
-  parseTakenAt,
-  type LocationFreshness,
-} from '../src/shared/driverFreshness';
-
+import type { Driver } from '../contract/driver/types';
+import type { Order } from '../contract/order/types';
+import { LOCATION_STALE_AFTER_MS, locationFreshness as freshnessOf, parseTakenAt, type LocationFreshness } from '../contract/driver/freshness';
 /**
  * Localização do Entregador, lado servidor — o par do `useDriverLocation` do app.
  *

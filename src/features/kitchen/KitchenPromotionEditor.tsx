@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Bike, Check, Gift, Layers, Percent, ShoppingBag, Store, Truck, X } from 'lucide-react';
-import type { Category, Product, Promotion, PromotionKind, PromotionScope } from '../../types';
-import { PROMOTION_KIND_LABELS, WEEKDAY_LABELS, describeWindow } from '../../shared/promotions';
+import type { Category, Product, Promotion, PromotionKind, PromotionScope } from '../../../contract/catalog/types';
+import { PROMOTION_KIND_LABELS, WEEKDAY_LABELS, describeWindow } from '../../../contract/catalog/promotions';
 import { Field, FieldGrid, FieldNote, INPUT_CLASS, NumberField, SwitchGroup, SwitchRow } from './KitchenSettingsUI';
 import { PROMOTION_PRESETS, marginReport } from './kitchenPromotionDraft';
+import { formatMoney } from '../../../contract/pricing/money';
 
-const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
 const KIND_ICONS: Record<PromotionKind, React.ReactNode> = {
   desconto: <Percent className="w-4 h-4" />,
@@ -270,7 +270,7 @@ export const KitchenPromotionEditor: React.FC<Props> = ({ value, products, categ
                   <option value="">Escolha um produto…</option>
                   {products.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.name} — {money(product.basePrice)}
+                      {product.name} — {formatMoney(product.basePrice)}
                     </option>
                   ))}
                 </select>
@@ -348,7 +348,7 @@ export const KitchenPromotionEditor: React.FC<Props> = ({ value, products, categ
                           {picked && <Check className="w-3 h-3" />}
                         </span>
                         <span className="min-w-0 flex-1 truncate font-bold text-[#1C1917]">{product.name}</span>
-                        <span className="shrink-0 text-[#57534E]">{money(product.basePrice)}</span>
+                        <span className="shrink-0 text-[#57534E]">{formatMoney(product.basePrice)}</span>
                       </button>
                     );
                   })}
@@ -536,7 +536,10 @@ const MarginGuard: React.FC<{ report: ReturnType<typeof marginReport>; kind: Pro
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>
             Esta promoção vende abaixo do custo em{' '}
-            {report.rows.filter((row) => row.belowCost).length} item(ns). Cada venda dá prejuízo.
+            {report.rows.filter((row) => row.belowCost).length === 1
+              ? '1 item'
+              : `${report.rows.filter((row) => row.belowCost).length} itens`}
+            . Cada venda dá prejuízo.
           </span>
         </div>
       )}
@@ -556,17 +559,17 @@ const MarginGuard: React.FC<{ report: ReturnType<typeof marginReport>; kind: Pro
             {visible.map((row) => (
               <tr key={row.productId} className={row.belowCost ? 'bg-[#FEF2F2]' : ''}>
                 <td className="px-3 py-2 font-bold text-[#1C1917]">{row.name}</td>
-                <td className="px-3 py-2 text-right text-[#A8A29E] line-through">{money(row.basePrice)}</td>
-                <td className="px-3 py-2 text-right font-bold text-[#059669]">{money(row.promoPrice)}</td>
-                <td className="px-3 py-2 text-right text-[#57534E]">{row.cost ? money(row.cost) : '—'}</td>
+                <td className="px-3 py-2 text-right text-[#A8A29E] line-through tabular-nums">{formatMoney(row.basePrice)}</td>
+                <td className="px-3 py-2 text-right font-bold text-[#059669] tabular-nums">{formatMoney(row.promoPrice)}</td>
+                <td className="px-3 py-2 text-right text-[#57534E] tabular-nums">{row.cost ? formatMoney(row.cost) : '—'}</td>
                 <td
-                  className={`px-3 py-2 text-right font-extrabold ${
+                  className={`px-3 py-2 text-right font-extrabold tabular-nums ${
                     row.profit === null ? 'text-[#A8A29E]' : row.profit < 0 ? 'text-[#B91C1C]' : 'text-[#047857]'
                   }`}
                 >
                   {row.profit === null
                     ? 'sem custo'
-                    : `${money(row.profit)}${row.marginAfter !== null ? ` · ${row.marginAfter.toFixed(0)}%` : ''}`}
+                    : `${formatMoney(row.profit)}${row.marginAfter !== null ? ` · ${row.marginAfter.toFixed(0)}%` : ''}`}
                 </td>
               </tr>
             ))}
@@ -579,8 +582,8 @@ const MarginGuard: React.FC<{ report: ReturnType<typeof marginReport>; kind: Pro
       )}
       {report.missingCost > 0 && (
         <FieldNote tone="danger">
-          {report.missingCost} produto(s) sem custo cadastrado. Preencha o campo "Custo do prato" no cardápio para a
-          conta ficar completa.
+          {report.missingCost === 1 ? '1 produto' : `${report.missingCost} produtos`} sem custo cadastrado. Preencha o
+          campo "Custo do prato" no cardápio para a conta ficar completa.
         </FieldNote>
       )}
     </Block>

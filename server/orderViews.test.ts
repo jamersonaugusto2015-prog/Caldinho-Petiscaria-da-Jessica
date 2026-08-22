@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CartItem, Order } from '../src/types';
-import { orderForDriver, stripCustomerContact, stripPaymentSecrets } from './orderViews';
-
+import type { CartItem, Order } from '../contract/order/types';
+import { orderForDriver, stripCustomerContact, stripPaymentSecrets } from '../contract/order/views';
 function item(overrides: Partial<CartItem> = {}): CartItem {
   return {
     id: 'item-1',

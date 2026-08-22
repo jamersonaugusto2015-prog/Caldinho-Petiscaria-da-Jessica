@@ -5,8 +5,10 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Eye,
   GripVertical,
   Info,
+  ListPlus,
   Loader2,
   Lock,
   Package,
@@ -18,12 +20,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { Category, Product } from '../../types';
-import {
-  CATEGORY_COLOR_OPTIONS,
-  STARTER_CATEGORIES,
-  normalizeSearch,
-} from '../../shared/categories';
+import type { Category, Product } from '../../../contract/catalog/types';
+import { CATEGORY_COLOR_OPTIONS, STARTER_CATEGORIES, normalizeSearch } from '../../../contract/catalog/categories';
 import { CategoryIconPicker } from './CategoryIconPicker';
 
 const LABEL_MAX = 30;
@@ -134,7 +132,7 @@ export const KitchenCategoriesPanel: React.FC<Props> = ({
             <p className="text-xs text-[#57534E]">
               {ordered.length === 0
                 ? 'Nenhuma categoria ainda.'
-                : `${ordered.length} categoria(s)${emptyCount ? ` · ${emptyCount} sem produto` : ''}`}
+                : `${ordered.length} ${ordered.length === 1 ? 'categoria' : 'categorias'}${emptyCount ? ` · ${emptyCount} sem produto` : ''}`}
             </p>
           </div>
         </div>
@@ -152,8 +150,9 @@ export const KitchenCategoriesPanel: React.FC<Props> = ({
 
           {orphanCount > 0 && (
             <Notice tone="warn">
-              {orphanCount} produto(s) apontam para uma categoria que não existe mais. Abra o cardápio e
-              troque a categoria deles para voltarem a aparecer para o cliente.
+              {orphanCount === 1
+                ? '1 produto aponta para uma categoria que não existe mais. Abra o cardápio e troque a categoria dele para voltar a aparecer para o cliente.'
+                : `${orphanCount} produtos apontam para uma categoria que não existe mais. Abra o cardápio e troque a categoria deles para voltarem a aparecer para o cliente.`}
             </Notice>
           )}
 
@@ -162,7 +161,7 @@ export const KitchenCategoriesPanel: React.FC<Props> = ({
               <Search className="w-4 h-4 text-[#A8A29E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 className="input pl-9 py-2.5"
-                placeholder="Buscar categoria pelo nome..."
+                placeholder="Buscar categoria pelo nome…"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -173,7 +172,7 @@ export const KitchenCategoriesPanel: React.FC<Props> = ({
             <GripVertical className="w-3.5 h-3.5 text-[#A8A29E]" />
             {filtering
               ? 'Limpe a busca para poder arrastar e reordenar.'
-              : 'Arraste pela alça para mudar a ordem — é a mesma ordem que o cliente vê.'}
+              : 'Arraste pela alça para mudar a ordem. É a mesma ordem que o cliente vê.'}
           </p>
 
           {visible.length === 0 ? (
@@ -253,15 +252,15 @@ export const KitchenCategoriesPanel: React.FC<Props> = ({
 const ClientPreview: React.FC<{ categories: Category[] }> = ({ categories }) => (
   <section className="rounded-2xl border border-[#E7E5E4] bg-white overflow-hidden">
     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#F5F5F4]">
-      <Sparkles className="w-3.5 h-3.5 text-[#B91C1C]" />
+      <Eye className="w-3.5 h-3.5 text-[#B91C1C]" />
       <h3 className="text-[11px] uppercase tracking-wide font-black text-[#57534E]">
         Como o cliente vê
       </h3>
     </div>
     <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 py-3 bg-[#FAFAF9]">
       <div className="flex flex-col items-center gap-1.5 shrink-0 w-16">
-        <div className="h-14 w-14 rounded-2xl bg-[#FEE2E2] ring-2 ring-[#B91C1C] flex items-center justify-center text-2xl">
-          ⭐
+        <div className="h-14 w-14 rounded-2xl bg-[#FEE2E2] ring-2 ring-[#B91C1C] flex items-center justify-center">
+          <Sparkles className="h-7 w-7 text-[#B91C1C]" strokeWidth={2} />
         </div>
         <span className="text-[10px] font-semibold text-[#B91C1C] text-center leading-tight">Todos</span>
       </div>
@@ -366,7 +365,7 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
 
   return (
     <article
-      className="relative bg-white rounded-2xl border border-[#E7E5E4] overflow-hidden transition-shadow hover:shadow-md"
+      className="relative bg-white rounded-2xl border border-[#E7E5E4] overflow-hidden transition-colors hover:border-[#D6D3D1]"
       style={{ isolation: 'isolate' }}
     >
       <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: category.color }} aria-hidden />
@@ -398,7 +397,7 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
           </h3>
           <p className="flex items-center gap-1 text-[11px] text-[#57534E] mt-0.5">
             <Package className="w-3 h-3" />
-            {count === 0 ? 'Nenhum produto' : `${count} produto(s)`}
+            {count === 0 ? 'Nenhum produto' : `${count} ${count === 1 ? 'produto' : 'produtos'}`}
           </p>
         </div>
 
@@ -433,7 +432,7 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
           </button>
           <button
             className="btn-danger p-2 pointer-coarse:min-w-11"
-            title={blocked ? `${count} produto(s) usam esta categoria` : 'Excluir'}
+            title={blocked ? `${count} ${count === 1 ? 'produto usa' : 'produtos usam'} esta categoria` : 'Excluir'}
             aria-label={`Excluir ${category.label}`}
             disabled={blocked || removing}
             onClick={() => setConfirming(true)}
@@ -445,7 +444,7 @@ const CardBody: React.FC<CardProps & { onGrab?: (event: React.PointerEvent) => v
 
       {blocked && (
         <p className="px-4 pb-3 -mt-1 text-[11px] text-[#A8A29E]">
-          Para excluir, mova os {count} produto(s) para outra categoria primeiro.
+          Para excluir, mova {count === 1 ? 'o produto dela' : `os ${count} produtos`} para outra categoria primeiro.
         </p>
       )}
 
@@ -598,7 +597,7 @@ const CategoryEditor: React.FC<{
             </h3>
             <p className="text-xs text-[#57534E]">
               {original
-                ? `${productCount} produto(s) nesta categoria.`
+                ? `${productCount} ${productCount === 1 ? 'produto' : 'produtos'} nesta categoria.`
                 : 'Escolha um ícone, um nome curto e uma cor.'}
             </p>
           </div>
@@ -654,7 +653,7 @@ const CategoryEditor: React.FC<{
                     aria-label={option.name}
                     aria-pressed={active}
                     onClick={() => setColor(option.hex)}
-                    className="relative w-9 h-9 rounded-xl transition-transform duration-150 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#1C1917]/30"
+                    className="relative w-9 h-9 rounded-xl transition hover:ring-2 hover:ring-offset-2 hover:ring-[#1C1917]/25 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#1C1917]/30"
                     style={{ backgroundColor: option.hex }}
                   >
                     {active && (
@@ -730,7 +729,7 @@ const CategoryEditor: React.FC<{
                 </button>
                 <button type="submit" className="btn-primary px-5" disabled={!canSave}>
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  {saving ? 'Salvando...' : original ? 'Salvar mudanças' : 'Criar categoria'}
+                  {saving ? 'Salvando…' : original ? 'Salvar mudanças' : 'Criar categoria'}
                 </button>
               </div>
             )}
@@ -756,15 +755,15 @@ const EmptyState: React.FC<{ onCreate: () => void; onSeed: () => Promise<void>; 
     <div className="w-14 h-14 rounded-2xl bg-[#FEF2F2] text-[#B91C1C] flex items-center justify-center mx-auto">
       <Tags className="w-7 h-7" />
     </div>
-    <h3 className="text-base font-extrabold text-[#1C1917] mt-3">Seu cardápio ainda não tem seções</h3>
+    <h3 className="text-base font-extrabold text-[#1C1917] mt-3">Seu cardápio ainda não tem categorias</h3>
     <p className="text-xs text-[#57534E] mt-1 max-w-sm mx-auto">
       Categorias são as abas que o cliente toca para achar o que quer. Comece com as quatro mais comuns
       e ajuste depois.
     </p>
     <div className="flex flex-wrap gap-2 justify-center mt-4">
       <button className="btn-primary" onClick={() => void onSeed()} disabled={seeding}>
-        {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-        {seeding ? 'Criando...' : 'Usar as 4 sugeridas'}
+        {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListPlus className="w-4 h-4" />}
+        {seeding ? 'Criando…' : 'Usar as 4 sugeridas'}
       </button>
       <button className="btn-secondary" onClick={onCreate} disabled={seeding}>
         <PlusCircle className="w-4 h-4" />

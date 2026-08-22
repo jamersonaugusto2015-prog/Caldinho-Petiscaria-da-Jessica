@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Driver } from '../src/types';
+import type { Driver } from '../contract/driver/types';
 import { DRIVER_OFFLINE_GRACE_MS, DriverPresenceDeps, createDriverPresence } from './driverPresence';
 
 function driver(overrides: Partial<Driver> = {}): Driver {

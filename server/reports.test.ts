@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CartItem, Order, Product } from '../src/types';
-import { buildRevenueTrends, buildSalesReport, localDateKey, startOfWeek } from './reports';
+import type { Product } from '../contract/catalog/types';
+import type { CartItem, Order } from '../contract/order/types';
+import { buildRevenueTrends, buildSalesReport, localDateKey, startOfWeek, localHour } from './reports';
 
 // A loja roda com TZ=America/Recife (UTC-3, sem horário de verão) em produção; fixamos o
 // fuso do processo aqui para que os testes de fronteira de dia sejam determinísticos
@@ -214,4 +215,39 @@ test('buildRevenueTrends aggregates monthly totals by local calendar month', () 
   assert.ok(bucket);
   assert.equal(bucket!.revenue, 25);
   assert.equal(bucket!.orders, 1);
+});
+
+test('o dia de um pedido segue o fuso DA LOJA, não o do servidor', () => {
+  // 2026-03-10T02:30:00Z é 23h30 do dia 9 em Recife (UTC-3) e 22h30 do dia 9 em
+  // Manaus (UTC-4). Com o fuso do processo, duas lojas no mesmo servidor
+  // veriam o mesmo pedido em dias diferentes do relatório uma da outra.
+  const instante = '2026-03-10T02:30:00.000Z';
+  assert.equal(localDateKey(instante, 'America/Recife'), '2026-03-09');
+  assert.equal(localDateKey(instante, 'America/Manaus'), '2026-03-09');
+  // Meia hora depois já virou o dia em Recife, mas não em Manaus.
+  const depois = '2026-03-10T03:30:00.000Z';
+  assert.equal(localDateKey(depois, 'America/Recife'), '2026-03-10');
+  assert.equal(localDateKey(depois, 'America/Manaus'), '2026-03-09');
+});
+
+test('a hora do relatório também segue o fuso da loja', () => {
+  const instante = '2026-03-10T02:30:00.000Z';
+  assert.equal(localHour(instante, 'America/Recife'), 23);
+  assert.equal(localHour(instante, 'America/Manaus'), 22);
+});
+
+test('sem fuso configurado, tudo continua como sempre foi', () => {
+  const instante = '2026-03-10T02:30:00.000Z';
+  assert.equal(localDateKey(instante, undefined), localDateKey(instante));
+  assert.equal(localHour(instante, undefined), new Date(instante).getHours());
+});
+
+test('a janela do relatório é recortada no fuso da loja', () => {
+  const pedido = makeOrder({ createdAt: '2026-03-10T02:30:00.000Z', total: 50 });
+  // Em Recife o pedido é do dia 9.
+  const emRecife = buildSalesReport([pedido], { from: '2026-03-09', to: '2026-03-09', timeZone: 'America/Recife' });
+  assert.equal(emRecife.totalOrders, 1);
+  // E não é do dia 10.
+  const noDia10 = buildSalesReport([pedido], { from: '2026-03-10', to: '2026-03-10', timeZone: 'America/Recife' });
+  assert.equal(noDia10.totalOrders, 0);
 });

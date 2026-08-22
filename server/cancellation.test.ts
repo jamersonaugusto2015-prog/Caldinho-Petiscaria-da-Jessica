@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { Server } from 'socket.io';
-import type { CartItem, Order, Product } from '../src/types';
+import type { Product } from '../contract/catalog/types';
+import type { CartItem, Order } from '../contract/order/types';
 import { DomainError } from './errors';
 
 // server/db.ts opens a real sqlite file at DATA_DIR the moment it is imported, and this repo's
@@ -16,8 +17,11 @@ delete process.env.MP_ACCESS_TOKEN;
 
 const { cancelOrder, defaultCancelReason } = await import('./cancellation');
 const { getOrder, insertOrder } = await import('./orderStore');
-const { consumeFreeItems } = await import('./loyalty');
-const { createFreeRedeem, peekFreeRedeem } = await import('./db');
+const { consumeFreeItems, createFreeRedeem, peekFreeRedeem } = await import('./loyalty');
+const { createProduct } = await import('./catalog');
+
+// Única loja usada neste arquivo: a migração 005_shops garante o id 1 em todo banco novo.
+const LOJA = 1;
 
 const freeProduct: Product = {
   id: 'prod-caldinho',
@@ -31,6 +35,10 @@ const freeProduct: Product = {
   reviewsCount: 0,
   prepTimeMinutes: 10,
 };
+
+// O vale-brinde agora tem chave estrangeira composta (shop_id, product_id) para
+// `products`: sem o produto gravado na loja, criar o token derruba com FK.
+createProduct(LOJA, freeProduct);
 
 function freeItem(token: string): CartItem {
   return {
@@ -84,31 +92,31 @@ function fakeIo() {
 
 test('cancelling gives the loyalty free-item token back to the customer', () => {
   const { io } = fakeIo();
-  const token = createFreeRedeem(freeProduct.id);
+  const token = createFreeRedeem(LOJA, freeProduct.id, 'anon');
   const items = [freeItem(token)];
-  consumeFreeItems(items);
-  assert.equal(peekFreeRedeem(token, freeProduct.id), false);
+  consumeFreeItems(LOJA, items);
+  assert.equal(peekFreeRedeem(LOJA, token, freeProduct.id), false);
 
   const order = makeOrder({ id: 'CX-CANCEL-TOKEN', items });
-  insertOrder(order);
-  cancelOrder(io, { order, reason: 'Cliente desistiu', by: 'cliente' });
+  insertOrder(LOJA, order);
+  cancelOrder(io, LOJA, { order, reason: 'Cliente desistiu', by: 'cliente' });
 
-  assert.equal(peekFreeRedeem(token, freeProduct.id), true);
+  assert.equal(peekFreeRedeem(LOJA, token, freeProduct.id), true);
 });
 
 test('cancelling records who cancelled it and when, in the stored order', () => {
   const { io, emitted } = fakeIo();
   const order = makeOrder({ id: 'CX-CANCEL-WHO' });
-  insertOrder(order);
+  insertOrder(LOJA, order);
 
-  const result = cancelOrder(io, { order, reason: 'Sem caldinho hoje', by: 'loja' });
+  const result = cancelOrder(io, LOJA, { order, reason: 'Sem caldinho hoje', by: 'loja' });
 
   assert.equal(result.status, 'cancelado');
   assert.equal(result.cancelledBy, 'loja');
   assert.ok(result.cancelledAt && !Number.isNaN(Date.parse(result.cancelledAt)));
   assert.equal(result.cancellationReason, 'Sem caldinho hoje');
 
-  const stored = getOrder('CX-CANCEL-WHO');
+  const stored = getOrder(LOJA, 'CX-CANCEL-WHO');
   assert.equal(stored?.status, 'cancelado');
   assert.equal(stored?.cancelledBy, 'loja');
   assert.equal(stored?.cancelledAt, result.cancelledAt);
@@ -124,43 +132,43 @@ test('cancelling a paid order leaves the money owed to the customer', () => {
     id: 'CX-CANCEL-PAID',
     payment: { method: 'pix', isPaid: true, mpPaymentId: '123' },
   });
-  insertOrder(order);
+  insertOrder(LOJA, order);
 
-  const result = cancelOrder(io, { order, reason: 'Cancelado pela loja', by: 'loja' });
+  const result = cancelOrder(io, LOJA, { order, reason: 'Cancelado pela loja', by: 'loja' });
 
   assert.equal(result.payment.refundStatus, 'pendente');
-  assert.equal(getOrder('CX-CANCEL-PAID')?.payment.refundStatus, 'pendente');
+  assert.equal(getOrder(LOJA, 'CX-CANCEL-PAID')?.payment.refundStatus, 'pendente');
 });
 
 test('cancelling an unpaid order flags no refund at all', () => {
   const { io } = fakeIo();
   const order = makeOrder({ id: 'CX-CANCEL-UNPAID', payment: { method: 'cash', isPaid: false } });
-  insertOrder(order);
+  insertOrder(LOJA, order);
 
-  const result = cancelOrder(io, { order, reason: defaultCancelReason('cliente'), by: 'cliente' });
+  const result = cancelOrder(io, LOJA, { order, reason: defaultCancelReason('cliente'), by: 'cliente' });
 
   assert.equal(result.payment.refundStatus, undefined);
-  assert.equal(getOrder('CX-CANCEL-UNPAID')?.payment.refundStatus, undefined);
+  assert.equal(getOrder(LOJA, 'CX-CANCEL-UNPAID')?.payment.refundStatus, undefined);
 });
 
 test('cancelling twice does not hand the free-item token out a second time', () => {
   const { io } = fakeIo();
-  const token = createFreeRedeem(freeProduct.id);
+  const token = createFreeRedeem(LOJA, freeProduct.id, 'anon');
   const items = [freeItem(token)];
-  consumeFreeItems(items);
+  consumeFreeItems(LOJA, items);
 
   const order = makeOrder({ id: 'CX-CANCEL-TWICE', items });
-  insertOrder(order);
-  cancelOrder(io, { order, reason: 'Cliente desistiu', by: 'cliente' });
-  assert.equal(peekFreeRedeem(token, freeProduct.id), true);
+  insertOrder(LOJA, order);
+  cancelOrder(io, LOJA, { order, reason: 'Cliente desistiu', by: 'cliente' });
+  assert.equal(peekFreeRedeem(LOJA, token, freeProduct.id), true);
 
   // O cliente gasta o token devolvido num pedido novo. Um segundo cancelamento
   // do mesmo pedido não pode ressuscitar esse token já gasto.
-  consumeFreeItems(items);
-  const stored = getOrder('CX-CANCEL-TWICE')!;
+  consumeFreeItems(LOJA, items);
+  const stored = getOrder(LOJA, 'CX-CANCEL-TWICE')!;
   assert.throws(
-    () => cancelOrder(io, { order: stored, reason: 'De novo', by: 'cliente' }),
+    () => cancelOrder(io, LOJA, { order: stored, reason: 'De novo', by: 'cliente' }),
     (error: unknown) => error instanceof DomainError && error.status === 400
   );
-  assert.equal(peekFreeRedeem(token, freeProduct.id), false);
+  assert.equal(peekFreeRedeem(LOJA, token, freeProduct.id), false);
 });

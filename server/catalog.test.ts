@@ -25,12 +25,14 @@ const {
   normalizeComboSlots,
   normalizeExtras,
   saveCoupon,
-  setCaldinhoDoDia,
-  clearCaldinhoDoDia,
+  setFeaturedProduct,
+  clearFeaturedProduct,
   updateCategory,
   updateProduct,
 } = await import('./catalog');
 const { DomainError } = await import('./errors');
+// Loja usada por todos os testes: mesmo id que `server/db.ts` já semeia (LOJA_PADRAO).
+const { LOJA_PADRAO } = await import('./db');
 
 function makeProduct(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,12 +51,12 @@ function makeProduct(overrides: Record<string, unknown> = {}) {
 }
 
 test('normalizeCategory rejects a blank label', () => {
-  assert.equal(normalizeCategory({ label: '   ' }), null);
-  assert.equal(normalizeCategory({}), null);
+  assert.equal(normalizeCategory(LOJA_PADRAO, { label: '   ' }), null);
+  assert.equal(normalizeCategory(LOJA_PADRAO, {}), null);
 });
 
 test('normalizeCategory falls back to defaults for a missing emoji, color and sort', () => {
-  const cat = normalizeCategory({ label: 'Sobremesas' })!;
+  const cat = normalizeCategory(LOJA_PADRAO, { label: 'Sobremesas' })!;
   assert.equal(cat.label, 'Sobremesas');
   assert.equal(cat.emoji, '🍽️');
   assert.equal(cat.color, '#B91C1C');
@@ -62,20 +64,20 @@ test('normalizeCategory falls back to defaults for a missing emoji, color and so
 });
 
 test('normalizeCategory rejects a color that is not a 6-digit hex', () => {
-  const cat = normalizeCategory({ label: 'Bebidas', color: 'not-a-color' })!;
+  const cat = normalizeCategory(LOJA_PADRAO, { label: 'Bebidas', color: 'not-a-color' })!;
   assert.equal(cat.color, '#B91C1C');
-  const valid = normalizeCategory({ label: 'Bebidas', color: '#123abc' })!;
+  const valid = normalizeCategory(LOJA_PADRAO, { label: 'Bebidas', color: '#123abc' })!;
   assert.equal(valid.color, '#123abc');
 });
 
 test('normalizeCategory truncates an overlong label to 30 chars', () => {
-  const cat = normalizeCategory({ label: 'x'.repeat(50) })!;
+  const cat = normalizeCategory(LOJA_PADRAO, { label: 'x'.repeat(50) })!;
   assert.equal(cat.label.length, 30);
 });
 
 test('normalizeCategory keeps the existing id, emoji, color and sort on patch when omitted', () => {
   const existing = { id: 'cat-1', label: 'Antiga', emoji: '🍤', color: '#2563EB', sort: 3 };
-  const patched = normalizeCategory({ label: 'Nova' }, existing)!;
+  const patched = normalizeCategory(LOJA_PADRAO, { label: 'Nova' }, existing)!;
   assert.equal(patched.id, 'cat-1');
   assert.equal(patched.emoji, '🍤');
   assert.equal(patched.color, '#2563EB');
@@ -84,82 +86,85 @@ test('normalizeCategory keeps the existing id, emoji, color and sort on patch wh
 });
 
 test('createCategory assigns the next sort slot after existing categories', async () => {
-  const first = createCategory({ label: 'Primeira' });
-  const second = createCategory({ label: 'Segunda' });
+  const first = createCategory(LOJA_PADRAO, { label: 'Primeira' });
+  const second = createCategory(LOJA_PADRAO, { label: 'Segunda' });
   assert.equal(second.sort, first.sort + 1);
-  const ids = listCategories().map((c) => c.id);
+  const ids = listCategories(LOJA_PADRAO).map((c) => c.id);
   assert.ok(ids.includes(first.id));
   assert.ok(ids.includes(second.id));
 });
 
 test('createCategory throws a DomainError for a missing label', () => {
   assert.throws(
-    () => createCategory({}),
+    () => createCategory(LOJA_PADRAO, {}),
     (err: unknown) => err instanceof DomainError && err.status === 400 && err.message === 'Informe o nome da categoria.'
   );
 });
 
 test('updateCategory throws a 404 DomainError for an unknown id', () => {
   assert.throws(
-    () => updateCategory('missing', { label: 'X' }),
+    () => updateCategory(LOJA_PADRAO, 'missing', { label: 'X' }),
     (err: unknown) => err instanceof DomainError && err.status === 404
   );
 });
 
 test('deleteCategory refuses to delete a category still used by a product', async () => {
-  const cat = createCategory({ label: 'Petiscos' });
-  createProduct(makeProduct({ category: cat.id }));
+  const cat = createCategory(LOJA_PADRAO, { label: 'Petiscos' });
+  createProduct(LOJA_PADRAO, makeProduct({ category: cat.id }));
   assert.throws(
-    () => deleteCategory(cat.id),
+    () => deleteCategory(LOJA_PADRAO, cat.id),
     (err: unknown) =>
       err instanceof DomainError &&
       err.status === 400 &&
       err.message === 'Não é possível excluir: 1 produto(s) usam esta categoria. Mova-os ou remova-os primeiro.'
   );
-  assert.ok(getCategory(cat.id));
+  assert.ok(getCategory(LOJA_PADRAO, cat.id));
 });
 
 test('deleteCategory removes a category with no products attached', async () => {
-  const cat = createCategory({ label: 'Sem uso' });
-  deleteCategory(cat.id);
-  assert.equal(getCategory(cat.id), null);
+  const cat = createCategory(LOJA_PADRAO, { label: 'Sem uso' });
+  deleteCategory(LOJA_PADRAO, cat.id);
+  assert.equal(getCategory(LOJA_PADRAO, cat.id), null);
 });
 
 test('createProduct rejects a product missing id, name or a numeric basePrice', () => {
-  assert.throws(() => createProduct({ name: 'X', basePrice: 10 }), DomainError);
-  assert.throws(() => createProduct({ id: 'x', basePrice: 10 }), DomainError);
-  assert.throws(() => createProduct({ id: 'x', name: 'X', basePrice: 'free' }), DomainError);
+  assert.throws(() => createProduct(LOJA_PADRAO, { name: 'X', basePrice: 10 }), DomainError);
+  assert.throws(() => createProduct(LOJA_PADRAO, { id: 'x', basePrice: 10 }), DomainError);
+  assert.throws(() => createProduct(LOJA_PADRAO, { id: 'x', name: 'X', basePrice: 'free' }), DomainError);
 });
 
 test('createProduct persists a valid product and it is listable', () => {
-  const p = createProduct(makeProduct({ id: 'p-valid' }));
+  const p = createProduct(LOJA_PADRAO, makeProduct({ id: 'p-valid' }));
   assert.equal(p.id, 'p-valid');
-  assert.ok(listProducts().some((x) => x.id === 'p-valid'));
+  assert.ok(listProducts(LOJA_PADRAO).some((x) => x.id === 'p-valid'));
 });
 
 test('updateProduct merges only the fields present in the patch', () => {
-  const p = createProduct(makeProduct({ id: 'p-merge', basePrice: 10, available: true }));
-  const updated = updateProduct('p-merge', { basePrice: 15 });
+  const p = createProduct(LOJA_PADRAO, makeProduct({ id: 'p-merge', basePrice: 10, available: true }));
+  const updated = updateProduct(LOJA_PADRAO, 'p-merge', { basePrice: 15 });
   assert.equal(updated.basePrice, 15);
   assert.equal(updated.available, true); // unrelated field untouched
   assert.equal(updated.name, p.name);
 });
 
 test('updateProduct clears originalPrice when explicitly set to null', () => {
-  createProduct(makeProduct({ id: 'p-promo', originalPrice: 20 }));
-  const updated = updateProduct('p-promo', { originalPrice: null });
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-promo', originalPrice: 20 }));
+  const updated = updateProduct(LOJA_PADRAO, 'p-promo', { originalPrice: null });
   assert.equal(updated.originalPrice, undefined);
 });
 
 test('updateProduct throws a 404 DomainError for an unknown id', () => {
   assert.throws(
-    () => updateProduct('missing', { basePrice: 5 }),
+    () => updateProduct(LOJA_PADRAO, 'missing', { basePrice: 5 }),
     (err: unknown) => err instanceof DomainError && err.status === 404
   );
 });
 
 test('deleteProduct throws a 404 DomainError for an unknown id', () => {
-  assert.throws(() => deleteProduct('missing'), (err: unknown) => err instanceof DomainError && err.status === 404);
+  assert.throws(
+    () => deleteProduct(LOJA_PADRAO, 'missing'),
+    (err: unknown) => err instanceof DomainError && err.status === 404
+  );
 });
 
 test('normalizeExtras drops entries without a usable name and floors price at zero', () => {
@@ -235,8 +240,8 @@ test('normalizeComboSlots clamps maxChoices to the number of options and never b
 });
 
 test('updateProduct applies normalizeExtras and normalizeComboSlots to the patch', () => {
-  createProduct(makeProduct({ id: 'p-combo' }));
-  const updated = updateProduct('p-combo', {
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-combo' }));
+  const updated = updateProduct(LOJA_PADRAO, 'p-combo', {
     allowedExtras: [{ name: 'Bacon', price: 2 }],
     comboSlots: [{ label: 'Sabor', options: [{ label: 'Feijão', priceDelta: 1 }] }],
   });
@@ -245,67 +250,67 @@ test('updateProduct applies normalizeExtras and normalizeComboSlots to the patch
   assert.equal(updated.comboSlots?.[0].options[0].priceDelta, 1);
 });
 
-test('setCaldinhoDoDia makes the given id exclusively true, clearing every other product', () => {
-  createProduct(makeProduct({ id: 'p-a', isCaldinhoDoDia: true }));
-  createProduct(makeProduct({ id: 'p-b', isCaldinhoDoDia: false }));
-  setCaldinhoDoDia('p-b');
-  const products = listProducts();
-  assert.equal(products.find((p) => p.id === 'p-a')?.isCaldinhoDoDia, false);
-  assert.equal(products.find((p) => p.id === 'p-b')?.isCaldinhoDoDia, true);
+test('setFeaturedProduct makes the given id exclusively true, clearing every other product', () => {
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-a', isFeatured: true }));
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-b', isFeatured: false }));
+  setFeaturedProduct(LOJA_PADRAO, 'p-b');
+  const products = listProducts(LOJA_PADRAO);
+  assert.equal(products.find((p) => p.id === 'p-a')?.isFeatured, false);
+  assert.equal(products.find((p) => p.id === 'p-b')?.isFeatured, true);
 });
 
-test('setCaldinhoDoDia with an id that matches nothing clears every product', () => {
-  createProduct(makeProduct({ id: 'p-c', isCaldinhoDoDia: true }));
-  setCaldinhoDoDia('does-not-exist');
-  assert.equal(getProduct('p-c')?.isCaldinhoDoDia, false);
+test('setFeaturedProduct with an id that matches nothing clears every product', () => {
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-c', isFeatured: true }));
+  setFeaturedProduct(LOJA_PADRAO, 'does-not-exist');
+  assert.equal(getProduct(LOJA_PADRAO, 'p-c')?.isFeatured, false);
 });
 
-test('setCaldinhoDoDia accepts a product from any category, not only caldinhos', () => {
-  createProduct(makeProduct({ id: 'p-caldinho', category: 'caldinhos', isCaldinhoDoDia: true }));
-  createProduct(makeProduct({ id: 'p-bebida', category: 'bebidas' }));
-  setCaldinhoDoDia('p-bebida');
-  assert.equal(getProduct('p-bebida')?.isCaldinhoDoDia, true);
-  assert.equal(getProduct('p-caldinho')?.isCaldinhoDoDia, false);
+test('setFeaturedProduct accepts a product from any category, not only caldinhos', () => {
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-caldinho', category: 'caldinhos', isFeatured: true }));
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-bebida', category: 'bebidas' }));
+  setFeaturedProduct(LOJA_PADRAO, 'p-bebida');
+  assert.equal(getProduct(LOJA_PADRAO, 'p-bebida')?.isFeatured, true);
+  assert.equal(getProduct(LOJA_PADRAO, 'p-caldinho')?.isFeatured, false);
 });
 
-test('clearCaldinhoDoDia leaves no product marked as promotion of the day', () => {
-  createProduct(makeProduct({ id: 'p-d', isCaldinhoDoDia: true }));
-  createProduct(makeProduct({ id: 'p-e' }));
-  clearCaldinhoDoDia();
-  assert.ok(listProducts().every((p) => p.isCaldinhoDoDia === false));
+test('clearFeaturedProduct leaves no product marked as promotion of the day', () => {
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-d', isFeatured: true }));
+  createProduct(LOJA_PADRAO, makeProduct({ id: 'p-e' }));
+  clearFeaturedProduct(LOJA_PADRAO);
+  assert.ok(listProducts(LOJA_PADRAO).every((p) => p.isFeatured === false));
 });
 
 test('saveCoupon rejects a coupon without a code or a numeric discount', () => {
-  assert.throws(() => saveCoupon({ discountPercent: 10 }), DomainError);
-  assert.throws(() => saveCoupon({ code: 'X' }), DomainError);
+  assert.throws(() => saveCoupon(LOJA_PADRAO, { discountPercent: 10 }), DomainError);
+  assert.throws(() => saveCoupon(LOJA_PADRAO, { code: 'X' }), DomainError);
 });
 
 test('saveCoupon normalizes the code to uppercase and defaults minOrderValue and description', () => {
-  const coupon = saveCoupon({ code: '  promo10 ', discountPercent: 10 });
+  const coupon = saveCoupon(LOJA_PADRAO, { code: '  promo10 ', discountPercent: 10 });
   assert.equal(coupon.code, 'PROMO10');
   assert.equal(coupon.minOrderValue, 0);
   assert.equal(coupon.description, 'Cupom de desconto');
 });
 
 test('saveCoupon upserts: saving the same code twice replaces the stored coupon', () => {
-  saveCoupon({ code: 'DUP', discountPercent: 5 });
-  saveCoupon({ code: 'DUP', discountFixed: 8 });
-  const stored = listCoupons().filter((c) => c.code === 'DUP');
+  saveCoupon(LOJA_PADRAO, { code: 'DUP', discountPercent: 5 });
+  saveCoupon(LOJA_PADRAO, { code: 'DUP', discountFixed: 8 });
+  const stored = listCoupons(LOJA_PADRAO).filter((c) => c.code === 'DUP');
   assert.equal(stored.length, 1);
   assert.equal(stored[0].discountFixed, 8);
   assert.equal(stored[0].discountPercent, undefined);
 });
 
 test('deleteCoupon removes by code case-insensitively', () => {
-  saveCoupon({ code: 'GONE', discountPercent: 5 });
-  deleteCoupon('gone');
-  assert.ok(!listCoupons().some((c) => c.code === 'GONE'));
+  saveCoupon(LOJA_PADRAO, { code: 'GONE', discountPercent: 5 });
+  deleteCoupon(LOJA_PADRAO, 'gone');
+  assert.ok(!listCoupons(LOJA_PADRAO).some((c) => c.code === 'GONE'));
 });
 
 test('listCouponsSorted returns coupons ordered by code', () => {
-  saveCoupon({ code: 'ZZZ', discountPercent: 1 });
-  saveCoupon({ code: 'AAA', discountPercent: 1 });
-  const codes = listCouponsSorted().map((c) => c.code);
+  saveCoupon(LOJA_PADRAO, { code: 'ZZZ', discountPercent: 1 });
+  saveCoupon(LOJA_PADRAO, { code: 'AAA', discountPercent: 1 });
+  const codes = listCouponsSorted(LOJA_PADRAO).map((c) => c.code);
   const sorted = [...codes].sort();
   assert.deepEqual(codes, sorted);
 });

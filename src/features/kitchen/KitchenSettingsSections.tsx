@@ -6,13 +6,15 @@ import {
   MapPin,
   Play,
   Search,
+  Store,
   Upload,
 } from 'lucide-react';
-import type { OpeningHour, PixProvider, PublicStoreSettings } from '../../types';
+import type { PixProvider } from '../../../contract/order/types';
+import type { OpeningHour, PublicStoreSettings } from '../../../contract/shop/types';
 import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 import { useImageFramer } from '../../components/common/ImageFramer';
 import { useKitchenSoundAlert } from './KitchenSoundStore';
-import { generateRandomPixKey, normalizePixKey, pixKeyKind } from '../../shared/pix';
+import { generateRandomPixKey, normalizePixKey, pixKeyKind } from '../../../contract/payment/pix';
 import type { SetSettingsField, SettingsDraft } from './kitchenSettingsDraft';
 import {
   Advanced,
@@ -88,7 +90,7 @@ export const StoreSection: React.FC<
     <SettingsCard title="Identidade" description="É isso que o cliente vê no topo do cardápio.">
       <LogoEditor logo={storeLogo} uploadImage={uploadImage} onSave={setStoreLogo} />
       <FieldGrid>
-        <Field label="Nome da loja" value={draft.storeName} onChange={(value) => setField('storeName', value)} placeholder="Caldinho Express" />
+        <Field label="Nome da loja" value={draft.storeName} onChange={(value) => setField('storeName', value)} placeholder="Nome que o cliente vê no cardápio" />
         <Field label="Cidade" value={draft.city} onChange={(value) => setField('city', value)} placeholder="Recife - PE" />
       </FieldGrid>
       <Field
@@ -112,7 +114,7 @@ export const StoreSection: React.FC<
           action={
             <button type="button" className="btn-secondary shrink-0" onClick={lookupCep} disabled={locating}>
               <Search className="h-3.5 w-3.5" />
-              {locating ? '...' : 'Buscar'}
+              {locating ? '…' : 'Buscar'}
             </button>
           }
         />
@@ -129,7 +131,11 @@ export const StoreSection: React.FC<
           }
         />
       </FieldGrid>
-      {locationLabel && <FieldNote tone="ok">📍 {locationLabel}</FieldNote>}
+      {locationLabel && (
+        <FieldNote tone="ok">
+          <MapPin className="inline h-3.5 w-3.5 align-[-2px]" aria-hidden /> {locationLabel}
+        </FieldNote>
+      )}
       {locationError && <FieldNote tone="danger">{locationError}</FieldNote>}
       <div className="overflow-hidden rounded-xl border border-[#E7E5E4]">
         <Suspense fallback={<MapPlaceholder />}>
@@ -160,7 +166,7 @@ const LogoEditor: React.FC<{ logo: string; uploadImage: UploadImage; onSave: (lo
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#E7E5E4] bg-[#FAFAF9] p-3">
       <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#E7E5E4] bg-white text-2xl">
-        {logo ? <img src={logo} alt="Logo da loja" className="h-full w-full object-contain" /> : <span>🏪</span>}
+        {logo ? <img src={logo} alt="Logo da loja" className="h-full w-full object-contain" /> : <Store className="h-6 w-6 text-[#A8A29E]" aria-hidden />}
       </div>
       <div className="min-w-[140px] flex-1">
         <p className="text-sm font-bold text-[#1C1917]">Logo da loja</p>
@@ -274,8 +280,8 @@ const PixKeyReading: React.FC<{ value: string }> = ({ value }) => {
   if (kind === 'desconhecido') return null;
   return (
     <FieldNote tone="ok">
-      Entendemos como <strong>{PIX_KEY_KIND_LABEL[kind]}</strong>: <code>{normalizePixKey(raw)}</code>. É essa
-      chave que vai dentro do QR Code — se estiver errada, o banco recusa o pagamento.
+      Esta chave foi lida como <strong>{PIX_KEY_KIND_LABEL[kind]}</strong>: <code>{normalizePixKey(raw)}</code>. É essa
+      chave que vai dentro do QR Code: se estiver errada, o banco recusa o pagamento.
     </FieldNote>
   );
 };
@@ -399,12 +405,12 @@ export const PaymentsSection: React.FC<
         </button>
       ) : (
         <button type="button" className="btn-primary" onClick={connectMp} disabled={mpBusy}>
-          {mpBusy ? 'Abrindo...' : 'Conectar com o Mercado Pago'}
+          {mpBusy ? 'Abrindo…' : 'Conectar com o Mercado Pago'}
         </button>
       )}
       <Advanced summary="Credenciais manuais (para testes)">
-        <Field label="Access Token" value={mpToken} onChange={setMpToken} type="password" placeholder="TEST-..." />
-        <Field label="Chave pública" value={mpPublicKey} onChange={setMpPublicKey} placeholder="TEST-..." />
+        <Field label="Access Token" value={mpToken} onChange={setMpToken} type="password" placeholder="TEST-…" />
+        <Field label="Chave pública" value={mpPublicKey} onChange={setMpPublicKey} placeholder="TEST-…" />
         <button type="button" className="btn-secondary" onClick={saveMp} disabled={mpBusy}>
           Salvar credenciais
         </button>
@@ -470,11 +476,11 @@ export const HoursSection: React.FC<BaseProps> = ({ draft, setField }) => {
     <SettingsCard
       title="Horário de funcionamento"
       description="A loja abre e fecha sozinha nesses horários."
-      aside={<StatusPill tone={openDays ? 'ok' : 'danger'}>{openDays ? `${openDays} dia(s) aberto(s)` : 'Nenhum dia aberto'}</StatusPill>}
+      aside={<StatusPill tone={openDays ? 'ok' : 'danger'}>{openDays ? `${openDays} ${openDays === 1 ? 'dia aberto' : 'dias abertos'}` : 'Nenhum dia aberto'}</StatusPill>}
     >
       {draft.forceOpen && (
         <div className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2.5 text-xs font-bold text-[#B45309]">
-          “Forçar loja aberta” está ligado em <span className="underline">Pedidos e entrega</span> — este horário está sendo ignorado.
+          “Forçar loja aberta” está ligado em <span className="underline">Pedidos e entrega</span>. Este horário está sendo ignorado.
         </div>
       )}
       <div className="divide-y divide-[#F5F5F4] overflow-hidden rounded-xl border border-[#E7E5E4]">
@@ -605,7 +611,7 @@ export const SystemSection: React.FC<
         value={draft.backupServiceAccount}
         onChange={(value) => setField('backupServiceAccount', value)}
         type="password"
-        placeholder={settings.backupKeySet ? 'Já salvo — cole aqui só para trocar' : 'Cole o JSON da conta de serviço'}
+        placeholder={settings.backupKeySet ? 'Já salvo. Cole aqui só para trocar.' : 'Cole o JSON da conta de serviço'}
       />
       {settings.backupLastRun && (
         <div className="rounded-xl border border-[#E7E5E4] bg-[#FAFAF9] px-3 py-2.5 text-xs text-[#57534E]">
@@ -619,7 +625,7 @@ export const SystemSection: React.FC<
       )}
       <button type="button" className="btn-secondary" onClick={runBackup} disabled={backupRunning}>
         <CloudUpload className="h-4 w-4" />
-        {backupRunning ? 'Executando...' : 'Executar backup agora'}
+        {backupRunning ? 'Executando…' : 'Executar backup agora'}
       </button>
     </SettingsCard>
 

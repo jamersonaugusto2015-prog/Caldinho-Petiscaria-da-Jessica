@@ -24,26 +24,64 @@ interface RoleShell {
   title: string;
 }
 
+/**
+ * O manifesto vem da API, não de um arquivo estático em `public/`.
+ *
+ * Um arquivo estático tem o nome e a cor de UMA loja escritos dentro. Toda loja
+ * da plataforma instalaria um atalho chamado "Caldinho da Jessica" — e um PWA
+ * instalado guarda esse nome no aparelho, então não é algo que um deploy
+ * conserta depois. `GET /api/manifest-:role.webmanifest` gera o manifesto a
+ * partir das configurações da loja do `Host`.
+ *
+ * O `title` aqui é só o texto provisório da aba enquanto as configurações não
+ * chegam; `applyShopBranding` troca pelo nome de verdade.
+ */
 const SHELLS: Record<AppRole, RoleShell> = {
   client: {
-    manifest: '/manifest-cliente.webmanifest',
+    manifest: '/api/manifest-cliente.webmanifest',
     appleTouchIcon: '/icons/cliente-apple-touch-180.png',
     themeColor: '#B91C1C',
-    title: 'Caldinho da Jessica',
+    title: 'Delivery',
   },
   kitchen: {
-    manifest: '/manifest-cozinha.webmanifest',
+    manifest: '/api/manifest-cozinha.webmanifest',
     appleTouchIcon: '/icons/cozinha-apple-touch-180.png',
     themeColor: '#1C1917',
     title: 'Cozinha',
   },
   driver: {
-    manifest: '/manifest-entregador.webmanifest',
+    manifest: '/api/manifest-entregador.webmanifest',
     appleTouchIcon: '/icons/entregador-apple-touch-180.png',
     themeColor: '#7C3AED',
     title: 'Entregador',
   },
 };
+
+/**
+ * Põe o nome da loja na aba e na tela de início do iOS.
+ *
+ * O iOS ignora o `short_name` do manifesto e usa o `<title>` da página para o
+ * nome sob o ícone — então o título precisa estar certo ANTES de o usuário
+ * escolher "Adicionar à Tela de Início". Chamado assim que as configurações
+ * chegam do servidor.
+ */
+const COR_RRGGBB = /^#[0-9a-f]{6}$/i;
+
+export function applyShopBranding(storeName: string, primaryColor?: string): void {
+  if (typeof document === 'undefined') return;
+  const nome = storeName.trim();
+  if (!nome) return;
+
+  const role = appRole();
+  document.title = role === 'kitchen' ? `Cozinha · ${nome}` : role === 'driver' ? `Entrega · ${nome}` : nome;
+
+  // A cor da marca segue a loja também na barra do navegador — mas só se for
+  // `#RRGGBB` de verdade: um valor solto viraria uma theme-color quebrada.
+  if (role === 'client' && primaryColor && COR_RRGGBB.test(primaryColor.trim())) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', primaryColor.trim());
+  }
+}
 
 /**
  * O papel sai do caminho, não de nenhum estado do React: o manifesto precisa

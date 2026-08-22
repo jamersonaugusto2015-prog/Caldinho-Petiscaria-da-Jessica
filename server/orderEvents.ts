@@ -1,9 +1,9 @@
 import { Server } from 'socket.io';
-import { Order } from '../src/types';
-import { orderAudience } from './orderAudience';
+import type { Order } from '../contract/order/types';
+import type { ShopId } from '../contract/shop/types';
+import { orderAudience } from '../contract/order/audience';
 import { OrderPushContext, sendOrderPush } from './push';
-import { stripCustomerContact, stripPaymentSecrets } from './orderViews';
-
+import { stripCustomerContact, stripPaymentSecrets } from '../contract/order/views';
 // A redação mora em `orderViews.ts`, junto com a vista usada pelas rotas HTTP.
 // Reexportado porque `routes.ts` ainda importa `stripPaymentSecrets` daqui.
 export { stripCustomerContact, stripPaymentSecrets };
@@ -20,11 +20,12 @@ export type { OrderPushContext };
  */
 export function emitOrder(
   io: Server,
+  shopId: ShopId,
   event: 'order:new' | 'order:updated',
   order: Order,
   ctx: OrderPushContext = {}
 ): void {
-  for (const recipient of orderAudience(order)) {
+  for (const recipient of orderAudience(shopId, order)) {
     const target = recipient.except
       ? io.to(recipient.room).except(recipient.except)
       : io.to(recipient.room);
@@ -35,7 +36,7 @@ export function emitOrder(
   // chamada em cada rota, uma rota nova ia emitir o socket e esquecer o push —
   // que é a mesma forma como a redação virou dois caminhos e um deles vazou
   // (ADR-0010). Um lugar só decide quem é avisado, dos dois jeitos.
-  sendOrderPush(order, event, ctx);
+  sendOrderPush(shopId, order, event, ctx);
 }
 
 /**

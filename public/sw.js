@@ -28,13 +28,40 @@ const UPLOAD_CACHE = CACHE_PREFIX + 'uploads-' + CACHE_VERSION;
 /** O mínimo para a tela abrir offline. */
 const SHELL_URLS = ['/', '/index.html'];
 
-/** Fallback do ícone da notificação quando o alerta não diz de qual papel é. */
+/**
+ * Ícone e nome padrão — a marca do Caldinho, a única que existia antes da
+ * plataforma virar multi-loja. Continuam servindo de PISO: quando o payload
+ * não traz `storeName`/`iconBase` (push antigo, já na fila de um serviço de
+ * terceiro, montado antes deste deploy) a notificação cai neles em vez de
+ * quebrar.
+ */
+// Neutro de propósito: este título só aparece quando o payload não pôde nem
+// ser lido, e aí não há loja nenhuma para nomear. Um nome próprio aqui faria a
+// notificação de uma loja chegar com o nome de outra.
+const DEFAULT_TITLE = 'Novo aviso';
 const NOTIFICATION_ICON = '/icons/cliente-icon-192.png';
 const ROLE_ICON = {
   kitchen: '/icons/cozinha-icon-192.png',
   driver: '/icons/entregador-icon-192.png',
   client: '/icons/cliente-icon-192.png',
 };
+
+/**
+ * Ícone da notificação para a loja E o papel deste alerta.
+ *
+ * `iconBase` é o mesmo prefixo que o manifesto usa (ver `tituloDoApp`/
+ * `buildManifest` em `contract/shop/branding.ts`, montado em
+ * `server/http/routers/appShell.ts`): uma loja custom tem UM ícone só,
+ * reaproveitado nos três papéis — não um por papel como os ícones padrão do
+ * Caldinho. Vazio = mantém o ícone padrão do papel de hoje.
+ */
+function notificationIcon(alert) {
+  var base = typeof alert.iconBase === 'string' ? alert.iconBase.trim() : '';
+  // Só caminho relativo (`/algo`): uma URL absoluta faria o ícone da
+  // notificação ser buscado de outro host no aparelho do cliente.
+  if (base && /^\/[^/]/.test(base)) return base + '-icon-192.png';
+  return ROLE_ICON[alert.role] || NOTIFICATION_ICON;
+}
 
 // ---------------------------------------------------------------------------
 // Instalação
@@ -261,8 +288,9 @@ self.addEventListener('push', (event) => {
       const alert = parseAlert(event);
       if (!alert) {
         // Push sem corpo legível ainda merece uma notificação: o navegador
-        // exige que TODO push mostre alguma. Melhor a nossa, com a marca certa.
-        await self.registration.showNotification('Caldinho da Jessica', {
+        // exige que TODO push mostre alguma. Sem `alert` não há `storeName` a
+        // ler, então cai no piso — não dá para saber de qual loja é.
+        await self.registration.showNotification(DEFAULT_TITLE, {
           body: 'Você tem uma novidade no app.',
           tag: 'caldinho:geral',
           icon: NOTIFICATION_ICON,
@@ -275,7 +303,7 @@ self.addEventListener('push', (event) => {
 
       const demand = alert.urgency === 'demand';
       const channels = alert.channels && typeof alert.channels === 'object' ? alert.channels : {};
-      const icon = ROLE_ICON[alert.role] || NOTIFICATION_ICON;
+      const icon = notificationIcon(alert);
       const vibrate = expandPushVibrate(channels.vibrate, channels.repeat);
 
       try {
@@ -344,29 +372,137 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 /**
+ * O crachá que a página guardou em `src/lib/pushIdentityStore.ts`.
+ *
+ * ⚠ Os três nomes abaixo estão REPETIDOS lá. Este arquivo não passa pelo
+ * bundler (é servido cru de /public), então não pode importar o módulo. Mudou
+ * num lado, muda no outro.
+ */
+const PUSH_IDENTITY_DB = 'caldinho-push';
+const PUSH_IDENTITY_STORE = 'identity';
+const PUSH_IDENTITY_KEY = 'current';
+
+function readPushIdentity() {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve(null);
+      const request = indexedDB.open(PUSH_IDENTITY_DB, 1);
+      // Se o banco ainda não existe, `onupgradeneeded` o cria vazio e a leitura
+      // devolve `undefined`. Não criar a store aqui faria a transação estourar.
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(PUSH_IDENTITY_STORE)) {
+          db.createObjectStore(PUSH_IDENTITY_STORE);
+        }
+      };
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+      request.onsuccess = () => {
+        const db = request.result;
+        try {
+          const get = db
+            .transaction(PUSH_IDENTITY_STORE, 'readonly')
+            .objectStore(PUSH_IDENTITY_STORE)
+            .get(PUSH_IDENTITY_KEY);
+          get.onsuccess = () => {
+            resolve(get.result || null);
+            db.close();
+          };
+          get.onerror = () => {
+            resolve(null);
+            db.close();
+          };
+        } catch (error) {
+          resolve(null);
+          db.close();
+        }
+      };
+    } catch (error) {
+      resolve(null);
+    }
+  });
+}
+
+/**
  * O navegador pode trocar a inscrição sozinho (expiração, rotação de chave).
  * Sem reenviar a nova para o servidor, o aparelho some da lista de push em
  * silêncio: ninguém recebe erro, os alertas simplesmente param de chegar.
+ *
+ * E reenviar SEM identidade dá no mesmo: `/api/push/subscribe` decide a sala
+ * pela credencial (token do papel) ou pelo `customerId`, e sem nenhum dos dois
+ * responde 401. Era esse o buraco — a reinscrição saía, tomava 401 e ninguém
+ * ficava sabendo. Por isso a identidade vem do IndexedDB, o único
+ * armazenamento que a página e este arquivo dividem.
  */
+/** Base64url (a chave VAPID que o servidor devolve) para os bytes que o
+ *  `pushManager.subscribe` exige. Mesma conversão do app (pushSubscription.ts). */
+function urlBase64ToBytes(value) {
+  var padding = '='.repeat((4 - (value.length % 4)) % 4);
+  var normalized = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(normalized);
+  var bytes = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+/** A chave pública VAPID atual do servidor, em bytes, ou `null`. */
+async function fetchServerVapidKey() {
+  try {
+    var res = await fetch('/api/push/key');
+    if (!res.ok) return null;
+    var data = await res.json();
+    return data && data.key ? urlBase64ToBytes(data.key) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 self.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil(
     (async () => {
       try {
+        // No Chrome `event.oldSubscription` não vem e `getSubscription()`
+        // devolve null durante a troca, então a chave antiga é `undefined` e o
+        // handler não reinscrevia — a re-inscrição ficava quebrada no navegador
+        // mais comum. Quando falta, busca a chave VAPID atual do servidor.
         const old = event.oldSubscription || (await self.registration.pushManager.getSubscription());
-        const applicationServerKey = old && old.options ? old.options.applicationServerKey : undefined;
+        let applicationServerKey = old && old.options ? old.options.applicationServerKey : undefined;
+        if (!applicationServerKey) {
+          applicationServerKey = await fetchServerVapidKey();
+        }
         if (!applicationServerKey) return;
+
+        const identity = await readPushIdentity();
+        // Sem crachá o POST viraria 401 garantido e ainda deixaria uma inscrição
+        // nova órfã no navegador. Melhor não mexer: o app reinscreve, com
+        // credencial, na próxima vez que for aberto.
+        if (!identity) return;
 
         const fresh = await self.registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: applicationServerKey,
         });
 
-        await fetch('/api/push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ subscription: fresh.toJSON() }),
-        });
+        // Se o POST falhar de qualquer jeito — HTTP não-ok OU throw de rede no
+        // meio — a inscrição nova não tem dono no servidor: desfaz para não
+        // deixar um endpoint vivo no navegador que nunca vai receber nada.
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (identity.roleToken) headers['x-role-token'] = identity.roleToken;
+
+          const response = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              subscription: fresh.toJSON(),
+              customerId: identity.customerId || undefined,
+            }),
+          });
+          if (!response.ok) await fresh.unsubscribe().catch(() => undefined);
+        } catch (postError) {
+          await fresh.unsubscribe().catch(() => undefined);
+        }
       } catch (error) {
         /* nada a fazer aqui: o app reinscreve na próxima abertura */
       }

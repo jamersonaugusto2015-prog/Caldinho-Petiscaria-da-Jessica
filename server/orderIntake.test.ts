@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CartItem, ComboChoice, Order, Product, Promotion, StoreSettings } from '../src/types';
+import type { ComboChoice, Product, Promotion } from '../contract/catalog/types';
+import type { CartItem, Order } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
 import {
   createFakePaymentAdapter,
   OrderIntakeDependencies,
@@ -29,9 +31,14 @@ const settings: StoreSettings = {
   storeAddress: 'Rua da Aurora, 100',
   pickupEnabled: true,
   pickupReadyMinutes: 20,
-  deliveryPricePerKm: 2,
-  deliveryBaseFee: 5,
-  deliveryMinFee: 5,
+  // Frete zerado de propósito: estes testes exercitam preço, promoção, cobrança
+  // e persistência — não a taxa de entrega, que tem cobertura própria em
+  // geo.test.ts. O endereço do fixture fica sobre a loja (distância 0), e a
+  // regra nova cobra a taxa mínima nesse caso; manter mínimo 0 evita somar um
+  // frete que nenhuma asserção aqui espera.
+  deliveryPricePerKm: 0,
+  deliveryBaseFee: 0,
+  deliveryMinFee: 0,
   freeDeliveryAbove: 0,
   maxDeliveryKm: 20,
   minOrderValue: 0,
@@ -46,6 +53,9 @@ const settings: StoreSettings = {
   orderSoundUrl: '',
   openingHours: Array(7).fill({ open: '00:00', close: '23:59' }),
   sizeOptions: [],
+  loyaltyStampCost: 10,
+  loyaltyRedeemCategory: 'caldinhos',
+  timezone: 'America/Recife',
   orderEnabled: true,
   forceOpen: true,
 };
@@ -80,6 +90,9 @@ function deps(overrides: Partial<OrderIntakeDependencies> = {}) {
   const consumed: CartItem[][] = [];
   const released: CartItem[][] = [];
   const releasedOrderIds: string[] = [];
+  const promoReserved: string[] = [];
+  const promoReleased: string[] = [];
+  const promoSales: { id: string; total: number }[] = [];
   const base: OrderIntakeDependencies = {
     settings,
     loadProduct: (id) => (id === product.id ? product : null),
@@ -102,12 +115,23 @@ function deps(overrides: Partial<OrderIntakeDependencies> = {}) {
       if (idx >= 0) saved.splice(idx, 1);
     },
     releaseFreeItems: (items) => released.push(items),
+    reservePromotionUses: (applied) => {
+      for (const p of applied ?? []) promoReserved.push(p.id);
+    },
+    releasePromotionUses: (applied) => {
+      for (const p of applied ?? []) promoReleased.push(p.id);
+    },
+    recordPromotionSale: (applied, total) => {
+      for (const p of applied ?? []) promoSales.push({ id: p.id, total });
+    },
     getLoyaltyPoints: () => 4,
     createOrderId: () => 'CX-TEST',
     now: () => '2026-08-18T14:30:00.000Z',
+    // Deixou de ser opcional na interface; o teste de colisão de id sobrescreve.
+    orderIdExists: () => false,
     ...overrides,
   };
-  return { base, saved, consumed, released, releasedOrderIds };
+  return { base, saved, consumed, released, releasedOrderIds, promoReserved, promoReleased, promoSales };
 }
 
 test('placeOrder resolves, prices, charges and persists through one interface', async () => {
@@ -785,4 +809,128 @@ test('opção de combo que não existe mais no cardápio é recusada', async () 
     (err: unknown) => err instanceof DomainError && err.status === 400
   );
   assert.deepEqual(state.saved, []);
+});
+
+test('a vaga da promoção é segurada ANTES da cobrança, não depois', async () => {
+  const order: string[] = [];
+  const state = deps({
+    listPromotions: () => [livePromotion()],
+    reservePromotionUses: () => order.push('reserva'),
+    recordPromotionSale: () => order.push('faturamento'),
+  });
+  const realCollect = state.base.payment.collectCard;
+  state.base.payment.collectCard = async (args) => {
+    order.push('cobranca');
+    return realCollect(args);
+  };
+
+  await placeOrder(
+    {
+      items: [item()],
+      address: address(),
+      paymentMethod: 'card',
+      customerId: 'customer-1',
+      cardToken: 'tok_test',
+      cardPaymentMethodId: 'visa',
+    },
+    state.base
+  );
+
+  assert.deepEqual(order, ['reserva', 'cobranca', 'faturamento']);
+});
+
+test('cobrança que falha devolve a vaga da promoção', async () => {
+  const state = deps({ listPromotions: () => [livePromotion()] });
+  state.base.payment.collectCard = async () => {
+    throw new DomainError(400, 'Cartão recusado.');
+  };
+
+  await assert.rejects(() =>
+    placeOrder(
+      {
+        items: [item()],
+        address: address(),
+        paymentMethod: 'card',
+        customerId: 'customer-1',
+        cardToken: 'tok_test',
+        cardPaymentMethodId: 'visa',
+      },
+      state.base
+    )
+  );
+
+  assert.deepEqual(state.promoReserved, ['promo-1']);
+  assert.deepEqual(state.promoReleased, ['promo-1']);
+  assert.deepEqual(state.promoSales, []);
+});
+
+test('a vaga é conferida na reserva, não no carrinho: o teto não estoura', async () => {
+  // Os dois pedidos veem o MESMO retrato da promoção com usedCount = 0 — é
+  // exatamente o que acontece quando duas pessoas montam o carrinho ao mesmo
+  // tempo e a última vaga ainda está livre. Antes da correção o contador só
+  // subia depois do `await` da cobrança e os dois fechavam com desconto.
+  const stock = { usedCount: 0, maxUses: 1 };
+  const snapshot = livePromotion({ maxUses: 1, usedCount: 0 });
+  const build = () =>
+    deps({
+      listPromotions: () => [snapshot],
+      reservePromotionUses: (applied) => {
+        if ((applied ?? []).length === 0) return;
+        if (stock.usedCount >= stock.maxUses) {
+          throw new DomainError(409, 'A promoção acabou de esgotar.');
+        }
+        stock.usedCount += 1;
+      },
+      releasePromotionUses: () => {
+        stock.usedCount = Math.max(0, stock.usedCount - 1);
+      },
+    });
+
+  const input = {
+    items: [item()],
+    address: address(),
+    paymentMethod: 'card' as const,
+    customerId: 'customer-1',
+    cardToken: 'tok_test',
+    cardPaymentMethodId: 'visa',
+  };
+
+  const first = await placeOrder(input, build().base);
+  const blocked = await placeOrder(input, build().base).catch((err: unknown) => err);
+
+  assert.equal(first.order.promoDiscount, 9);
+  assert.ok(blocked instanceof DomainError, 'o segundo pedido devia ser barrado');
+  assert.equal((blocked as DomainError).status, 409);
+  assert.equal(stock.usedCount, 1, 'o teto de 1 uso não pode ser estourado');
+});
+
+test('a reserva acontece antes da cobrança sair', async () => {
+  // A reserva roda dentro da transação que grava o pedido, e essa transação
+  // fecha antes do primeiro `await`. Se ela caísse depois da cobrança, este
+  // teste veria a ordem invertida.
+  const seen: string[] = [];
+  const state = deps({
+    listPromotions: () => [livePromotion({ maxUses: 1 })],
+    reservePromotionUses: () => seen.push('reserva'),
+  });
+  state.base.payment.collectCard = async () => {
+    seen.push('cobranca');
+    throw new DomainError(400, 'Cartão recusado.');
+  };
+
+  await assert.rejects(() =>
+    placeOrder(
+      {
+        items: [item()],
+        address: address(),
+        paymentMethod: 'card',
+        customerId: 'customer-1',
+        cardToken: 'tok_test',
+        cardPaymentMethodId: 'visa',
+      },
+      state.base
+    )
+  );
+
+  assert.deepEqual(seen, ['reserva', 'cobranca']);
 });

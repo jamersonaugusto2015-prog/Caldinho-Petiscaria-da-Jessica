@@ -1,10 +1,10 @@
 import React, { Suspense, lazy, useRef, useState } from 'react';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell } from './ClientStore';
-import { isPickup, storeAddressLine } from '../../shared/fulfillment';
-import { paymentLabel } from '../../shared/payment';
-import { formatKm } from '../../shared/geo';
-import { formatComboChoices } from '../../shared/comboChoices';
+import { isPickup, storeAddressLine } from '../../../contract/order/fulfillment';
+import { paymentLabel } from '../../../contract/payment/payment';
+import { formatKm } from '../../../contract/pricing/geo';
+import { formatComboChoices } from '../../../contract/catalog/comboChoices';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
   X,
@@ -17,6 +17,9 @@ import {
   Send,
   Soup,
   Ban,
+  Bike,
+  Store,
+  HandHelping,
   QrCode,
   Copy,
   Check,
@@ -27,8 +30,8 @@ import {
   Timer,
   Undo2,
 } from 'lucide-react';
-import { OrderStatus } from '../../types';
-import { locationAgeLabel, locationFreshness } from '../../shared/driverFreshness';
+import type { OrderStatus } from '../../../contract/order/types';
+import { locationAgeLabel, locationFreshness } from '../../../contract/driver/freshness';
 import { usePixPaymentPoll } from './usePixPoll';
 import { copyToClipboard, selectElementText } from './clipboard';
 import { OrderActionSheet } from './OrderActionSheet';
@@ -41,6 +44,7 @@ import {
   minutesLeft,
   useNow,
 } from './orderTiming';
+import { formatMoney } from '../../../contract/pricing/money';
 
 /**
  * O Leaflet (~170 kB com o CSS) só é baixado quando esta ficha abre. Estático,
@@ -166,13 +170,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
   const actionSheet =
     sheet === 'cancel' ? (
       <OrderActionSheet
-        emoji="🚫"
+        icon={<Ban className="w-7 h-7" />}
         title="Cancelar este pedido?"
         description="A loja ainda não começou o preparo, então o cancelamento é na hora. Depois de cancelar não dá para voltar atrás."
         reasonLabel="Motivo (opcional)"
-        reasonPlaceholder="Ex: pedi sem querer, mudei de endereço..."
+        reasonPlaceholder="Ex.: pedi sem querer, mudei de endereço…"
         confirmLabel="Sim, cancelar pedido"
-        busyLabel="Cancelando..."
+        busyLabel="Cancelando…"
         dismissLabel="Não, manter o pedido"
         busy={isSubmitting}
         onConfirm={handleImmediateCancel}
@@ -180,29 +184,29 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
       />
     ) : sheet === 'request' ? (
       <OrderActionSheet
-        emoji="🙋"
+        icon={<HandHelping className="w-7 h-7" />}
         title="Pedir cancelamento"
         description="Seu caldinho já está sendo preparado, então quem decide é a loja. Ela tem 5 minutos para responder."
         reasonLabel="Conte o motivo"
-        reasonPlaceholder="Ex: está muito atrasado, não posso mais receber..."
+        reasonPlaceholder="Ex.: está muito atrasado, não posso mais receber…"
         reasonRequired
         confirmLabel="Enviar pedido de cancelamento"
-        busyLabel="Enviando..."
+        busyLabel="Enviando…"
         busy={isSubmitting}
         onConfirm={handleRequestCancel}
         onClose={() => setSheet(null)}
       />
     ) : sheet === 'complaint' ? (
       <OrderActionSheet
-        emoji="😕"
+        icon={<AlertCircle className="w-7 h-7" />}
         title="Tive um problema"
         description="Conte o que aconteceu com este pedido. A loja recebe sua mensagem no chat e responde por lá."
         reasonLabel="O que aconteceu?"
-        reasonPlaceholder="Ex: veio faltando um item, chegou frio..."
+        reasonPlaceholder="Ex.: veio faltando um item, chegou frio…"
         reasonRequired
         maxLength={400}
         confirmLabel="Enviar reclamação"
-        busyLabel="Enviando..."
+        busyLabel="Enviando…"
         busy={isSubmitting}
         onConfirm={handleComplaint}
         onClose={() => setSheet(null)}
@@ -229,7 +233,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
       className="w-full py-3 rounded-2xl border border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#FEE2E2] transition disabled:opacity-50"
     >
       <Ban className="w-4 h-4" />
-      <span>{isSubmitting ? 'Cancelando...' : 'Cancelar pedido'}</span>
+      <span>{isSubmitting ? 'Cancelando…' : 'Cancelar pedido'}</span>
     </button>
   );
 
@@ -247,7 +251,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
       <div className="flex-1">
         {refundStatus === 'pendente' && (
           <>
-            <p>Devolução de R$ {order.total.toFixed(2)} em andamento.</p>
+            <p>Devolução de {formatMoney(order.total)} em andamento.</p>
             <p className="font-semibold mt-0.5">
               O dinheiro volta pelo mesmo jeito que você pagou. Qualquer dúvida, fale com a loja pelo chat.
             </p>
@@ -256,12 +260,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
         {refundStatus === 'devolvido' && <p>Valor devolvido em {formatShortDate(order.payment.refundedAt)}.</p>}
         {refundStatus === 'falhou' && (
           <>
-            <p>A devolução falhou. A loja ainda deve R$ {order.total.toFixed(2)} a você.</p>
+            <p>A devolução falhou. A loja ainda deve {formatMoney(order.total)} a você.</p>
             {storeWhatsAppButton(
               'Falar com a loja no WhatsApp',
-              `Olá! 🍲 Pedido ${order.id} foi cancelado e a devolução de R$ ${order.total.toFixed(
-                2
-              )} não foi concluída. Podem verificar?`
+              `Olá, sobre o pedido ${order.id}: ele foi cancelado e a devolução de ${formatMoney(order.total)} não foi concluída. Podem verificar?`
             )}
           </>
         )}
@@ -286,7 +288,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   Aguardando pagamento
                 </span>
               </div>
-              <p className="text-xs text-[#57534E]">Pagamento PIX de R$ {order.total.toFixed(2)}</p>
+              <p className="text-xs text-[#57534E]">Pagamento PIX de {formatMoney(order.total)}</p>
             </div>
             <button
               onClick={onClose}
@@ -306,7 +308,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
 
               <div>
                 <p className="text-[11px] text-[#57534E] mb-1.5">
-                  Pague <strong>R$ {order.total.toFixed(2)}</strong> no app do banco.
+                  Pague <strong>{formatMoney(order.total)}</strong> no app do banco.
                   {order.payment.mpPaymentId
                     ? ' Esta tela libera sozinha quando o PIX cair.'
                     : ' Envie o comprovante no WhatsApp.'}
@@ -331,11 +333,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                     className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
                   >
                     {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{pixCopied ? 'PIX copiado!' : 'Copiar PIX'}</span>
+                    <span>{pixCopied ? 'PIX copiado' : 'Copiar PIX'}</span>
                   </button>
                   {pixCopyFailed && (
                     <p className="mt-2 text-[10px] text-[#B91C1C] font-bold">
-                      Não conseguimos copiar automaticamente. Selecionamos o código acima — copie manualmente.
+                      Não conseguimos copiar automaticamente. Selecionamos o código acima. Copie manualmente.
                     </p>
                   )}
                 </div>
@@ -356,9 +358,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 <a
                   href={whatsAppLink(
                     settings.storeWhatsApp,
-                    `Olá! 🍲 Pedido ${order.id} no valor de R$ ${order.total.toFixed(
-                      2
-                    )} pago via PIX. Segue o comprovante:`
+                    `Olá, pedido ${order.id} no valor de ${formatMoney(order.total)} pago via PIX. Segue o comprovante:`
                   )}
                   target="_blank"
                   rel="noreferrer"
@@ -377,8 +377,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-3.5 text-[11px] text-[#065F46] font-bold flex items-start gap-2">
               <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Já pagou? O rastreio é liberado automaticamente assim que a loja confirmar o pagamento —
-                esta tela atualiza sozinha. Você também pode avisar a loja pelo chat após a liberação.
+                Já pagou? O rastreio é liberado automaticamente assim que a loja confirmar o pagamento.
+                Esta tela atualiza sozinha. Você também pode avisar a loja pelo chat após a liberação.
               </span>
             </div>
 
@@ -547,7 +547,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               </div>
               {storeWhatsAppButton(
                 'Falar com a loja no WhatsApp',
-                `Olá! 🍲 Pedi o cancelamento do pedido ${order.id} e ainda não tive resposta. Podem me ajudar?`
+                `Olá, sobre o pedido ${order.id}: pedi o cancelamento e ainda não tive resposta. Podem me ajudar?`
               )}
             </div>
           )}
@@ -578,7 +578,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               <p className="text-[11px] text-[#57534E]">{order.complaint.text}</p>
               <p className="text-[10px] text-[#A8A29E] font-bold">
                 Aberta em {formatShortDate(order.complaint.openedAt)}
-                {order.complaint.status === 'aberta' && ' — continue a conversa pelo chat.'}
+                {order.complaint.status === 'aberta' && '. Continue a conversa pelo chat.'}
               </p>
             </div>
           )}
@@ -588,7 +588,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               <div className="flex items-center justify-between relative">
                 <div className="absolute top-4 left-6 right-6 h-1 bg-[#E7E5E4] -z-0">
                   <div
-                    className="h-full bg-[#B91C1C] transition-all duration-500"
+                    className="h-full bg-[#B91C1C] transition-[width] duration-500"
                     style={{ width: `${(currentIndex / (STATUS_STEPS.length - 1)) * 100}%` }}
                   />
                 </div>
@@ -604,7 +604,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                     // existe e o rótulo corta no lugar de empurrar.
                     <div key={step.status} className="flex flex-1 min-w-0 flex-col items-center text-center z-10 px-0.5">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
                           isCurrent
                             ? 'text-white ring-4 ring-[#B91C1C]/20 scale-110 shadow-md'
                             : isPassed
@@ -657,7 +657,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   <Clock className="w-3 h-3 shrink-0" />
                   <span>
                     {driverAge
-                      ? `Última posição ${driverAge} — o mapa volta a andar quando o sinal voltar.`
+                      ? `Última posição ${driverAge}. O mapa volta a andar quando o sinal voltar.`
                       : 'Esta é a última posição conhecida do motoboy.'}
                   </span>
                 </p>
@@ -671,8 +671,14 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 `min-w-0`: na retirada ele empurrava os botões Chat/Ligar para
                 fora da ficha. */}
             <div className="flex min-w-0 items-center gap-3">
-              <div className="w-10 h-10 shrink-0 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white font-bold text-lg shadow-xs">
-                {isCanceled ? '💬' : pickupOrder ? '🏪' : '🛵'}
+              <div className="w-10 h-10 shrink-0 rounded-2xl bg-[#B91C1C] flex items-center justify-center text-white shadow-xs">
+                {isCanceled ? (
+                  <MessageSquare className="w-5 h-5" />
+                ) : pickupOrder ? (
+                  <Store className="w-5 h-5" />
+                ) : (
+                  <Bike className="w-5 h-5" />
+                )}
               </div>
               <div className="min-w-0">
                 <div className="truncate text-xs font-bold text-[#1C1917]">
@@ -768,7 +774,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                   )}
                 </div>
                 <span className="shrink-0 font-bold text-[#1C1917]">
-                  {it.isFree ? 'R$ 0,00' : `R$ ${it.itemTotalPrice.toFixed(2)}`}
+                  {it.isFree ? 'R$ 0,00' : formatMoney(it.itemTotalPrice)}
                 </span>
               </div>
             ))}
@@ -776,13 +782,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
               {order.discount > 0 && (
                 <div className="flex justify-between">
                   <span>Desconto</span>
-                  <span className="text-[#059669] font-bold">- R$ {order.discount.toFixed(2)}</span>
+                  <span className="text-[#059669] font-bold">- {formatMoney(order.discount)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>{pickupOrder ? 'Retirada na loja' : 'Entrega'}</span>
                 <span className="font-bold text-[#1C1917]">
-                  {order.deliveryFee > 0 ? `R$ ${order.deliveryFee.toFixed(2)}` : 'Grátis'}
+                  {order.deliveryFee > 0 ? formatMoney(order.deliveryFee) : 'Grátis'}
                 </span>
               </div>
             </div>
@@ -791,7 +797,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 Total · {paymentLabel(order.payment, order.fulfillment)}
                 {order.payment.isPaid ? ' · pago' : ' · a pagar'}
               </span>
-              <span className="shrink-0 text-[#B91C1C]">R$ {order.total.toFixed(2)}</span>
+              <span className="shrink-0 text-[#B91C1C]">{formatMoney(order.total)}</span>
             </div>
           </div>
 
@@ -799,7 +805,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
             <div className="bg-[#FEF2F2] p-4 rounded-2xl border border-[#FCA5A5] text-center space-y-3">
               <h4 className="text-sm font-extrabold text-[#1C1917] flex items-center justify-center gap-1.5">
                 <Flame className="w-4 h-4 text-[#B91C1C]" />
-                <span>Como foi seu Caldinho Express?</span>
+                <span>Como foi seu pedido?</span>
               </h4>
 
               {!ratingSubmitted && !order.rating ? (
@@ -811,10 +817,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                         type="button"
                         onClick={() => setRatingStars(star)}
                         aria-label={`Dar ${star} ${star === 1 ? 'estrela' : 'estrelas'}`}
-                        className="p-2 transition transform hover:scale-125"
+                        className="group p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
                       >
                         <Star
-                          className={`w-7 h-7 ${
+                          className={`w-7 h-7 transition-colors group-hover:text-[#D97706] ${
                             star <= ratingStars ? 'fill-[#D97706] text-[#D97706]' : 'text-[#E7E5E4]'
                           }`}
                         />
@@ -826,7 +832,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                     type="text"
                     value={ratingComment}
                     onChange={(e) => setRatingComment(e.target.value)}
-                    placeholder="Escreva sua avaliação (ex: Caldinho bem quente, torresmo crocante!)..."
+                    placeholder="Ex.: caldinho bem quente, torresmo crocante"
                     className="w-full bg-white border border-[#E7E5E4] rounded-xl p-2.5 text-xs text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
                   />
 
@@ -840,7 +846,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ orderId,
                 </form>
               ) : (
                 <div className="text-xs text-[#059669] font-bold bg-[#ECFDF5] p-3 rounded-xl border border-[#A7F3D0]">
-                  ⭐ Avaliação registrada! Obrigado pelo carinho!
+                  Avaliação registrada. Obrigado.
                 </div>
               )}
             </div>

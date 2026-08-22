@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  CANCEL_REQUEST_RESPONSE_MINUTES,
-  COMPLAINT_WINDOW_HOURS,
-  type CancellationRequest,
-  type Order,
-} from '../../types';
-
+import { CANCEL_REQUEST_RESPONSE_MINUTES, COMPLAINT_WINDOW_HOURS } from '../../../contract/constants';
+import type { CancellationRequest, Order } from '../../../contract/order/types';
 /**
  * O servidor não tem timer: prazo de resposta, atraso e janela de reclamação
  * são calculados na tela. Este relógio faz a tela reagir sozinha ao tempo passar.

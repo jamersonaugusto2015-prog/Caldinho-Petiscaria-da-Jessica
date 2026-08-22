@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import type { ChatMessage } from '../../types';
+import type { ChatMessage } from '../../../contract/order/types';
 import { kitchenApi as api } from '../../lib/api';
-import { chatAlertFor } from '../../shared/orderAlerts';
+import { chatAlertFor } from '../../../contract/order/alerts';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
 import { useKitchenSoundAlert } from './KitchenSoundStore';
@@ -10,12 +10,16 @@ interface KitchenChatContextType {
   openOrderId: string | null;
   messages: ChatMessage[];
   loadingThread: boolean;
+  /** erro ao carregar a conversa aberta — some assim que ela carrega uma vez. */
+  error: string | null;
   sending: boolean;
   unread: Record<string, number>;
   totalUnread: number;
   openThread: (orderId: string) => void;
   closeThread: () => void;
   sendMessage: (text: string) => Promise<void>;
+  /** tenta carregar de novo a conversa aberta. */
+  reload: () => void;
 }
 
 interface KitchenChatSyncContextType {
@@ -33,6 +37,7 @@ export const KitchenChatProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [loadingThread, setLoadingThread] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
   // A conversa aberta e o nome da loja são lidos por refs: o handler do socket e
@@ -64,27 +69,47 @@ export const KitchenChatProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [appendMessage, deliver]
   );
 
-  const openThread = useCallback((orderId: string) => {
-    setOpenOrderId(orderId);
-    openOrderIdRef.current = orderId;
-    setUnread((previous) => {
-      if (!previous[orderId]) return previous;
-      const next = { ...previous };
-      delete next[orderId];
-      return next;
-    });
+  const loadThread = useCallback((orderId: string) => {
     setLoadingThread(true);
+    setError(null);
     api
       .get<ChatMessage[]>(`/orders/${orderId}/chat`)
-      .then((history) => setThreads((previous) => ({ ...previous, [orderId]: history })))
-      .catch(() => {})
+      .then((history) => {
+        setThreads((previous) => ({ ...previous, [orderId]: history }));
+        setError(null);
+      })
+      .catch(() => {
+        // Não apaga mensagens que já estavam na tela (ex.: reabrir a conversa) —
+        // só avisa que a lista pode estar incompleta e oferece tentar de novo.
+        setError('Não deu para carregar essa conversa. Confira a conexão e tente de novo.');
+      })
       .finally(() => setLoadingThread(false));
   }, []);
+
+  const openThread = useCallback(
+    (orderId: string) => {
+      setOpenOrderId(orderId);
+      openOrderIdRef.current = orderId;
+      setUnread((previous) => {
+        if (!previous[orderId]) return previous;
+        const next = { ...previous };
+        delete next[orderId];
+        return next;
+      });
+      loadThread(orderId);
+    },
+    [loadThread]
+  );
 
   const closeThread = useCallback(() => {
     setOpenOrderId(null);
     openOrderIdRef.current = null;
+    setError(null);
   }, []);
+
+  const reload = useCallback(() => {
+    if (openOrderIdRef.current) loadThread(openOrderIdRef.current);
+  }, [loadThread]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -123,14 +148,28 @@ export const KitchenChatProvider: React.FC<{ children: React.ReactNode }> = ({ c
       openOrderId,
       messages,
       loadingThread,
+      error,
       sending,
       unread,
       totalUnread,
       openThread,
       closeThread,
       sendMessage,
+      reload,
     }),
-    [openOrderId, messages, loadingThread, sending, unread, totalUnread, openThread, closeThread, sendMessage]
+    [
+      openOrderId,
+      messages,
+      loadingThread,
+      error,
+      sending,
+      unread,
+      totalUnread,
+      openThread,
+      closeThread,
+      sendMessage,
+      reload,
+    ]
   );
 
   const sync = useMemo<KitchenChatSyncContextType>(() => ({ receiveMessage }), [receiveMessage]);

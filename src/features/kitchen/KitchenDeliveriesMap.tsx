@@ -1,15 +1,17 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
 import { Bike, Clock, MapPin, Radio, Store } from 'lucide-react';
-import type { Driver, Order } from '../../types';
-import { isPickup } from '../../shared/fulfillment';
-import { locationAgeLabel, locationFreshness } from '../../shared/driverFreshness';
+import type { Driver } from '../../../contract/driver/types';
+import type { Order } from '../../../contract/order/types';
+import { isPickup } from '../../../contract/order/fulfillment';
+import { locationAgeLabel, locationFreshness } from '../../../contract/driver/freshness';
 import type { DriverPin } from '../../components/common/LiveMap';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenDrivers } from './KitchenDriversStore';
 import { useKitchenSettings } from './KitchenSettingsStore';
 import { Heading, Panel, Empty } from './KitchenPanels';
-import { money } from './kitchenOrderRules';
+
 import { useNow } from './useNow';
+import { formatMoney } from '../../../contract/pricing/money';
 
 /**
  * Leaflet e o CSS dele passam de 150 kB. A cozinha abre no celular do balcão e
@@ -177,7 +179,7 @@ export const KitchenDeliveriesMap: React.FC = () => {
                   {order.customerName} · {order.address?.neighborhood || 'Bairro não informado'}
                 </span>
               </span>
-              <span className="shrink-0 font-extrabold tabular-nums">{money(order.total)}</span>
+              <span className="shrink-0 font-extrabold tabular-nums">{formatMoney(order.total)}</span>
             </div>
           ))}
         </Panel>
@@ -258,7 +260,7 @@ const DeliveryRow: React.FC<{
           </span>
         )}
       </span>
-      <span className="shrink-0 text-xs font-extrabold tabular-nums">{money(order.total)}</span>
+      <span className="shrink-0 text-xs font-extrabold tabular-nums">{formatMoney(order.total)}</span>
     </button>
   );
 };

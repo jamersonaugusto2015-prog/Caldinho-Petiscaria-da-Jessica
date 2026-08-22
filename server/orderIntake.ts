@@ -1,23 +1,13 @@
 import crypto from 'node:crypto';
-import {
-  CartItem,
-  Coupon,
-  DeliveryAddress,
-  Fulfillment,
-  Order,
-  PaymentDetails,
-  PaymentMethod,
-  Product,
-  Promotion,
-  StoreSettings,
-} from '../src/types';
-import { computeCartItemTotal, computeCartTotals, findCoupon } from '../src/shared/pricing';
-import { effectiveDistanceKm, isStoreOpen } from '../src/shared/geo';
-import { normalizeFulfillment, pickupAddress } from '../src/shared/fulfillment';
-import { normalizePaymentTiming, requiresOnlineCharge } from '../src/shared/payment';
+import type { Coupon, Product, Promotion } from '../contract/catalog/types';
+import type { CartItem, DeliveryAddress, Fulfillment, Order, PaymentDetails, PaymentMethod } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
+import { computeCartItemTotal, computeCartTotals, findCoupon } from '../contract/pricing/pricing';
+import { effectiveDistanceKm, isStoreOpen } from '../contract/pricing/geo';
+import { normalizeFulfillment, pickupAddress } from '../contract/order/fulfillment';
+import { normalizePaymentTiming, requiresOnlineCharge } from '../contract/payment/payment';
 import { DomainError } from './errors';
-import { deleteOrder, orderIdExists, saveOrder } from './orderStore';
-import { releaseFreeItems } from './loyalty';
+import { formatMoney } from '../contract/pricing/money';
 
 export interface OrderIntakeInput {
   items?: unknown;
@@ -88,22 +78,37 @@ export interface OrderIntakeDependencies {
   listProducts?: () => Product[];
   /** Sobe o contador da promoção dentro da transação do pedido. */
   registerPromotionUses?: (applied: Order['appliedPromotions'], orderTotal: number) => void;
+  /** Segura a vaga da promoção antes da cobrança. */
+  reservePromotionUses(applied: Order['appliedPromotions']): void;
+  /** Devolve a vaga quando a cobrança falha. */
+  releasePromotionUses(applied: Order['appliedPromotions']): void;
+  /** Grava o faturamento da promoção depois que a cobrança passa. */
+  recordPromotionSale(applied: Order['appliedPromotions'], orderTotal: number): void;
   payment: OrderPaymentAdapter;
-  peekFreeRedeem(token: string, productId: string): boolean;
-  consumeFreeItems(items: CartItem[]): void;
+  peekFreeRedeem(token: string, productId: string, customerId?: string): boolean;
+  consumeFreeItems(items: CartItem[], customerId?: string): void;
   /** The callback runs in the repository transaction immediately before insert. */
   persistOrder(order: Order, beforePersist: () => void): void;
   getLoyaltyPoints(customerId: string): number;
   createOrderId?: () => string;
   now?: () => string;
-  /** Overridable for tests; defaults to a real lookup against server/orderStore.ts. */
-  orderIdExists?: (id: string) => boolean;
-  /** Applies the charge result to an already-reserved order row. Defaults to orderStore.saveOrder. */
-  updateOrder?: (order: Order) => void;
-  /** Removes a reserved order row whose charge failed. Defaults to orderStore.deleteOrder. */
-  releaseOrder?: (id: string) => void;
-  /** Restores a free-item token reserved before a charge that then failed. Defaults to loyalty.releaseFreeItems. */
-  releaseFreeItems?: (items: CartItem[]) => void;
+  /**
+   * Confere se o id sorteado já existe. O id do pedido é único no MUNDO (não por
+   * loja): é ele que o webhook do Mercado Pago devolve em `external_reference`.
+   */
+  orderIdExists(id: string): boolean;
+  /**
+   * Grava o resultado da cobrança na linha já reservada.
+   *
+   * Deixou de ser opcional na Fase 5: o atalho para `orderStore.saveOrder` não
+   * existe mais porque gravar passou a exigir saber a loja — e o domínio não
+   * sabe, de propósito. Quem amarra é `server/domain/deps.ts`.
+   */
+  updateOrder(order: Order): void;
+  /** Apaga a linha reservada de um pedido cuja cobrança falhou. */
+  releaseOrder(id: string): void;
+  /** Devolve o vale-brinde reservado antes de uma cobrança que falhou. */
+  releaseFreeItems(items: CartItem[]): void;
 }
 
 export interface OrderIntakeResult {
@@ -231,7 +236,12 @@ function generateOrderId(exists: (id: string) => boolean): string {
   throw new DomainError(500, 'Não foi possível gerar um código de pedido único. Tente novamente.');
 }
 
-export function createOrderIntake(deps: OrderIntakeDependencies) {
+/** A porta de entrada de um pedido, com as dependências de uma loja já amarradas. */
+export interface OrderIntake {
+  placeOrder(input: OrderIntakeInput): Promise<OrderIntakeResult>;
+}
+
+export function createOrderIntake(deps: OrderIntakeDependencies): OrderIntake {
   return {
     placeOrder: (input: OrderIntakeInput) => placeOrder(input, deps),
   };
@@ -245,15 +255,15 @@ export async function placeOrder(
   const isPickupOrder = fulfillment === 'pickup';
 
   if (!Array.isArray(input.items) || input.items.length === 0) {
-    throw new DomainError(400, 'Carrinho inválido.');
+    throw new DomainError(400, 'Seu carrinho está vazio. Adicione itens do cardápio antes de fechar o pedido.');
   }
   if (!isPickupOrder && !input.address) {
-    throw new DomainError(400, 'Carrinho ou endereço inválidos.');
+    throw new DomainError(400, 'Preencha rua, número e bairro antes de fechar o pedido.');
   }
 
   const settings = getSettings(deps);
   if (!isStoreOpen(settings)) {
-    throw new DomainError(400, 'A loja está fechada no momento. Volte no horário de funcionamento!');
+    throw new DomainError(400, 'A loja está fechada agora. Confira os horários no cardápio.');
   }
   if (isPickupOrder && !settings.pickupEnabled) {
     throw new DomainError(400, 'A retirada na loja está desativada no momento. Escolha entrega.');
@@ -278,9 +288,12 @@ export async function placeOrder(
   const cartItems = (input.items as CartItem[]).map((raw) =>
     resolveCartItem(raw, settings, deps.loadProduct)
   );
+  // O vale-brinde é de quem resgatou: valida já com o dono para um cliente não
+  // gastar o token de outro.
+  const redeemCustomerId = String(input.customerId || 'anon').slice(0, 80);
   const freeItems = cartItems.filter((item) => item.isFree);
   for (const item of freeItems) {
-    if (!item.freeToken || !deps.peekFreeRedeem(item.freeToken, item.product.id)) {
+    if (!item.freeToken || !deps.peekFreeRedeem(item.freeToken, item.product.id, redeemCustomerId)) {
       throw invalidFreeRedeem();
     }
   }
@@ -305,7 +318,7 @@ export async function placeOrder(
   if (coupon && totals.subtotal < coupon.minOrderValue) {
     throw new DomainError(
       400,
-      `Valor mínimo para o cupom ${coupon.code} é R$ ${coupon.minOrderValue.toFixed(2)}.`
+      `Valor mínimo para o cupom ${coupon.code} é ${formatMoney(coupon.minOrderValue)}.`
     );
   }
 
@@ -315,11 +328,11 @@ export async function placeOrder(
   if (settings.minOrderValue > 0 && paidSubtotal > 0 && paidSubtotal < settings.minOrderValue) {
     throw new DomainError(
       400,
-      `Pedido mínimo de R$ ${settings.minOrderValue.toFixed(2)}. Adicione mais itens.`
+      `Pedido mínimo de ${formatMoney(settings.minOrderValue)}. Adicione mais itens.`
     );
   }
 
-  const id = deps.createOrderId?.() || generateOrderId(deps.orderIdExists ?? orderIdExists);
+  const id = deps.createOrderId?.() || generateOrderId(deps.orderIdExists);
   // Cair no PIX por padrão esconderia o erro: o cliente escolheria dinheiro e a
   // cozinha ficaria esperando um pagamento que nunca chega.
   if (input.paymentMethod !== 'cash' && input.paymentMethod !== 'card' && input.paymentMethod !== 'pix') {
@@ -379,7 +392,7 @@ export async function placeOrder(
 
   if (!willCharge) {
     deps.persistOrder(order, () => {
-      deps.consumeFreeItems(freeItems);
+      deps.consumeFreeItems(freeItems, customerId);
       deps.registerPromotionUses?.(totals.appliedPromotions, totals.total);
     });
     return { order, loyaltyPoints: deps.getLoyaltyPoints(customerId) };
@@ -392,10 +405,15 @@ export async function placeOrder(
    * a successful charge) and the loyalty double-spend window (a replayed request that re-uses
    * a freeToken fails here, before collectPix/collectCard ever runs).
    */
-  // A promoção só é contabilizada depois que a cobrança passa: a linha reservada
-  // aqui ainda pode ser apagada, e um contador que subiu sozinho esgotaria a
-  // promoção sem nenhum pedido real por trás.
-  deps.persistOrder(order, () => deps.consumeFreeItems(freeItems));
+  // A VAGA da promoção é segurada aqui, junto com os selos, antes de qualquer
+  // dinheiro se mexer. Contar só depois do `await` da cobrança deixava dois
+  // pedidos simultâneos levarem a mesma última vaga e estourarem o teto. O
+  // FATURAMENTO continua sendo gravado só depois da cobrança passar — se ela
+  // falhar, a linha é apagada e a vaga volta em `releasePromotionUses`.
+  deps.persistOrder(order, () => {
+    deps.consumeFreeItems(freeItems, customerId);
+    deps.reservePromotionUses(totals.appliedPromotions);
+  });
 
   try {
     if (method === 'pix') {
@@ -427,15 +445,18 @@ export async function placeOrder(
       Object.assign(payment, card);
     }
   } catch (err) {
-    (deps.releaseOrder ?? deleteOrder)(id);
-    if (freeItems.length > 0) (deps.releaseFreeItems ?? releaseFreeItems)(freeItems);
+    deps.releaseOrder(id);
+    if (freeItems.length > 0) deps.releaseFreeItems(freeItems);
+    if (totals.appliedPromotions.length > 0) {
+      deps.releasePromotionUses(totals.appliedPromotions);
+    }
     throw err;
   }
 
-  deps.registerPromotionUses?.(totals.appliedPromotions, totals.total);
+  deps.recordPromotionSale(totals.appliedPromotions, totals.total);
 
   try {
-    (deps.updateOrder ?? saveOrder)(order);
+    deps.updateOrder(order);
   } catch {
     // The charge already succeeded and the reserved row still exists (unpaid) — this is a
     // recoverable state, not an orphan charge: the shop can find order `id` and reconcile it.

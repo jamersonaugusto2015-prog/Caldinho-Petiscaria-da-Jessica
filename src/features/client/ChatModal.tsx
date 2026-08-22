@@ -2,10 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCheckout } from './CheckoutStore';
 import { api } from '../../lib/api';
 import { useLiveSession } from '../../lib/liveSession';
-import { chatAlertFor } from '../../shared/orderAlerts';
-import { X, Send } from 'lucide-react';
-import { ChatMessage } from '../../types';
-
+import { chatAlertFor } from '../../../contract/order/alerts';
+import { X, Send, MessageSquare } from 'lucide-react';
+import type { ChatMessage } from '../../../contract/order/types';
 interface ChatModalProps {
   orderId: string;
   customerName?: string;
@@ -110,13 +109,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
             barra de status. */}
         <div className="p-3.5 pt-safe border-b border-[#E7E5E4] bg-white flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-[#B91C1C] flex items-center justify-center text-white font-bold text-xs">
-              💬
+            <div className="w-8 h-8 rounded-full bg-[#B91C1C] flex items-center justify-center text-white">
+              <MessageSquare className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <h3 className="truncate text-xs font-extrabold text-[#1C1917]">Chat do Pedido {orderId}</h3>
               <p className="truncate text-[10px] text-[#57534E]">
-                Comunicação direta com o Restaurante e Entregador
+                Fale com a loja e com o motoboy
               </p>
             </div>
           </div>
@@ -133,11 +132,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
         <div ref={listRef} className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3 bg-[#F5F5F4]/40 text-xs">
           {isLoading ? (
             <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
-              Carregando conversa...
+              Carregando conversa…
             </div>
           ) : loadError ? (
             <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
-              Não foi possível carregar as mensagens. Puxe pra baixo ou reabra o chat.
+              Não foi possível carregar as mensagens. Feche e abra o chat de novo.
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex items-center justify-center text-[#A8A29E] text-center">
@@ -177,8 +176,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({ orderId, customerName, onC
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Escreva sua mensagem aqui..."
-            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-full px-4 py-2 text-xs text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#B91C1C]"
+            placeholder="Escreva sua mensagem"
+            className="flex-1 bg-[#F5F5F4] border border-[#E7E5E4] rounded-full px-4 py-2 text-xs text-[#1C1917] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#B91C1C]"
           />
           {/* 36 px de alvo para enviar recado com o pedido na rua é pouco. Os
               44 px também esticam o campo ao lado (a linha é `stretch`), que

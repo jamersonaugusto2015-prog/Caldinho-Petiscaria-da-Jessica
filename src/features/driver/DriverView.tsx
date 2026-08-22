@@ -1,12 +1,12 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useDriver } from './DriverStore';
-import { AlertBanner, AlertPermissionPrompt } from '../../lib/alertBanner';
-import { locationFreshness } from '../../shared/driverFreshness';
+import { AlertBanner, AlertPermissionPrompt } from '../../ui/alertBanner';
+import { locationFreshness } from '../../../contract/driver/freshness';
 import { hapticTap } from '../../lib/haptic';
-import { formatKm } from '../../shared/geo';
-import { needsCardMachine, paymentLabel } from '../../shared/payment';
-import { Order } from '../../types';
+import { formatKm } from '../../../contract/pricing/geo';
+import { needsCardMachine, paymentLabel } from '../../../contract/payment/payment';
+import type { Order } from '../../../contract/order/types';
 import {
   Bike,
   Power,
@@ -24,6 +24,7 @@ import {
   Clock,
   Lock,
 } from 'lucide-react';
+import { formatMoney } from '../../../contract/pricing/money';
 
 /**
  * O Leaflet (~154 kB com o CSS) entra por `lazy` como já entrava no cliente e na
@@ -176,7 +177,7 @@ export const DriverView: React.FC = () => {
                     fora da faixa numa tela de 360 px. */}
                 <div className="flex min-w-0 items-center gap-2 text-xs font-bold">
                   <ShieldAlert className="h-5 w-5 shrink-0" />
-                  <span className="min-w-0">GPS desligado — o cliente não vê você.</span>
+                  <span className="min-w-0">GPS desligado. O cliente não vê você.</span>
                 </div>
                 <button
                   type="button"
@@ -201,7 +202,7 @@ export const DriverView: React.FC = () => {
                 <div className="flex min-w-0 items-center gap-2 text-xs font-bold">
                   <ShieldAlert className="h-5 w-5 shrink-0" />
                   <span className="min-w-0">
-                    GPS sem sinal{quietFor ? ` ${quietFor}` : ''} — o cliente está vendo você no último
+                    GPS sem sinal{quietFor ? ` ${quietFor}` : ''}. O cliente está vendo você no último
                     ponto. Deixe a tela ligada.
                   </span>
                 </div>
@@ -230,7 +231,7 @@ export const DriverView: React.FC = () => {
                   livre digitado pela cozinha, e uma palavra comprida estourava
                   o cartão para fora da tela. */}
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-[#B91C1C]">Pare — corrida cancelada</div>
+                <div className="text-sm font-extrabold text-[#B91C1C]">Corrida cancelada. Pare.</div>
                 <p className="mt-0.5 break-words text-xs text-[#7C2D12]">
                   {ord.id} · {ord.cancellationReason || 'Motivo não informado'}
                 </p>
@@ -289,7 +290,7 @@ export const DriverView: React.FC = () => {
                 </p>
               )}
               {hasRides && focusFee != null && (
-                <p className="mt-0.5 text-[11px] font-bold text-[#A7F3D0]">Taxa desta: R$ {focusFee.toFixed(2)}</p>
+                <p className="mt-0.5 text-[11px] font-bold text-[#A7F3D0]">Taxa desta: {formatMoney(focusFee)}</p>
               )}
             </div>
 
@@ -411,7 +412,7 @@ export const DriverView: React.FC = () => {
         {!hasRides && completedToday.length > 0 && (
           <section className="space-y-2.5 rounded-[22px] border border-[#E7E5E4] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-extrabold text-[#1C1917]">
-              Hoje · {completedToday.length} entregas · R$ {earningsToday.toFixed(2)}
+              Hoje · {completedToday.length} entregas · {formatMoney(earningsToday)}
             </h3>
             <div className="space-y-2">
               {completedToday.map((cd) => (
@@ -427,7 +428,7 @@ export const DriverView: React.FC = () => {
                     </span>
                   </div>
                   <span className="shrink-0 font-extrabold text-[#059669]">
-                    + R$ {feeForOrder(cd).toFixed(2)}
+                    + {formatMoney(feeForOrder(cd))}
                   </span>
                 </div>
               ))}
@@ -510,7 +511,7 @@ const RideCard: React.FC<{
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-2xl font-black tabular-nums leading-none text-[#059669]">
-              + R$ {fee.toFixed(2)}
+              + {formatMoney(fee)}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-[#F5F5F4] px-2 py-0.5 text-[10px] font-bold text-[#57534E]">
               <Clock className="h-3 w-3" />
@@ -622,7 +623,7 @@ const RideCard: React.FC<{
                 <strong>{it.quantity}x</strong> {it.product.name}
               </span>
               <span className="shrink-0 font-bold text-[#1C1917]">
-                {it.isFree ? 'GRÁTIS' : `R$ ${it.itemTotalPrice.toFixed(2)}`}
+                {it.isFree ? 'GRÁTIS' : formatMoney(it.itemTotalPrice)}
               </span>
             </div>
           ))}
@@ -637,9 +638,9 @@ const RideCard: React.FC<{
           }`}
         >
           {paymentLabel(ord.payment, ord.fulfillment).toUpperCase()}{' '}
-          {ord.payment.isPaid ? '· JÁ PAGO' : `· COBRAR R$ ${ord.total.toFixed(2)}`}
+          {ord.payment.isPaid ? '· JÁ PAGO' : `· COBRAR ${formatMoney(ord.total)}`}
           {ord.payment.changeForAmount
-            ? ` · troco p/ R$ ${ord.payment.changeForAmount.toFixed(2)}`
+            ? ` · troco p/ ${formatMoney(ord.payment.changeForAmount)}`
             : ''}
         </div>
         {needsCardMachine(ord.payment) && (
@@ -673,7 +674,7 @@ const RideCard: React.FC<{
                 pulse={!reduceMotion}
                 icon={<Bike className="h-5 w-5" />}
                 label="Aceitar corrida"
-                detail={`Ganhe R$ ${fee.toFixed(2)}`}
+                detail={`Ganhe ${formatMoney(fee)}`}
               />
             )}
             {stage === 'pickup' && (
@@ -683,8 +684,8 @@ const RideCard: React.FC<{
                 onClick={() => onAction(ord.id, 'pickup')}
                 tone="purple"
                 icon={<ShoppingBag className="h-5 w-5" />}
-                label="Já peguei — sair agora"
-                detail="Cliente te vê a caminho"
+                label="Sair para entrega"
+                detail="O cliente vê você a caminho"
               />
             )}
             {stage === 'deliver' && (
@@ -695,7 +696,7 @@ const RideCard: React.FC<{
                 tone="green"
                 icon={<CheckCircle2 className="h-5 w-5" />}
                 label="Confirmar entrega"
-                detail={`+ R$ ${fee.toFixed(2)} nos ganhos`}
+                detail={`+ ${formatMoney(fee)} nos ganhos`}
               />
             )}
           </div>
@@ -782,7 +783,7 @@ const StickyAction: React.FC<{
         elevated
         icon={<Bike className="h-5 w-5" />}
         label="Aceitar corrida"
-        detail={`Ganhe R$ ${fee.toFixed(2)}`}
+        detail={`Ganhe ${formatMoney(fee)}`}
       />
     );
   }
@@ -795,8 +796,8 @@ const StickyAction: React.FC<{
         tone="purple"
         elevated
         icon={<ShoppingBag className="h-5 w-5" />}
-        label="Já peguei — sair agora"
-        detail="Cliente te vê a caminho"
+        label="Sair para entrega"
+        detail="O cliente vê você a caminho"
       />
     );
   }
@@ -809,7 +810,7 @@ const StickyAction: React.FC<{
       elevated
       icon={<CheckCircle2 className="h-5 w-5" />}
       label="Confirmar entrega"
-      detail={`+ R$ ${fee.toFixed(2)} nos ganhos`}
+      detail={`+ ${formatMoney(fee)} nos ganhos`}
     />
   );
 };
@@ -874,7 +875,6 @@ const WaitingState: React.FC = () => {
         {!reduceMotion && (
           <>
             <span className="absolute inset-0 animate-ping rounded-full bg-[#FEF3C7] opacity-60" />
-            <span className="absolute inset-2 animate-pulse rounded-full bg-[#FDE68A]/50" />
           </>
         )}
         <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-[#FFFBEB] text-[#D97706] ring-2 ring-[#FCD34D]/60">

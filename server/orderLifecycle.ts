@@ -1,6 +1,9 @@
-import { COMPLAINT_WINDOW_HOURS, Driver, Order, OrderStatus, StoreSettings } from '../src/types';
-import { isPickup } from '../src/shared/fulfillment';
-import { handoverRecipient, isHandover, transitionProblem } from '../src/shared/orderFlow';
+import { COMPLAINT_WINDOW_HOURS } from '../contract/constants';
+import type { Driver } from '../contract/driver/types';
+import type { Order, OrderStatus } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
+import { isPickup } from '../contract/order/fulfillment';
+import { handoverRecipient, isHandover, transitionProblem } from '../contract/order/flow';
 import { lastKnownPosition } from './driverLocation';
 import { DomainError } from './errors';
 
@@ -32,6 +35,23 @@ export interface OrderLifecycleDeps {
   getDriver: (id: string) => Driver | null;
   earnStamp: (customerId: string) => number | null;
   saveOrder: (order: Order) => void;
+  /**
+   * Registra a transição na trilha do pedido.
+   *
+   * Opcional de propósito: é um REGISTRO, não um passo da transição. Uma falha
+   * ao gravar a trilha não pode impedir o pedido de avançar — a cozinha não
+   * pode ficar travada porque a auditoria não escreveu. Quem chama de verdade
+   * (`server/domain/deps.ts`) sempre passa; os testes de regra de negócio não
+   * precisam.
+   */
+  recordEvent?: (event: {
+    orderId: string;
+    fromStatus: OrderStatus | null;
+    toStatus: OrderStatus;
+    actor: 'kitchen' | 'driver' | 'client' | 'system';
+    actorId?: string;
+    at: string;
+  }) => void;
 }
 
 export interface OrderLifecycleResult {
@@ -92,6 +112,17 @@ export function applyOrderEvent(
 
     // Lido antes de mexer no status: depois da atribuição o pedido já saiu de `pronto`.
     const despacho = isHandover(order, event.status) && handoverRecipient(order) === 'driver';
+
+    // A trilha é escrita ANTES dos efeitos, com o status de onde o pedido veio:
+    // depois da linha abaixo o `current.status` já não é recuperável daqui.
+    deps.recordEvent?.({
+      orderId: order.id,
+      fromStatus: current.status,
+      toStatus: event.status,
+      actor: event.actor,
+      actorId: event.driverId,
+      at: new Date().toISOString(),
+    });
 
     order.status = event.status;
     if (despacho) {

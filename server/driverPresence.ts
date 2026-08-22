@@ -1,5 +1,4 @@
-import { Driver } from '../src/types';
-
+import type { Driver } from '../contract/driver/types';
 /**
  * Presença do Entregador, lado servidor.
  *

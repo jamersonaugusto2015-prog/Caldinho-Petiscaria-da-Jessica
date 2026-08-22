@@ -2,8 +2,8 @@
 // Code é desenhada aqui porque a biblioteca `qrcode` só roda no Node.
 import QRCode from 'qrcode';
 
-export { generatePixCopyPaste } from '../src/shared/pix';
-export type { PixPayloadOptions } from '../src/shared/pix';
+export { generatePixCopyPaste } from '../contract/payment/pix';
+export type { PixPayloadOptions } from '../contract/payment/pix';
 
 /**
  * Desenha o QR Code do BR Code e devolve só o base64 do PNG, sem o prefixo

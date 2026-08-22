@@ -1,15 +1,19 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { Category, CategoryId, Coupon, DeliveryAddress, Product, Promotion, PublicStoreSettings } from '../../types';
-import type { AlertUrgency } from '../../shared/orderAlerts';
+import type { Category, CategoryId, Coupon, Product, Promotion } from '../../../contract/catalog/types';
+import type { DeliveryAddress } from '../../../contract/order/types';
+import type { PublicStoreSettings } from '../../../contract/shop/types';
+import type { AlertUrgency } from '../../../contract/order/alerts';
 import { api } from '../../lib/api';
 import { useSocketEvent } from '../../lib/socket';
 import { useLiveSession } from '../../lib/liveSession';
-import { AlertBannerProvider, useAlertBanner } from '../../lib/alertBanner';
-import { computeCartTotals } from '../../shared/pricing';
-import { DEFAULT_STORE_SETTINGS } from '../../shared/defaults';
+import { AlertBannerProvider, useAlertBanner } from '../../ui/alertBanner';
+import { computeCartTotals } from '../../../contract/pricing/pricing';
+import { DEFAULT_STORE_SETTINGS } from '../../../contract/shop/defaults';
 import { CartProvider, useCart } from './CartStore';
 import { CheckoutProvider } from './CheckoutStore';
 import { getOrCreateCustomerId } from './clientIdentity';
+import { applyShopBranding } from '../../lib/appShell';
+import { aplicarTokens } from '../../ui/tokens';
 
 interface ClientShellValue {
   products: Product[];
@@ -65,6 +69,7 @@ const ClientShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [storeLogo, setStoreLogo] = useState('');
   const [settings, setSettings] = useState<PublicStoreSettings>({
     ...DEFAULT_STORE_SETTINGS,
+    brandPrimaryColor: '',
     kitchenPinSet: false,
     isOpen: true,
     pixEnabled: false,
@@ -83,11 +88,6 @@ const ClientShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   });
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
-
-  useLiveSession({
-    customerId,
-    onSettingsUpdated: (next) => setSettings((previous) => ({ ...previous, ...next })),
-  });
 
   const loadInitialData = useCallback(() => {
     setLoadError(false);
@@ -112,11 +112,27 @@ const ClientShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     void loadInitialData();
   }, [loadInitialData]);
 
-  // O título da aba acompanha o nome da loja (index.html só tem o valor padrão).
+  // O estado do cliente (catálogo, cupom, configuração, loja aberta) vive de
+  // eventos do socket. O que passou enquanto a conexão esteve fora se perde —
+  // então, ao reconectar, recarrega tudo. Sem isto o cliente montava carrinho
+  // de item esgotado numa loja que já fechou.
+  useLiveSession({
+    customerId,
+    onSettingsUpdated: (next) => setSettings((previous) => ({ ...previous, ...next })),
+    onReconnect: retryLoad,
+  });
+
+  // O nome da loja entra na aba assim que as configurações chegam. Vale mais do
+  // que estética: o iOS ignora o `short_name` do manifesto e usa o `<title>`
+  // como nome sob o ícone — então ele precisa estar certo ANTES de alguém
+  // escolher "Adicionar à Tela de Início".
   useEffect(() => {
-    const name = settings.storeName?.trim();
-    if (name) document.title = `${name} - Sabor Regional & Rapidez`;
-  }, [settings.storeName]);
+    applyShopBranding(settings.storeName ?? '', settings.brandPrimaryColor);
+    // A marca da loja vira variável CSS no `<html>`. Hoje quase nenhuma tela lê
+    // `var(--marca)` ainda — as 510 cores continuam escritas à mão — mas cada
+    // uma que for convertida passa a seguir a loja sem precisar de mais nada.
+    aplicarTokens(settings.brandPrimaryColor);
+  }, [settings.storeName, settings.brandPrimaryColor]);
 
   useSocketEvent<{ logo: string }>('store:updated', ({ logo }) => setStoreLogo(logo));
   useSocketEvent('products:updated', () => void api.get<Product[]>('/products').then(setProducts).catch(() => {}));

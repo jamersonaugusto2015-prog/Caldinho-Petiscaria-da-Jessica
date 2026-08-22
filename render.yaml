@@ -12,12 +12,27 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
+      # Sem isto o app sobe em modo DESENVOLVIMENTO: o header x-shop-slug passa a
+      # escolher a loja (atalho que não pode existir em produção).
+      - key: NODE_ENV
+        value: production
       - key: PORT
         value: 10000
       - key: TZ
         value: America/Recife
       - key: DATA_DIR
         value: /data
+      # O slug da loja original TEM que bater com o domínio, senão o cliente leva
+      # 404 e a loja fica no ar mas invisível. Para caldinhodajessica.onrender.com,
+      # use caldinhodajessica. (A migração cria a loja com o slug provisório `loja`.)
+      - key: DEFAULT_SHOP_SLUG
+        value: caldinhodajessica
+      # O domínio-base do multi-loja. Para o domínio do Render, use onrender.com
+      # (aí caldinhodajessica.onrender.com -> loja "caldinhodajessica"). Com um
+      # domínio próprio e wildcard, use seudominio.com.br e cada loja vira um
+      # subdomínio (loja-x.seudominio.com.br).
+      - key: SHOP_BASE_DOMAIN
+        value: onrender.com
       - key: CORS_ORIGIN
         sync: false # preencha com https://caldinhodajessica.onrender.com
       - key: APP_URL

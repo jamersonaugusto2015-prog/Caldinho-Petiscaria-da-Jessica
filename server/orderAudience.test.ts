@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Order } from '../src/types';
-import { OrderRecipient, orderAudience } from './orderAudience';
+import type { Order } from '../contract/order/types';
+import { OrderRecipient, orderAudience } from '../contract/order/audience';
+import { customerRoom, driverRoom, driversRoom, kitchenRoom } from '../contract/shop/rooms';
 
+/** A loja usada nestes testes. As salas dela nunca podem colidir com as de outra. */
+const LOJA = 1;
 // A audiência é um valor puro: nada de `io` falso, nada de banco. O que estes
 // testes provam é quem recebe o quê — e o socket e o push herdam a resposta.
 
@@ -43,8 +46,8 @@ function order(overrides: Partial<Order> = {}): Order {
 const inRoom = (audience: OrderRecipient[], room: string) => audience.filter((r) => r.room === room);
 
 test('a cozinha está sempre na audiência, com o pedido inteiro', () => {
-  const audience = orderAudience(order({ driverId: 'drv-1' }));
-  const kitchen = inRoom(audience, 'kitchen');
+  const audience = orderAudience(LOJA, order({ driverId: 'drv-1' }));
+  const kitchen = inRoom(audience, kitchenRoom(LOJA));
   assert.equal(kitchen.length, 1);
   assert.equal(kitchen[0].role, 'kitchen');
   assert.equal(kitchen[0].order.customerName, 'Ana Maria');
@@ -52,8 +55,8 @@ test('a cozinha está sempre na audiência, com o pedido inteiro', () => {
 });
 
 test('a corrida aceita entra na sala do dono com o contato do cliente', () => {
-  const audience = orderAudience(order({ driverId: 'drv-1' }));
-  const mine = inRoom(audience, 'driver:drv-1');
+  const audience = orderAudience(LOJA, order({ driverId: 'drv-1' }));
+  const mine = inRoom(audience, driverRoom(LOJA, 'drv-1'));
   assert.equal(mine.length, 1);
   assert.equal(mine[0].role, 'driver');
   assert.equal(mine[0].driverId, 'drv-1');
@@ -63,10 +66,10 @@ test('a corrida aceita entra na sala do dono com o contato do cliente', () => {
 });
 
 test('o pool recebe o mesmo pedido sem o contato do cliente, descontando o dono', () => {
-  const audience = orderAudience(order({ driverId: 'drv-1', driverPhone: '81988887777' }));
-  const pool = inRoom(audience, 'drivers');
+  const audience = orderAudience(LOJA, order({ driverId: 'drv-1', driverPhone: '81988887777' }));
+  const pool = inRoom(audience, driversRoom(LOJA));
   assert.equal(pool.length, 1);
-  assert.equal(pool[0].except, 'driver:drv-1');
+  assert.equal(pool[0].except, driverRoom(LOJA, 'drv-1'));
   assert.equal(pool[0].driverId, undefined);
   assert.equal(pool[0].order.id, 'CX-TEST');
   assert.equal(pool[0].order.customerId, '');
@@ -82,8 +85,8 @@ test('o pool recebe o mesmo pedido sem o contato do cliente, descontando o dono'
 });
 
 test('a corrida sem dono chega ao pool inteiro já redigida', () => {
-  const audience = orderAudience(order({ status: 'pronto', driverId: undefined }));
-  const pool = inRoom(audience, 'drivers');
+  const audience = orderAudience(LOJA, order({ status: 'pronto', driverId: undefined }));
+  const pool = inRoom(audience, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   assert.equal(pool[0].except, undefined);
   // O motoboy decide pelo bairro, pela distância e pela taxa; o nome, o telefone
@@ -101,31 +104,31 @@ test('a corrida sem dono chega ao pool inteiro já redigida', () => {
 test('o pedido que a cozinha despachou sozinha ainda alcança o pool', () => {
   // Sem este destinatário a corrida some da cozinha e continua listada como
   // disponível na tela de todos os motoboys até um refetch.
-  const audience = orderAudience(order({ status: 'saiu_entrega', driverId: undefined }));
-  const pool = inRoom(audience, 'drivers');
+  const audience = orderAudience(LOJA, order({ status: 'saiu_entrega', driverId: undefined }));
+  const pool = inRoom(audience, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   assert.equal(pool[0].order.status, 'saiu_entrega');
   assert.equal(pool[0].order.customerName, '');
 });
 
 test('o pedido entregue alcança o pool para o card sair da lista', () => {
-  const audience = orderAudience(order({ status: 'entregue', driverId: 'drv-1' }));
-  const pool = inRoom(audience, 'drivers');
+  const audience = orderAudience(LOJA, order({ status: 'entregue', driverId: 'drv-1' }));
+  const pool = inRoom(audience, driversRoom(LOJA));
   assert.equal(pool.length, 1);
-  assert.equal(pool[0].except, 'driver:drv-1');
+  assert.equal(pool[0].except, driverRoom(LOJA, 'drv-1'));
   assert.equal(pool[0].order.customerName, '');
 });
 
 test('o pedido de retirada nunca chega aos motoboys', () => {
-  const audience = orderAudience(
+  const audience = orderAudience(LOJA, 
     order({ status: 'pronto', driverId: undefined, fulfillment: 'pickup' })
   );
-  assert.equal(inRoom(audience, 'drivers').length, 0);
+  assert.equal(inRoom(audience, driversRoom(LOJA)).length, 0);
 });
 
 test('o cancelado sem dono chega ao pool sem o contato do cliente', () => {
-  const audience = orderAudience(order({ status: 'cancelado', driverId: undefined }));
-  const pool = inRoom(audience, 'drivers');
+  const audience = orderAudience(LOJA, order({ status: 'cancelado', driverId: undefined }));
+  const pool = inRoom(audience, driversRoom(LOJA));
   assert.equal(pool.length, 1);
   // O card precisa sumir da lista, mas ninguém vai entregar este pedido: nome,
   // telefone e endereço não têm por que ir para a sala compartilhada.
@@ -142,14 +145,14 @@ test('o cancelado sem dono chega ao pool sem o contato do cliente', () => {
 });
 
 test('status que não é da conta do motoboy não gera destinatário de motoboy', () => {
-  const audience = orderAudience(order({ status: 'recebido', driverId: undefined }));
+  const audience = orderAudience(LOJA, order({ status: 'recebido', driverId: undefined }));
   assert.equal(audience.filter((r) => r.role === 'driver').length, 0);
-  assert.equal(inRoom(audience, 'kitchen').length, 1);
-  assert.equal(inRoom(audience, 'customer:cust-1').length, 1);
+  assert.equal(inRoom(audience, kitchenRoom(LOJA)).length, 1);
+  assert.equal(inRoom(audience, customerRoom(LOJA, 'cust-1')).length, 1);
 });
 
 test('nenhum destinatário motoboy carrega os segredos do PIX', () => {
-  const audience = orderAudience(order({ driverId: 'drv-1' }));
+  const audience = orderAudience(LOJA, order({ driverId: 'drv-1' }));
   for (const recipient of audience.filter((r) => r.role === 'driver')) {
     assert.equal(recipient.order.payment.pixCopyPaste, undefined);
     assert.equal(recipient.order.payment.pixQrCode, undefined);
@@ -157,8 +160,8 @@ test('nenhum destinatário motoboy carrega os segredos do PIX', () => {
 });
 
 test('o cliente continua recebendo o próprio pedido inteiro', () => {
-  const audience = orderAudience(order({ driverId: 'drv-1' }));
-  const mine = inRoom(audience, 'customer:cust-1');
+  const audience = orderAudience(LOJA, order({ driverId: 'drv-1' }));
+  const mine = inRoom(audience, customerRoom(LOJA, 'cust-1'));
   assert.equal(mine.length, 1);
   assert.equal(mine[0].role, 'client');
   assert.equal(mine[0].customerId, 'cust-1');
@@ -166,8 +169,8 @@ test('o cliente continua recebendo o próprio pedido inteiro', () => {
 });
 
 test('o dispositivo anônimo não tem sala', () => {
-  const anon = orderAudience(order({ customerId: 'anon' }));
+  const anon = orderAudience(LOJA, order({ customerId: 'anon' }));
   assert.equal(anon.filter((r) => r.role === 'client').length, 0);
-  const nameless = orderAudience(order({ customerId: '' }));
+  const nameless = orderAudience(LOJA, order({ customerId: '' }));
   assert.equal(nameless.filter((r) => r.role === 'client').length, 0);
 });

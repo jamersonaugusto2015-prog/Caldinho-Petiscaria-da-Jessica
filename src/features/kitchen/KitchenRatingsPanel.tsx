@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Bike, MessageCircle, Star, Store } from 'lucide-react';
-import type { Order } from '../../types';
-import { isPickup } from '../../shared/fulfillment';
+import type { Order } from '../../../contract/order/types';
+import { isPickup } from '../../../contract/order/fulfillment';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { useKitchenChat } from './KitchenChatStore';
 import { Heading, Panel, Empty } from './KitchenPanels';
-import { money, shortDateTime } from './kitchenOrderRules';
+import { shortDateTime } from './kitchenOrderRules';
+import { formatMoney } from '../../../contract/pricing/money';
 
 /** Nota a partir da qual a avaliação é tratada como boa. Até 3 é problema para olhar. */
 const NOTA_BAIXA_MAXIMA = 3;
@@ -67,7 +68,7 @@ export const KitchenRatingsPanel: React.FC = () => {
       <Heading
         icon={<Star />}
         title="Avaliações"
-        subtitle={`${counts.todas} avaliação(ões) no total · ${counts.atencao} com nota baixa (até ${NOTA_BAIXA_MAXIMA}).`}
+        subtitle={`${counts.todas} ${counts.todas === 1 ? 'avaliação' : 'avaliações'} no total · ${counts.atencao} com nota baixa (até ${NOTA_BAIXA_MAXIMA}).`}
       />
 
       <Panel title="Resumo de todas as avaliações">
@@ -75,7 +76,7 @@ export const KitchenRatingsPanel: React.FC = () => {
           <SummaryCard
             label="Nota média"
             value={rated.length ? average.toFixed(1) : '—'}
-            hint={rated.length ? `de ${counts.todas} avaliação(ões)` : 'ninguém avaliou ainda'}
+            hint={rated.length ? `de ${counts.todas} ${counts.todas === 1 ? 'avaliação' : 'avaliações'}` : 'ninguém avaliou ainda'}
           />
           <SummaryCard label="Avaliações" value={String(counts.todas)} hint="desde o começo" />
           <SummaryCard
@@ -263,7 +264,7 @@ const RatingRow: React.FC<{ order: Order & { rating: number }; onChat: () => voi
       )}
 
       <div className="text-[11px] text-[#57534E]">
-        <strong className="text-[#1C1917]">{order.id}</strong> · {order.customerName} · {money(order.total)}
+        <strong className="text-[#1C1917]">{order.id}</strong> · {order.customerName} · {formatMoney(order.total)}
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">

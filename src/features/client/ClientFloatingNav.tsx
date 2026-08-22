@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Home, ClipboardList, Search, ShoppingBag } from 'lucide-react';
+import { formatMoney } from '../../../contract/pricing/money';
 
 export type ClientTab = 'inicio' | 'pedidos' | 'busca';
 
@@ -51,7 +52,7 @@ export const ClientFloatingNav: React.FC<ClientFloatingNavProps> = ({
           onClick={onOpenCart}
           aria-label={
             cartCount > 0
-              ? `Abrir sacola, ${cartCount} itens, R$ ${cartTotal.toFixed(2)}`
+              ? `Abrir sacola, ${cartCount} itens, ${formatMoney(cartTotal)}`
               : 'Abrir sacola'
           }
           whileTap={reduceMotion ? undefined : { scale: 0.9 }}

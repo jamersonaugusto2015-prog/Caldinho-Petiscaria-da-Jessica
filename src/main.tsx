@@ -27,6 +27,9 @@ const KitchenApp = lazy(() =>
 const DriverApp = lazy(() =>
   import('./features/driver/DriverApp').then((m) => ({ default: m.DriverApp }))
 );
+const PlatformApp = lazy(() =>
+  import('./features/platform/PlatformApp').then((m) => ({ default: m.PlatformApp }))
+);
 // A 404 também entra por `lazy`: ela anima com GSAP, e importada direto puxava
 // o pacote inteiro de animação para o carregamento inicial dos TRÊS apps —
 // 200 kB pagos por todo mundo por causa de uma tela que quase ninguém vê.
@@ -106,6 +109,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/" element={<ClientApp />} />
             <Route path="/cozinha" element={<KitchenApp />} />
             <Route path="/entregador" element={<DriverApp />} />
+            <Route path="/admin" element={<PlatformApp />} />
             <Route path="*" element={<NotFoundScreen />} />
           </Routes>
         </Suspense>

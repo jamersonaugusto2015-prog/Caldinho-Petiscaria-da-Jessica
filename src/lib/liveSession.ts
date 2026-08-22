@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { Order, PublicStoreSettings, ChatMessage } from '../types';
+import type { ChatMessage, Order } from '../../contract/order/types';
+import type { PublicStoreSettings } from '../../contract/shop/types';
 import { socket, useSocketEvent } from './socket';
 
 export type LiveRole = 'kitchen' | 'driver';
@@ -53,11 +54,22 @@ export function useLiveSession({
     };
     joinSession();
     socket.on('connect', joinSession);
-    return () => socket.off('connect', joinSession);
+    return () => {
+      socket.off('connect', joinSession);
+      // Trocar de identidade (logout do motoboy A, login do B no MESMO
+      // celular) precisa LARGAR as salas antigas: sem isto o socket seguia em
+      // `driver:A` e recebia as corridas de A — nome, telefone e endereço —
+      // enquanto B usava o aparelho. O servidor tira das salas de papel e
+      // mantém só a da loja.
+      if (socket.connected) socket.emit('leave');
+    };
   }, [customerId, join, role, token]);
 
   useEffect(() => {
-    let missedEvents = !socket.connected;
+    // Começa `false`: a PRIMEIRA conexão não é uma reconexão. Marcá-la como
+    // perdida disparava um refetch completo logo depois da carga inicial, toda
+    // vez que a tela abria. Só uma queda DEPOIS de conectar conta como reconexão.
+    let missedEvents = false;
     const onDisconnect = () => {
       missedEvents = true;
     };

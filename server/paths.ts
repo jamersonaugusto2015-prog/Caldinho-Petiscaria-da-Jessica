@@ -1,12 +1,22 @@
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { config } from './config';
+import type { ShopId } from '../contract/shop/types';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * Onde ficam o banco SQLite e os uploads.
+ *
+ * Os caminhos vêm de `config.ts`, que já resolveu o `DATA_DIR` para absoluto e
+ * já validou o resto do ambiente. Este arquivo continua existindo porque meio
+ * servidor importa `DATA_DIR`/`UPLOADS_DIR` por aqui.
+ */
+export const DATA_DIR: string = config.dataDir;
+export const UPLOADS_DIR: string = path.resolve(config.uploadsDir);
 
-// Diretório de dados (banco SQLite + uploads). Configurável via DATA_DIR
-// para discos persistentes em produção (ex: Render).
-export const DATA_DIR = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(__dirname, '..', 'data');
-
-export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+/**
+ * Pasta de uploads de UMA loja. Cada loja grava e serve só dentro da própria —
+ * sem isto, um nome de arquivo repetido (dois donos subindo "logo.png" no
+ * mesmo minuto) faz uma loja sobrescrever a foto da outra.
+ */
+export function uploadsDirFor(shopId: ShopId): string {
+  return path.join(UPLOADS_DIR, String(shopId));
+}

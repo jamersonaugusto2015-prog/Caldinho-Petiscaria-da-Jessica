@@ -1,6 +1,8 @@
 import { Server } from 'socket.io';
-import { Order, PaymentDetails, StoreSettings } from '../src/types';
-import { getOrder, saveOrder } from './orderStore';
+import type { Order, PaymentDetails } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
+import { getOrder, saveOrder, shopIdOfOrder } from './orderStore';
+import type { ShopId } from '../contract/shop/types';
 import { DomainError } from './errors';
 import { emitOrder } from './orderEvents';
 import type {
@@ -18,25 +20,27 @@ import {
   refundPayment as refundMercadoPagoPayment,
 } from './mercadopago';
 import { generatePixCopyPaste, generatePixQrCodeBase64 } from './pix';
-import { usesLocalPix } from '../src/shared/pix';
-
+import { usesLocalPix } from '../contract/payment/pix';
 export async function collectPixPayment(opts: {
+  /** A loja que RECEBE. Sem ela a cobrança do PIX cai na conta errada. */
+  shopId: ShopId;
   orderId: string;
   amount: number;
   settings: StoreSettings;
   payerName: string;
   notificationUrl: string;
 }): Promise<Pick<PaymentDetails, 'mpPaymentId' | 'pixCopyPaste' | 'pixQrCode' | 'mpTicketUrl'>> {
-  const { orderId, amount, settings, payerName, notificationUrl } = opts;
+  const { shopId, orderId, amount, settings, payerName, notificationUrl } = opts;
   const payment: Pick<PaymentDetails, 'mpPaymentId' | 'pixCopyPaste' | 'pixQrCode' | 'mpTicketUrl'> = {};
   // A loja escolhe nas configurações quem cobra o PIX. Em 'local' o Mercado
   // Pago não é chamado nem como reserva: o dono desligou de propósito, e cair
   // no Mercado Pago escondido mandaria o dinheiro para a conta errada.
   const local = usesLocalPix(settings.pixProvider);
 
-  if (!local && isMercadoPagoConnected()) {
+  if (!local && isMercadoPagoConnected(shopId)) {
     try {
       const charge = await createPixCharge({
+        shopId,
         orderId,
         amount,
         description: `${settings.storeName} · Pedido ${orderId}`,
@@ -83,14 +87,29 @@ export async function collectPixPayment(opts: {
   return payment;
 }
 
-/** Production adapter used by Order Intake. Tests can inject createFakePaymentAdapter instead. */
-export const liveOrderPaymentAdapter: OrderPaymentAdapter = {
-  collectPix: (input: PixPaymentInput): Promise<PixPaymentPatch> => collectPixPayment(input),
-  isCardAvailable: () => isMercadoPagoConnected(),
-  collectCard: (input: CardPaymentInput): Promise<CardPaymentPatch> => collectCardPayment(input),
-};
+/**
+ * O adaptador de cobrança de UMA loja.
+ *
+ * Virou fábrica na Fase 7: antes era uma constante, e uma constante não tem
+ * como saber de quem é o dinheiro. Com duas lojas, a segunda cobraria na conta
+ * da primeira — o pedido fecharia, o cliente pagaria, e o dinheiro entraria na
+ * conta errada sem nenhum erro em lugar nenhum.
+ *
+ * `server/domain/deps.ts` é quem amarra a loja.
+ */
+export function liveOrderPaymentAdapter(shopId: ShopId): OrderPaymentAdapter {
+  return {
+    collectPix: (input: PixPaymentInput): Promise<PixPaymentPatch> =>
+      collectPixPayment({ ...input, shopId }),
+    isCardAvailable: () => isMercadoPagoConnected(shopId),
+    collectCard: (input: CardPaymentInput): Promise<CardPaymentPatch> =>
+      collectCardPayment({ ...input, shopId }),
+  };
+}
 
 export async function collectCardPayment(opts: {
+  /** A loja que RECEBE. Sem ela a cobrança do cartão cai na conta errada. */
+  shopId: ShopId;
   orderId: string;
   amount: number;
   settings: StoreSettings;
@@ -110,6 +129,7 @@ export async function collectCardPayment(opts: {
 
   try {
     const charge = await createCardCharge({
+      shopId: opts.shopId,
       orderId: opts.orderId,
       amount: opts.amount,
       description: `${opts.settings.storeName} · Pedido ${opts.orderId}`,
@@ -140,16 +160,33 @@ export async function collectCardPayment(opts: {
   }
 }
 
-export function markOrderPaid(io: Server, order: Order): Order {
-  // Guarda única para o webhook, a consulta do PIX e a confirmação manual da
-  // cozinha: num pedido cancelado o dinheiro chegaria sem pedido por trás.
+export function markOrderPaid(
+  io: Server,
+  shopId: ShopId,
+  order: Order,
+  moneyArrived = false
+): Order {
   if (order.status === 'cancelado') {
-    throw new DomainError(400, 'Este pedido foi cancelado. O pagamento não pode ser registrado.');
+    // Confirmação MANUAL (cozinha) num pedido cancelado continua recusada: é um
+    // toque de tela, não dinheiro comprovado.
+    if (!moneyArrived) {
+      throw new DomainError(400, 'Este pedido foi cancelado. O pagamento não pode ser registrado.');
+    }
+    // Já o dinheiro que o Mercado Pago confirmou como aprovado chegou de fato
+    // (o cliente pagou o QR ainda válido depois do cancelamento). Sumir com um
+    // log deixaria o valor na conta da loja sem rastro; aqui ele é registrado e
+    // a devolução abre, para aparecer no painel de reembolsos.
+    if (order.payment.isPaid) return order;
+    order.payment.isPaid = true;
+    markRefundDue(order);
+    saveOrder(shopId, order);
+    emitOrder(io, shopId, 'order:updated', order);
+    return order;
   }
   if (order.payment.isPaid) return order;
   order.payment.isPaid = true;
-  saveOrder(order);
-  emitOrder(io, 'order:updated', order);
+  saveOrder(shopId, order);
+  emitOrder(io, shopId, 'order:updated', order);
   return order;
 }
 
@@ -175,9 +212,9 @@ export function markRefundDue(order: Order): Order {
  */
 export async function refundPayment(
   io: Server,
-  request: { orderId: string; by?: string }
+  request: { shopId: ShopId; orderId: string; by?: string }
 ): Promise<Order | null> {
-  const order = getOrder(request.orderId);
+  const order = getOrder(request.shopId, request.orderId);
   if (!order) return null;
   if (order.payment.refundStatus === 'devolvido') return order;
   // 'falhou' continua devendo: a tentativa anterior não tirou dinheiro nenhum,
@@ -188,8 +225,8 @@ export async function refundPayment(
 
   const settle = (patch: Partial<PaymentDetails>): Order => {
     order.payment = { ...order.payment, ...patch };
-    saveOrder(order);
-    emitOrder(io, 'order:updated', order);
+    saveOrder(request.shopId, order);
+    emitOrder(io, request.shopId, 'order:updated', order);
     return order;
   };
 
@@ -207,7 +244,7 @@ export async function refundPayment(
   try {
     // Sem valor: o Mercado Pago devolve a cobrança inteira. Mandar o total daqui
     // viraria uma devolução parcial e um centavo de diferença seria recusado.
-    const refund = await refundMercadoPagoPayment(order.payment.mpPaymentId);
+    const refund = await refundMercadoPagoPayment(request.shopId, order.payment.mpPaymentId);
     return settle({
       refundStatus: 'devolvido',
       refundedAt: new Date().toISOString(),
@@ -229,22 +266,60 @@ export async function refundPayment(
  * actually changed hands for a cash/manual confirmation, it only records who claims it did.
  */
 export type PaymentSettlement =
-  | { source: 'mercadopago'; paymentId: string }
-  | { source: 'kitchen'; orderId: string; confirmedBy?: string };
+  | { source: 'mercadopago'; shopId: ShopId; paymentId: string }
+  | { source: 'kitchen'; shopId: ShopId; orderId: string; confirmedBy?: string };
+
+/**
+ * Costura de teste: por padrão consulta o Mercado Pago de verdade. O teste
+ * injeta um pagamento falso aqui para exercitar o guarda cruzado (a linha que
+ * impede a loja B de quitar o pedido da loja A) SEM tocar a rede.
+ */
+export interface SettleDeps {
+  fetchPayment?: typeof fetchPayment;
+  // Também injetável: deixa o teste provar que o guarda `shopIdOfOrder !== shopId`
+  // bloqueia MESMO se `getOrder` devolvesse o pedido de outra loja (defesa em
+  // profundidade — as duas camadas barram o cruzamento, uma sem depender da outra).
+  getOrder?: typeof getOrder;
+}
 
 /** One settlement interface for kitchen confirmation, PIX polling and webhooks. */
-export async function settlePayment(io: Server, request: PaymentSettlement): Promise<Order | null> {
+export async function settlePayment(
+  io: Server,
+  request: PaymentSettlement,
+  deps: SettleDeps = {}
+): Promise<Order | null> {
   if (request.source === 'kitchen') {
-    const order = getOrder(request.orderId);
+    const order = getOrder(request.shopId, request.orderId);
     if (!order) return null;
     if (request.confirmedBy) {
       (order.payment as PaymentDetails & { confirmedBy?: string }).confirmedBy = request.confirmedBy;
     }
-    return markOrderPaid(io, order);
+    return markOrderPaid(io, request.shopId, order);
   }
-  const pay = await fetchPayment(request.paymentId);
+
+  /**
+   * A loja vem do `Host` do webhook — o `notification_url` de cada cobrança é
+   * montado com o host da loja que cobrou. É com o token DELA que a consulta
+   * abaixo é feita: com o token da loja errada, o Mercado Pago responderia 404
+   * (o pagamento não é da conta dela) e o pedido nunca seria quitado.
+   */
+  const { shopId } = request;
+  const pay = await (deps.fetchPayment ?? fetchPayment)(shopId, request.paymentId);
   if (!pay || !pay.externalReference || pay.status !== 'approved') return null;
-  const order = getOrder(pay.externalReference);
+
+  /**
+   * Defesa em profundidade: a LINHA do pedido também tem que dizer esta loja.
+   *
+   * Mesmo com o `Host` certo e a assinatura válida, um `external_reference`
+   * apontando para pedido de outra loja não pode quitar nada. O id do pedido é
+   * único no mundo (não por loja) exatamente para esta conferência ser possível.
+   */
+  const donoDoPedido = shopIdOfOrder(pay.externalReference);
+  if (donoDoPedido === null || donoDoPedido !== shopId) return null;
+
+  const order = (deps.getOrder ?? getOrder)(shopId, pay.externalReference);
   if (!order) return null;
-  return markOrderPaid(io, order);
+  // Dinheiro comprovado como aprovado pelo Mercado Pago: um cancelado vira
+  // devolução em vez de ser recusado.
+  return markOrderPaid(io, shopId, order, true);
 }

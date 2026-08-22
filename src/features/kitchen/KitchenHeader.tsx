@@ -168,12 +168,12 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
           <span className="md:hidden">{copy.short}</span>
 
           <span className="hidden text-left md:grid">
-            <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-200 ease-out group-hover:-translate-y-1.5 group-hover:opacity-0">
+            <span className="col-start-1 row-start-1 transition-[opacity,transform] duration-200 ease-out group-hover:-translate-y-1.5 group-hover:opacity-0 group-focus-visible:-translate-y-1.5 group-focus-visible:opacity-0">
               {copy.full}
             </span>
             <span
               aria-hidden
-              className="col-start-1 row-start-1 translate-y-1.5 opacity-0 transition-[opacity,transform] duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100"
+              className="col-start-1 row-start-1 translate-y-1.5 opacity-0 transition-[opacity,transform] duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100"
             >
               {copy.action}
             </span>
@@ -186,8 +186,8 @@ export const KitchenHeader: React.FC<{ activeTab: KitchenTab }> = ({ activeTab }
           aria-pressed={soundEnabled}
           title={
             soundEnabled
-              ? 'Alerta sonoro ligado — clique para desligar'
-              : 'Alerta sonoro desligado — clique para ligar e testar a voz'
+              ? 'Alerta sonoro ligado. Clique para desligar.'
+              : 'Alerta sonoro desligado. Clique para ligar e testar a voz.'
           }
           aria-label={soundEnabled ? 'Desligar alerta sonoro' : 'Ligar alerta sonoro'}
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40 active:scale-[0.98] pointer-coarse:h-11 pointer-coarse:w-11 ${

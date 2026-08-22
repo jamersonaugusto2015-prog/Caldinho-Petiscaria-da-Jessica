@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, beforeEach } from 'node:test';
-import type { ChatMessage, Order } from '../src/types';
+import type { ChatMessage, Order } from '../contract/order/types';
 import type { PushEnvelope } from './push';
 
 // `push.ts` puxa `db.ts`, que abre o sqlite real assim que é importado, e o
@@ -25,7 +25,8 @@ const {
   savePushSubscription,
   vapidKeys,
 } = await import('./push');
-const { db } = await import('./db');
+const { db, LOJA_PADRAO } = await import('./db');
+import { customerRoom, driverRoom, driversRoom, kitchenRoom } from '../contract/shop/rooms';
 
 after(() => {
   rmSync(DATA_DIR, { recursive: true, force: true });
@@ -84,7 +85,9 @@ test('a chave VAPID nasce uma vez e sobrevive à releitura', () => {
   assert.ok(first.privateKey.length > 20);
   // Rotacionar a chave mata em silêncio toda inscrição já aceita pelo
   // navegador: o par tem que ser o mesmo em todo boot.
-  const stored = db.prepare("SELECT value FROM meta WHERE key = 'vapid_public_key'").get() as
+  // O par VAPID mora em `server_config` (chave do servidor, não da loja) —
+  // não mais em `meta`, de onde a migração 020 o tirou.
+  const stored = db.prepare("SELECT value FROM server_config WHERE key = 'vapid_public_key'").get() as
     | { value: string }
     | undefined;
   assert.equal(stored?.value, first.publicKey);
@@ -103,23 +106,23 @@ test('a inscrição malformada não entra no banco', () => {
 });
 
 test('reinscrever o mesmo navegador sobrescreve a linha em vez de duplicar', () => {
-  savePushSubscription({ room: 'kitchen', role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
-  savePushSubscription({ room: 'kitchen', role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
-  assert.equal(countPushSubscriptions('kitchen'), 1);
+  savePushSubscription({ shopId: LOJA_PADRAO, room: kitchenRoom(LOJA_PADRAO), role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
+  savePushSubscription({ shopId: LOJA_PADRAO, room: kitchenRoom(LOJA_PADRAO), role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
+  assert.equal(countPushSubscriptions(LOJA_PADRAO, kitchenRoom(LOJA_PADRAO)), 1);
 });
 
 test('desinscrever apaga a linha do endpoint', () => {
-  savePushSubscription({ room: 'kitchen', role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
+  savePushSubscription({ shopId: LOJA_PADRAO, room: kitchenRoom(LOJA_PADRAO), role: 'kitchen', subscription: subscription('https://push.exemplo/1') });
   deletePushSubscription('https://push.exemplo/1');
-  assert.equal(countPushSubscriptions('kitchen'), 0);
+  assert.equal(countPushSubscriptions(LOJA_PADRAO, kitchenRoom(LOJA_PADRAO)), 0);
 });
 
 test('demitir o motoboy apaga a inscrição dele junto com o token', () => {
-  savePushSubscription({ room: 'driver:drv-1', role: 'driver', subscription: subscription('https://push.exemplo/drv1') });
-  savePushSubscription({ room: 'driver:drv-2', role: 'driver', subscription: subscription('https://push.exemplo/drv2') });
-  deletePushSubscriptionsForDriver('drv-1');
-  assert.equal(countPushSubscriptions('driver:drv-1'), 0);
-  assert.equal(countPushSubscriptions('driver:drv-2'), 1);
+  savePushSubscription({ shopId: LOJA_PADRAO, room: driverRoom(LOJA_PADRAO, 'drv-1'), role: 'driver', subscription: subscription('https://push.exemplo/drv1') });
+  savePushSubscription({ shopId: LOJA_PADRAO, room: driverRoom(LOJA_PADRAO, 'drv-2'), role: 'driver', subscription: subscription('https://push.exemplo/drv2') });
+  deletePushSubscriptionsForDriver(LOJA_PADRAO, 'drv-1');
+  assert.equal(countPushSubscriptions(LOJA_PADRAO, driverRoom(LOJA_PADRAO, 'drv-1')), 0);
+  assert.equal(countPushSubscriptions(LOJA_PADRAO, driverRoom(LOJA_PADRAO, 'drv-2')), 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -130,19 +133,19 @@ const envelopeFor = (envelopes: PushEnvelope[], room: string) =>
   envelopes.find((e) => e.room === room);
 
 test('o pedido novo acorda a cozinha e mais ninguém', () => {
-  const envelopes = orderPushEnvelopes('order:new', order({ status: 'recebido' }));
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:new', order({ status: 'recebido' }));
   assert.equal(envelopes.length, 1);
-  assert.equal(envelopes[0].room, 'kitchen');
+  assert.equal(envelopes[0].room, kitchenRoom(LOJA_PADRAO));
   assert.equal(envelopes[0].alert.urgency, 'demand');
   // O cliente acabou de fazer o pedido na tela dele: avisar seria eco.
-  assert.equal(envelopeFor(envelopes, 'customer:cust-1'), undefined);
+  assert.equal(envelopeFor(envelopes, customerRoom(LOJA_PADRAO, 'cust-1')), undefined);
 });
 
 test('o payload do pool nunca leva nome, telefone ou rua do cliente', () => {
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'pronto', driverId: undefined }), {
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'pronto', driverId: undefined }), {
     previousStatus: 'em_preparo',
   });
-  const pool = envelopeFor(envelopes, 'drivers');
+  const pool = envelopeFor(envelopes, driversRoom(LOJA_PADRAO));
   assert.ok(pool, 'a corrida oferecida tem que chegar ao pool');
   assert.equal(pool.alert.urgency, 'demand');
   // O corpo é montado sobre `recipient.order` — a vista redigida. Montar sobre
@@ -157,19 +160,19 @@ test('o payload do pool nunca leva nome, telefone ou rua do cliente', () => {
 });
 
 test('a corrida oferecida desconta a sala do dono quando ela existe', () => {
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'cancelado', driverId: 'drv-1' }), {
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'cancelado', driverId: 'drv-1' }), {
     previousStatus: 'saiu_entrega',
   });
-  const pool = envelopeFor(envelopes, 'drivers');
+  const pool = envelopeFor(envelopes, driversRoom(LOJA_PADRAO));
   // Cancelado com dono não é oferta: só o dono é avisado.
   assert.equal(pool, undefined);
-  const owner = envelopeFor(envelopes, 'driver:drv-1');
+  const owner = envelopeFor(envelopes, driverRoom(LOJA_PADRAO, 'drv-1'));
   assert.ok(owner);
   assert.equal(owner.alert.key, 'driver:cancelled:CX-TEST');
 });
 
 test('o pedido de retirada não gera push nenhum para motoboy', () => {
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'pronto', fulfillment: 'pickup' }), {
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'pronto', fulfillment: 'pickup' }), {
     previousStatus: 'em_preparo',
   });
   assert.equal(envelopes.some((e) => e.role === 'driver'), false);
@@ -177,17 +180,17 @@ test('o pedido de retirada não gera push nenhum para motoboy', () => {
 
 test('o alerta silencioso não vira notificação do sistema', () => {
   // `em_preparo` é degrau do meio: aparece na tela, não interrompe ninguém.
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'em_preparo' }), {
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'em_preparo' }), {
     previousStatus: 'recebido',
   });
-  assert.equal(envelopeFor(envelopes, 'customer:cust-1'), undefined);
+  assert.equal(envelopeFor(envelopes, customerRoom(LOJA_PADRAO, 'cust-1')), undefined);
 });
 
 test('sair para entrega atravessa o app fechado do cliente', () => {
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'saiu_entrega', driverId: 'drv-1' }), {
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'saiu_entrega', driverId: 'drv-1' }), {
     previousStatus: 'pronto',
   });
-  const client = envelopeFor(envelopes, 'customer:cust-1');
+  const client = envelopeFor(envelopes, customerRoom(LOJA_PADRAO, 'cust-1'));
   assert.ok(client);
   assert.equal(client.alert.urgency, 'notice');
   assert.equal(client.alert.channels.system, true);
@@ -196,8 +199,8 @@ test('sair para entrega atravessa o app fechado do cliente', () => {
 test('sem status anterior o cliente não recebe eco a cada evento', () => {
   // O GPS do motoboy dispara `order:updated` a cada ponto; sem o "antes", cada
   // um deles pareceria uma mudança de etapa.
-  const envelopes = orderPushEnvelopes('order:updated', order({ status: 'saiu_entrega', driverId: 'drv-1' }));
-  assert.equal(envelopeFor(envelopes, 'customer:cust-1'), undefined);
+  const envelopes = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', order({ status: 'saiu_entrega', driverId: 'drv-1' }));
+  assert.equal(envelopeFor(envelopes, customerRoom(LOJA_PADRAO, 'cust-1')), undefined);
 });
 
 test('o pedido de cancelamento pendente grita na cozinha uma vez só', () => {
@@ -209,14 +212,14 @@ test('o pedido de cancelamento pendente grita na cozinha uma vez só', () => {
       requestedAt: new Date(0).toISOString(),
     },
   });
-  const first = orderPushEnvelopes('order:updated', pending, { previousStatus: 'em_preparo' });
-  assert.equal(envelopeFor(first, 'kitchen')?.alert.urgency, 'demand');
+  const first = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', pending, { previousStatus: 'em_preparo' });
+  assert.equal(envelopeFor(first, kitchenRoom(LOJA_PADRAO))?.alert.urgency, 'demand');
 
-  const again = orderPushEnvelopes('order:updated', pending, {
+  const again = orderPushEnvelopes(LOJA_PADRAO, 'order:updated', pending, {
     previousStatus: 'em_preparo',
     hadPendingCancelRequest: true,
   });
-  assert.equal(envelopeFor(again, 'kitchen'), undefined);
+  assert.equal(envelopeFor(again, kitchenRoom(LOJA_PADRAO)), undefined);
 });
 
 test('a mensagem do chat avisa o outro lado, nunca o próprio eco', () => {
@@ -228,7 +231,7 @@ test('a mensagem do chat avisa o outro lado, nunca o próprio eco', () => {
     text: 'Pode trazer talher?',
     timestamp: '12:00',
   };
-  const envelopes = chatPushEnvelopes(order({ status: 'em_preparo' }), message);
-  assert.deepEqual(envelopes.map((e) => e.room), ['kitchen']);
-  assert.equal(envelopes.some((e) => e.room === 'drivers'), false);
+  const envelopes = chatPushEnvelopes(LOJA_PADRAO, order({ status: 'em_preparo' }), message);
+  assert.deepEqual(envelopes.map((e) => e.room), [kitchenRoom(LOJA_PADRAO)]);
+  assert.equal(envelopes.some((e) => e.room === driversRoom(LOJA_PADRAO)), false);
 });

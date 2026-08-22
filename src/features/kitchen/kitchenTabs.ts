@@ -56,7 +56,7 @@ export const KITCHEN_NAV: KitchenNavGroup[] = [
     id: 'operacao',
     label: 'Operação',
     items: [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'dashboard', label: 'Visão geral', icon: LayoutDashboard },
       { id: 'orders', label: 'Pedidos', icon: ChefHat },
       // Logo abaixo de Pedidos: as duas respondem à mesma pergunta do turno
       // — o que está aberto agora. Pedidos olha a cozinha, Mapa olha a rua.

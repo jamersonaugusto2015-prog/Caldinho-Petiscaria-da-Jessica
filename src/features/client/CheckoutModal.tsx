@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom';
 import { useCart } from './CartStore';
 import { useCheckout } from './CheckoutStore';
 import { useClientShell, useCartTotals } from './ClientStore';
-import { formatKm } from '../../shared/geo';
-import { formatAddressLine, isUsableAddress } from '../../shared/address';
-import { storeAddressLine } from '../../shared/fulfillment';
-import { normalizePaymentTiming, requiresOnlineCharge, timingLabel } from '../../shared/payment';
+import { formatKm } from '../../../contract/pricing/geo';
+import { formatAddressLine, isUsableAddress } from '../../../contract/order/address';
+import { storeAddressLine } from '../../../contract/order/fulfillment';
+import { normalizePaymentTiming, requiresOnlineCharge, timingLabel } from '../../../contract/payment/payment';
 import { FulfillmentPicker } from './FulfillmentPicker';
 import { whatsAppLink } from '../../lib/whatsapp';
 import {
@@ -27,11 +27,12 @@ import {
   MessageCircle,
   Store,
 } from 'lucide-react';
-import { Order, PaymentMethod, PaymentTiming } from '../../types';
+import type { Order, PaymentMethod, PaymentTiming } from '../../../contract/order/types';
 import { CardPaymentForm, CardPaymentHandle } from './CardPaymentForm';
 import { usePixPaymentPoll } from './usePixPoll';
 import { copyToClipboard, selectElementText } from './clipboard';
 import { findCustomerByPhone, getLastCustomer, saveCustomer } from './clientIdentity';
+import { formatMoney } from '../../../contract/pricing/money';
 
 interface CheckoutModalProps {
   onClose: () => void;
@@ -267,12 +268,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
             <div className="bg-white rounded-2xl p-4 border border-[#E7E5E4] text-center space-y-3 shadow-xs">
               <div className="inline-flex items-center gap-1 text-xs font-bold text-[#059669] bg-[#ECFDF5] px-3 py-1 rounded-full border border-[#A7F3D0]">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Pedido {pendingPix.id} aguardando PIX de R$ {pendingPix.total.toFixed(2)}</span>
+                <span>Pedido {pendingPix.id} aguardando PIX de {formatMoney(pendingPix.total)}</span>
               </div>
 
               <div>
                 <p className="text-[11px] text-[#57534E] mb-1.5">
-                  Pague <strong>R$ {pendingPix.total.toFixed(2)}</strong> no app do banco.
+                  Pague <strong>{formatMoney(pendingPix.total)}</strong> no app do banco.
                   {pendingPix.payment.mpPaymentId
                     ? ' Esta tela confirma sozinha quando o PIX cair.'
                     : ' Envie o comprovante no WhatsApp.'}
@@ -297,11 +298,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     className="mt-2 inline-flex items-center gap-1.5 bg-[#B91C1C] hover:bg-[#991B1B] text-white font-bold px-4 py-2 rounded-full text-xs transition"
                   >
                     {pixCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{pixCopied ? 'PIX copiado!' : 'Copiar PIX'}</span>
+                    <span>{pixCopied ? 'PIX copiado' : 'Copiar PIX'}</span>
                   </button>
                   {pixCopyFailed && (
                     <p className="mt-2 text-[10px] text-[#B91C1C] font-bold">
-                      Não conseguimos copiar automaticamente. Selecionamos o código acima — copie manualmente.
+                      Não conseguimos copiar automaticamente. Selecionamos o código acima. Copie manualmente.
                     </p>
                   )}
                 </div>
@@ -322,9 +323,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                 <a
                   href={whatsAppLink(
                     settings.storeWhatsApp,
-                    `Olá! 🍲 Pedido ${pendingPix.id} no valor de R$ ${pendingPix.total.toFixed(
-                      2
-                    )} pago via PIX. Segue o comprovante:`
+                    `Olá, pedido ${pendingPix.id} no valor de ${formatMoney(pendingPix.total)} pago via PIX. Segue o comprovante:`
                   )}
                   target="_blank"
                   rel="noreferrer"
@@ -347,12 +346,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
 
             <button
               onClick={onOrderPlaced}
-              className="w-full bg-[#059669] hover:bg-[#047857] text-white font-extrabold py-4 px-4 rounded-full shadow-md transition text-sm"
+              className="w-full bg-[#059669] hover:bg-[#047857] text-white font-extrabold py-4 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C]/40"
             >
-              Já realizei o pagamento ✅
+              <Check className="w-4 h-4" />
+              <span>Já paguei</span>
             </button>
             <p className="text-center text-[10px] text-[#A8A29E]">
-              Acompanhe o status do pedido em "Pedidos" assim que o pagamento for confirmado.
+              Acompanhe o status do pedido em “Pedidos” assim que o pagamento for confirmado.
             </p>
           </div>
         ) : (
@@ -367,7 +367,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                   Dados & Endereço
                 </div>
                 <div className="flex-1 h-0.5 bg-[#E7E5E4] rounded-full">
-                  <div className={`h-full rounded-full transition-all ${step === 'pagamento' ? 'w-full bg-[#059669]' : 'w-0'}`} />
+                  <div className={`h-full rounded-full transition-[width] duration-500 ${step === 'pagamento' ? 'w-full bg-[#059669]' : 'w-0'}`} />
                 </div>
                 <div className={`flex items-center gap-1.5 text-[11px] font-black ${step === 'pagamento' ? 'text-[#B91C1C]' : 'text-[#A8A29E]'}`}>
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${step === 'pagamento' ? 'bg-[#B91C1C] text-white' : 'bg-[#E7E5E4] text-[#A8A29E]'}`}>
@@ -405,10 +405,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       value={customerName}
                       onChange={(e) => handleNameChange(e.target.value)}
                       placeholder="Ex: Maria Silva"
-                      className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:ring-2 transition ${
+                      className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus-visible:outline-none focus-visible:ring-2 transition-colors ${
                         customerName && !nameValid
                           ? 'border-[#FCA5A5] ring-[#B91C1C]/20'
-                          : 'border-[#E7E5E4] focus:ring-[#B91C1C]'
+                          : 'border-[#E7E5E4] focus-visible:ring-[#B91C1C]'
                       }`}
                     />
                     {customerName && !nameValid && (
@@ -427,10 +427,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       value={customerPhone}
                       onChange={(e) => handlePhoneChange(e.target.value)}
                       placeholder="(81) 99999-0000"
-                      className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus:outline-none focus:ring-2 transition ${
+                      className={`w-full bg-[#F5F5F4] border rounded-2xl p-3 text-sm text-[#1C1917] placeholder-[#A8A29E] focus-visible:outline-none focus-visible:ring-2 transition-colors ${
                         customerPhone && !phoneValid
                           ? 'border-[#FCA5A5] ring-[#B91C1C]/20'
-                          : 'border-[#E7E5E4] focus:ring-[#B91C1C]'
+                          : 'border-[#E7E5E4] focus-visible:ring-[#B91C1C]'
                       }`}
                     />
                     {customerPhone && !phoneValid && (
@@ -438,7 +438,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     )}
                     {findCustomerByPhone(customerPhone) && customerName && (
                       <p className="text-[10px] text-[#059669] font-bold mt-1 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Cadastro encontrado — nome preenchido automaticamente.
+                        <Check className="w-3 h-3" /> Cadastro encontrado: nome preenchido.
                       </p>
                     )}
                   </div>
@@ -487,7 +487,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       <button
                         type="button"
                         onClick={() => setShowAddressList(!showAddressList)}
-                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-[#B91C1C] transition"
+                        className="w-full bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B91C1C] transition-colors"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
@@ -544,23 +544,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                   <div className="bg-[#F5F5F4] p-3.5 rounded-2xl border border-[#E7E5E4] space-y-1.5 text-xs">
                     <div className="flex justify-between text-[#57534E]">
                       <span>Itens ({cart.length})</span>
-                      <span className="text-[#1C1917] font-semibold">R$ {subtotal.toFixed(2)}</span>
+                      <span className="text-[#1C1917] font-semibold tabular-nums">{formatMoney(subtotal)}</span>
                     </div>
                     {discount > 0 && (
                       <div className="flex justify-between text-[#059669] font-bold">
                         <span>Desconto</span>
-                        <span>- R$ {discount.toFixed(2)}</span>
+                        <span className="tabular-nums">- {formatMoney(discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-[#57534E]">
                       <span>{deliveryLabel}</span>
-                      <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
-                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
+                      <span className={`font-semibold tabular-nums ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? formatMoney(deliveryFee) : 'Grátis'}
                       </span>
                     </div>
                     <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">
                       <span>Total a Pagar</span>
-                      <span className="text-[#B91C1C]">R$ {total.toFixed(2)}</span>
+                      <span className="text-[#B91C1C] tabular-nums">{formatMoney(total)}</span>
                     </div>
                   </div>
                 </>
@@ -673,7 +673,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                       ) : (
                         <p className="text-[11px] text-[#57534E] bg-[#F5F5F4] border border-[#E7E5E4] rounded-2xl p-3">
                           {cardOnline
-                            ? 'Só dá para pagar o cartão agora, pelo site — a loja não leva maquininha.'
+                            ? 'Só dá para pagar o cartão agora, pelo site. A loja não leva maquininha.'
                             : `A loja ainda não cobra cartão pelo site. Você paga na maquininha ${
                                 isPickupMode ? 'do balcão.' : 'do motoboy.'
                               }`}
@@ -686,7 +686,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                     <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 text-center space-y-2">
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-[#059669]">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>PIX de R$ {total.toFixed(2)} — QR na próxima tela</span>
+                        <span>PIX de {formatMoney(total)}: QR na próxima tela</span>
                       </div>
                       <p className="text-[11px] text-[#57534E]">
                         {settings.mercadoPagoConnected
@@ -723,7 +723,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                           </strong>{' '}
                           A maquininha
                           {isPickupMode ? ' fica no balcão da loja.' : ' vai com o motoboy.'} Você paga
-                          R$ {total.toFixed(2)} na hora, em débito ou crédito.
+                          {formatMoney(total)} na hora, em débito ou crédito.
                         </p>
                       </div>
                     </div>
@@ -769,23 +769,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                   <div className="bg-[#F5F5F4] p-3.5 rounded-2xl border border-[#E7E5E4] space-y-1.5 text-xs">
                     <div className="flex justify-between text-[#57534E]">
                       <span>Itens ({cart.length})</span>
-                      <span className="text-[#1C1917] font-semibold">R$ {subtotal.toFixed(2)}</span>
+                      <span className="text-[#1C1917] font-semibold tabular-nums">{formatMoney(subtotal)}</span>
                     </div>
                     {discount > 0 && (
                       <div className="flex justify-between text-[#059669] font-bold">
                         <span>Desconto</span>
-                        <span>- R$ {discount.toFixed(2)}</span>
+                        <span className="tabular-nums">- {formatMoney(discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-[#57534E]">
                       <span>{deliveryLabel}</span>
-                      <span className={`font-semibold ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
-                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : 'Grátis'}
+                      <span className={`font-semibold tabular-nums ${outOfRange ? 'text-[#B91C1C]' : 'text-[#1C1917]'}`}>
+                        {outOfRange ? 'Fora da área' : deliveryFee > 0 ? formatMoney(deliveryFee) : 'Grátis'}
                       </span>
                     </div>
                     <div className="flex justify-between text-base font-black text-[#1C1917] pt-2 border-t border-[#E7E5E4]">
                       <span>Total a Pagar</span>
-                      <span className="text-[#B91C1C]">R$ {total.toFixed(2)}</span>
+                      <span className="text-[#B91C1C] tabular-nums">{formatMoney(total)}</span>
                     </div>
                   </div>
                 </>
@@ -812,7 +812,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                   className="w-full bg-[#B91C1C] hover:bg-[#991B1B] text-white font-extrabold py-4 px-4 rounded-full shadow-md flex items-center justify-center gap-2 transition text-sm disabled:opacity-50"
                 >
                   <span>Continuar para Pagamento</span>
-                  <span className="text-xs font-bold text-[#FDE68A]">R$ {total.toFixed(2)}</span>
+                  <span className="text-xs font-bold text-[#FDE68A]">{formatMoney(total)}</span>
                 </button>
               ) : (
                 <button
@@ -824,18 +824,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onOrderPl
                   {isProcessing ? (
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                      <span>Confirmando pedido...</span>
+                      <span>Confirmando pedido…</span>
                     </div>
                   ) : (
                     <span>
                       {!paymentMethod
                         ? 'Escolha a forma de pagamento'
                         : payNow
-                        ? `Pagar R$ ${total.toFixed(2)} agora 🍲`
+                        ? `Pagar ${formatMoney(total)} agora`
                         : `Confirmar e pagar ${timingLabel(
                             { method: paymentMethod, timing: paymentTiming },
                             fulfillment
-                          )} 🍲`}
+                          )}`}
                     </span>
                   )}
                 </button>

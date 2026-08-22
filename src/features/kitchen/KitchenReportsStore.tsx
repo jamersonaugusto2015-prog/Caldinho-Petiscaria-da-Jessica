@@ -1,10 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { SalesReport, RevenueTrends } from '../../types';
+import type { RevenueTrends, SalesReport } from '../../../contract/report/types';
 import { kitchenApi as api } from '../../lib/api';
 
 interface KitchenReportsContextType {
   report: SalesReport | null;
   trends: RevenueTrends | null;
+  /** Erro da última carga — some quando os dados chegam. Sem isto o painel
+   *  mostrava "Sem dados." numa queda de rede, e o dono lia "vendi nada". */
+  error: string | null;
+  reload: () => void;
   loadReport: (from?: string, to?: string) => Promise<void>;
   loadTrends: () => Promise<void>;
 }
@@ -21,13 +25,14 @@ const KitchenReportsSyncContext = createContext<KitchenReportsSyncContextType | 
 export const KitchenReportsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [report, setReport] = useState<SalesReport | null>(null);
   const [trends, setTrends] = useState<RevenueTrends | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadTrends = useCallback(async () => {
     try {
       const t = await api.get<RevenueTrends>('/reports/trends');
       setTrends(t);
     } catch {
-      /* silencioso */
+      setError('Não deu para carregar os relatórios.');
     }
   }, []);
 
@@ -39,8 +44,9 @@ export const KitchenReportsProvider: React.FC<{ children: React.ReactNode }> = (
       const qs = params.toString();
       const r = await api.get<SalesReport>(`/reports${qs ? `?${qs}` : ''}`);
       setReport(r);
+      setError(null);
     } catch {
-      /* silencioso */
+      setError('Não deu para carregar os relatórios.');
     }
   }, []);
 
@@ -54,8 +60,8 @@ export const KitchenReportsProvider: React.FC<{ children: React.ReactNode }> = (
   }, [refetch]);
 
   const value = useMemo<KitchenReportsContextType>(
-    () => ({ report, trends, loadReport, loadTrends }),
-    [report, trends, loadReport, loadTrends]
+    () => ({ report, trends, error, reload: refetch, loadReport, loadTrends }),
+    [report, trends, error, refetch, loadReport, loadTrends]
   );
 
   const sync = useMemo<KitchenReportsSyncContextType>(

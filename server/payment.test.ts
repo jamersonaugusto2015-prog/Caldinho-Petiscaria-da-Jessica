@@ -4,10 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { Server } from 'socket.io';
-import type { Order, StoreSettings } from '../src/types';
+import type { Order } from '../contract/order/types';
+import type { StoreSettings } from '../contract/shop/types';
 import { DomainError } from './errors';
-import { generatePixCopyPaste } from '../src/shared/pix';
-
+import { generatePixCopyPaste } from '../contract/payment/pix';
 // server/db.ts opens a real sqlite file at DATA_DIR the moment it is imported, and this repo's
 // dev DATA_DIR already has a live Mercado Pago access token connected. This override MUST run
 // before ./payment / ./orderStore are loaded (hence the dynamic imports below), or these tests
@@ -19,6 +19,9 @@ delete process.env.MP_ACCESS_TOKEN;
 
 const { collectPixPayment, refundPayment, settlePayment } = await import('./payment');
 const { getOrder, insertOrder } = await import('./orderStore');
+
+// Única loja usada neste arquivo: a migração 005_shops garante o id 1 em todo banco novo.
+const LOJA = 1;
 
 const settings: StoreSettings = {
   storeName: 'Caldinho Express',
@@ -45,6 +48,9 @@ const settings: StoreSettings = {
   orderSoundUrl: '',
   openingHours: Array(7).fill({ open: '00:00', close: '23:59' }),
   sizeOptions: [],
+  loyaltyStampCost: 10,
+  loyaltyRedeemCategory: 'caldinhos',
+  timezone: 'America/Recife',
   orderEnabled: true,
   forceOpen: true,
 };
@@ -92,11 +98,11 @@ test('two concurrent kitchen settlements result in exactly one write', async () 
   const orderId = 'CX-PAY-CONCURRENT';
   // customerId 'anon' keeps emitOrder's fan-out to a single room (kitchen), so the emit
   // count below is a reliable proxy for "how many times markOrderPaid actually wrote".
-  insertOrder(makeOrder({ id: orderId, customerId: 'anon' }));
+  insertOrder(LOJA, makeOrder({ id: orderId, customerId: 'anon' }));
 
   const [first, second] = await Promise.all([
-    settlePayment(io, { source: 'kitchen', orderId }),
-    settlePayment(io, { source: 'kitchen', orderId }),
+    settlePayment(io, { source: 'kitchen', shopId: LOJA, orderId }),
+    settlePayment(io, { source: 'kitchen', shopId: LOJA, orderId }),
   ]);
 
   assert.ok(first && second);
@@ -105,28 +111,28 @@ test('two concurrent kitchen settlements result in exactly one write', async () 
   // markOrderPaid only calls saveOrder + emitOrder when it flips isPaid; the loser of the
   // race reads the already-paid row back from getOrder and short-circuits before either call.
   assert.equal(emitted.length, 1);
-  assert.equal(getOrder(orderId)?.payment.isPaid, true);
+  assert.equal(getOrder(LOJA, orderId)?.payment.isPaid, true);
 });
 
 test('kitchen settlement records who confirmed it', async () => {
   const { io } = fakeIo();
   const orderId = 'CX-PAY-CONFIRMED-BY';
-  insertOrder(makeOrder({ id: orderId }));
+  insertOrder(LOJA, makeOrder({ id: orderId }));
 
-  const result = await settlePayment(io, { source: 'kitchen', orderId, confirmedBy: 'joao' });
+  const result = await settlePayment(io, { source: 'kitchen', shopId: LOJA, orderId, confirmedBy: 'joao' });
 
   assert.equal(result?.payment.isPaid, true);
   assert.equal((result?.payment as { confirmedBy?: string }).confirmedBy, 'joao');
-  const stored = getOrder(orderId);
+  const stored = getOrder(LOJA, orderId);
   assert.equal((stored?.payment as { confirmedBy?: string } | undefined)?.confirmedBy, 'joao');
 });
 
 test('kitchen settlement without confirmedBy leaves no trace of who confirmed it', async () => {
   const { io } = fakeIo();
   const orderId = 'CX-PAY-NO-CONFIRMED-BY';
-  insertOrder(makeOrder({ id: orderId }));
+  insertOrder(LOJA, makeOrder({ id: orderId }));
 
-  const result = await settlePayment(io, { source: 'kitchen', orderId });
+  const result = await settlePayment(io, { source: 'kitchen', shopId: LOJA, orderId });
 
   assert.equal(result?.payment.isPaid, true);
   assert.equal((result?.payment as { confirmedBy?: string }).confirmedBy, undefined);
@@ -135,19 +141,20 @@ test('kitchen settlement without confirmedBy leaves no trace of who confirmed it
 test('a cancelled order can never be settled, whatever the source', async () => {
   const { io } = fakeIo();
   const orderId = 'CX-PAY-CANCELLED';
-  insertOrder(makeOrder({ id: orderId, status: 'cancelado', payment: { method: 'pix', isPaid: false } }));
+  insertOrder(LOJA, makeOrder({ id: orderId, status: 'cancelado', payment: { method: 'pix', isPaid: false } }));
 
   await assert.rejects(
-    () => settlePayment(io, { source: 'kitchen', orderId }),
+    () => settlePayment(io, { source: 'kitchen', shopId: LOJA, orderId }),
     (error: unknown) => error instanceof DomainError && error.status === 400
   );
-  assert.equal(getOrder(orderId)?.payment.isPaid, false);
+  assert.equal(getOrder(LOJA, orderId)?.payment.isPaid, false);
 });
 
 test('a cash refund is marked returned right away and repeating it changes nothing', async () => {
   const { io, emitted } = fakeIo();
   const orderId = 'CX-REFUND-CASH';
   insertOrder(
+    LOJA,
     makeOrder({
       id: orderId,
       customerId: 'anon',
@@ -156,23 +163,24 @@ test('a cash refund is marked returned right away and repeating it changes nothi
     })
   );
 
-  const first = await refundPayment(io, { orderId, by: 'kitchen:1.1.1.1' });
+  const first = await refundPayment(io, { shopId: LOJA, orderId, by: 'kitchen:1.1.1.1' });
   assert.equal(first?.payment.refundStatus, 'devolvido');
   assert.equal(first?.payment.refundedBy, 'kitchen:1.1.1.1');
   assert.ok(first?.payment.refundedAt);
   const emissionsAfterFirst = emitted.length;
 
-  const second = await refundPayment(io, { orderId, by: 'kitchen:2.2.2.2' });
+  const second = await refundPayment(io, { shopId: LOJA, orderId, by: 'kitchen:2.2.2.2' });
   assert.equal(second?.payment.refundStatus, 'devolvido');
   // Idempotente como markOrderPaid: a repetição sai antes de gravar ou emitir.
   assert.equal(emitted.length, emissionsAfterFirst);
-  assert.equal(getOrder(orderId)?.payment.refundedBy, 'kitchen:1.1.1.1');
+  assert.equal(getOrder(LOJA, orderId)?.payment.refundedBy, 'kitchen:1.1.1.1');
 });
 
 test('a Mercado Pago failure marks the refund as failed and never as returned', async () => {
   const { io } = fakeIo();
   const orderId = 'CX-REFUND-FAIL';
   insertOrder(
+    LOJA,
     makeOrder({
       id: orderId,
       status: 'cancelado',
@@ -181,11 +189,11 @@ test('a Mercado Pago failure marks the refund as failed and never as returned', 
   );
 
   await assert.rejects(
-    () => refundPayment(io, { orderId, by: 'kitchen:1.1.1.1' }),
+    () => refundPayment(io, { shopId: LOJA, orderId, by: 'kitchen:1.1.1.1' }),
     (error: unknown) => error instanceof DomainError && error.status === 502
   );
 
-  const stored = getOrder(orderId);
+  const stored = getOrder(LOJA, orderId);
   assert.equal(stored?.payment.refundStatus, 'falhou');
   assert.ok(stored?.payment.refundError);
   assert.equal(stored?.payment.refundedAt, undefined);
@@ -195,6 +203,7 @@ test('a failed refund can be retried, since no money left on the failed attempt'
   const { io } = fakeIo();
   const orderId = 'CX-REFUND-RETRY';
   insertOrder(
+    LOJA,
     makeOrder({
       id: orderId,
       status: 'cancelado',
@@ -207,7 +216,7 @@ test('a failed refund can be retried, since no money left on the failed attempt'
     })
   );
 
-  const retried = await refundPayment(io, { orderId, by: 'kitchen:1.1.1.1' });
+  const retried = await refundPayment(io, { shopId: LOJA, orderId, by: 'kitchen:1.1.1.1' });
   assert.equal(retried?.payment.refundStatus, 'devolvido');
   assert.ok(retried?.payment.refundedAt);
   assert.equal(retried?.payment.refundError, undefined);
@@ -216,16 +225,17 @@ test('a failed refund can be retried, since no money left on the failed attempt'
 test('a refund is refused when the shop owes nothing', async () => {
   const { io } = fakeIo();
   const orderId = 'CX-REFUND-NOT-DUE';
-  insertOrder(makeOrder({ id: orderId, payment: { method: 'pix', isPaid: true } }));
+  insertOrder(LOJA, makeOrder({ id: orderId, payment: { method: 'pix', isPaid: true } }));
 
   await assert.rejects(
-    () => refundPayment(io, { orderId }),
+    () => refundPayment(io, { shopId: LOJA, orderId }),
     (error: unknown) => error instanceof DomainError && error.status === 400
   );
 });
 
 test('collectPixPayment falls back to a manual PIX key when Mercado Pago is not connected', async () => {
   const payment = await collectPixPayment({
+    shopId: LOJA,
     orderId: 'CX-PIX-FALLBACK',
     amount: 25.5,
     settings,
@@ -248,6 +258,7 @@ test('collectPixPayment fails clearly when neither Mercado Pago nor a PIX key is
   await assert.rejects(
     () =>
       collectPixPayment({
+        shopId: LOJA,
         orderId: 'CX-PIX-NONE',
         amount: 10,
         settings: { ...settings, pixKey: '' },
@@ -260,6 +271,7 @@ test('collectPixPayment fails clearly when neither Mercado Pago nor a PIX key is
 
 test('collectPixPayment na chave da loja gera o BR Code e o PNG do QR Code', async () => {
   const payment = await collectPixPayment({
+    shopId: LOJA,
     orderId: 'CX-PIX-LOCAL',
     amount: 31.9,
     settings: { ...settings, pixProvider: 'local' },
@@ -291,6 +303,7 @@ test('collectPixPayment na chave da loja recusa o pedido quando não há chave c
   await assert.rejects(
     () =>
       collectPixPayment({
+        shopId: LOJA,
         orderId: 'CX-PIX-LOCAL-SEM-CHAVE',
         amount: 10,
         settings: { ...settings, pixProvider: 'local', pixKey: '' },
@@ -302,4 +315,56 @@ test('collectPixPayment na chave da loja recusa o pedido quando não há chave c
       error.status === 400 &&
       error.message.includes('Cadastre a chave PIX')
   );
+});
+
+
+test('a loja B não quita o pedido da loja A, mesmo com pagamento aprovado', async () => {
+  const { io } = fakeIo();
+  // Um pedido REAL da loja A (id único no mundo, é o que permite a conferência).
+  const orderId = 'CX-CROSS-A';
+  insertOrder(LOJA, makeOrder({ id: orderId, payment: { method: 'pix', isPaid: false } }));
+
+  // O Mercado Pago responde "aprovado" e aponta para o pedido da loja A — mas a
+  // requisição diz ser da loja 2. O guarda `shopIdOfOrder !== shopId` recusa.
+  const pagamentoDaLojaA = async () => ({
+    id: 'pay-x',
+    status: 'approved' as const,
+    externalReference: orderId,
+  });
+  const resultado = await settlePayment(
+    io,
+    { source: 'mercadopago', shopId: 2, paymentId: 'pay-x' },
+    { fetchPayment: pagamentoDaLojaA as never }
+  );
+  assert.equal(resultado, null, 'a loja 2 não pode quitar o pedido da loja 1');
+  assert.equal(getOrder(LOJA, orderId)?.payment.isPaid, false, 'o pedido de A segue não pago');
+
+  // A MESMA notificação, agora com a loja certa (1), quita.
+  const ok = await settlePayment(
+    io,
+    { source: 'mercadopago', shopId: LOJA, paymentId: 'pay-x' },
+    { fetchPayment: pagamentoDaLojaA as never }
+  );
+  assert.equal(ok?.payment.isPaid, true, 'a própria loja quita o próprio pedido');
+});
+
+
+test('o guarda shopIdOfOrder bloqueia sozinho, mesmo se getOrder devolvesse o pedido de A', async () => {
+  const { io } = fakeIo();
+  const orderId = 'CX-GUARD-A';
+  // O pedido é REAL da loja A (shopIdOfOrder o vê como loja 1).
+  insertOrder(LOJA, makeOrder({ id: orderId, payment: { method: 'pix', isPaid: false } }));
+
+  const pagamentoDeA = async () => ({ id: 'pay-g', status: 'approved' as const, externalReference: orderId });
+  // getOrder é injetado COMPROMETIDO: devolve o pedido de A mesmo consultado
+  // como loja 2. Só o guarda `shopIdOfOrder(ref) !== shopId` pode barrar agora —
+  // se ele for removido, isto quita o pedido de A na loja 2.
+  const getOrderComprometido = () => makeOrder({ id: orderId, payment: { method: 'pix', isPaid: false } });
+  const resultado = await settlePayment(
+    io,
+    { source: 'mercadopago', shopId: 2, paymentId: 'pay-g' },
+    { fetchPayment: pagamentoDeA as never, getOrder: getOrderComprometido as never }
+  );
+  assert.equal(resultado, null, 'o guarda shopIdOfOrder tem que barrar sozinho');
+  assert.equal(getOrder(LOJA, orderId)?.payment.isPaid, false, 'o pedido de A segue não pago');
 });

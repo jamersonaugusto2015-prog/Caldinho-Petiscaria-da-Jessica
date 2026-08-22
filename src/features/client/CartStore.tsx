@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { CartItem, Coupon, DeliveryAddress, Fulfillment, PublicStoreSettings } from '../../types';
-import { computeCartItemTotal, findCoupon } from '../../shared/pricing';
-import { isUsableAddress } from '../../shared/address';
-import { normalizeFulfillment } from '../../shared/fulfillment';
-
+import type { Coupon } from '../../../contract/catalog/types';
+import type { CartItem, DeliveryAddress, Fulfillment } from '../../../contract/order/types';
+import type { PublicStoreSettings } from '../../../contract/shop/types';
+import { computeCartItemTotal, findCoupon } from '../../../contract/pricing/pricing';
+import { isUsableAddress } from '../../../contract/order/address';
+import { normalizeFulfillment } from '../../../contract/order/fulfillment';
+import { formatMoney } from '../../../contract/pricing/money';
 export interface CartContextValue {
   cart: CartItem[];
   /** Retorna false (sem adicionar) quando a loja está fechada. */
@@ -83,7 +85,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ settings, coupons, t
 
   const addToCart = (itemData: Omit<CartItem, 'id' | 'itemTotalPrice'>): boolean => {
     if (!settings.isOpen) {
-      triggerToast('Restaurante fechado no momento. Verifique os horários.');
+      triggerToast('Loja fechada no momento. Veja os horários.');
       setClosedModalOpen(true);
       return false;
     }
@@ -94,7 +96,6 @@ export const CartProvider: React.FC<CartProviderProps> = ({ settings, coupons, t
     };
     setCart((previous) => [...previous, newItem]);
     setIsCartOpen(true);
-    triggerToast('Item adicionado ao seu carrinho! 🍲');
     return true;
   };
 
@@ -127,10 +128,10 @@ export const CartProvider: React.FC<CartProviderProps> = ({ settings, coupons, t
     if (!coupon) return { success: false, message: 'Cupom inválido ou expirado.' };
     const subtotal = cart.reduce((sum, item) => sum + computeCartItemTotal(item, settings.sizeOptions), 0);
     if (subtotal < coupon.minOrderValue) {
-      return { success: false, message: `Valor mínimo para este cupom é R$ ${coupon.minOrderValue.toFixed(2)}` };
+      return { success: false, message: `Valor mínimo para este cupom é ${formatMoney(coupon.minOrderValue)}` };
     }
     setAppliedCoupon(coupon);
-    return { success: true, message: `Cupom ${coupon.code} aplicado com sucesso!` };
+    return { success: true, message: `Cupom ${coupon.code} aplicado.` };
   };
 
   const addAddress = (address: Omit<DeliveryAddress, 'id'>) => {

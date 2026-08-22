@@ -1,0 +1,12 @@
+-- 017_geo_cache_global — nenhuma mudança, de propósito.
+--
+-- `geo_cache` guarda "este endereço fica nestas coordenadas". Isso é verdade
+-- sobre o MUNDO, não sobre uma loja. Dar um `shop_id` a ela faria cada loja
+-- pagar sua própria volta ao Nominatim pela mesma rua — mais lentidão, mais
+-- chance de bater no limite de requisições do serviço, zero isolamento ganho
+-- (não há nada de ninguém aqui: só CEP e coordenada).
+--
+-- Esta migração existe para que a decisão fique REGISTRADA. Sem ela, a próxima
+-- pessoa a ler o schema veria a única tabela sem `shop_id` e assumiria
+-- esquecimento.
+SELECT 1;

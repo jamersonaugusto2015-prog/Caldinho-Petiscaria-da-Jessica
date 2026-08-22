@@ -1,11 +1,11 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
-import { Order } from '../../types';
-import { isPickup } from '../../shared/fulfillment';
-import { needsCardMachine, paymentLabel } from '../../shared/payment';
-import { comboChoiceLines } from '../../shared/comboChoices';
-
+import type { Order } from '../../../contract/order/types';
+import { isPickup } from '../../../contract/order/fulfillment';
+import { needsCardMachine, paymentLabel } from '../../../contract/payment/payment';
+import { comboChoiceLines } from '../../../contract/catalog/comboChoices';
+import { formatMoney } from '../../../contract/pricing/money';
 interface OrderReceiptModalProps {
   order: Order;
   storeName: string;
@@ -115,9 +115,12 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   </div>
 );
 
-/** Real brasileiro: vírgula decimal. Tolera pedido antigo com campo faltando. */
-const money = (n: unknown): string =>
-  `R$ ${(typeof n === 'number' && isFinite(n) ? n : 0).toFixed(2).replace('.', ',')}`;
+/**
+ * O formatador único do sistema, com uma tolerância a mais: o cupom fiscal
+ * imprime pedidos antigos, onde um campo de dinheiro pode simplesmente não
+ * existir. Um `undefined` aqui viraria "R$ NaN" no papel.
+ */
+const money = (n: unknown): string => formatMoney(typeof n === 'number' ? n : 0);
 
 const ReceiptBody: React.FC<{
   order: Order;
@@ -326,7 +329,7 @@ const ReceiptBody: React.FC<{
         <div className="receipt-lg text-center uppercase">Não entregar</div>
       ) : (
         <>
-          <div className="text-center uppercase">Obrigado pela preferência!</div>
+          <div className="text-center uppercase">Obrigado. Bom apetite.</div>
           <div className="receipt-sm text-center">Acompanhe seu pedido no app</div>
         </>
       )}
@@ -456,7 +459,7 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({
             className="flex-1 py-3 rounded-full bg-[#1C1917] text-white text-xs font-extrabold flex items-center justify-center gap-2 hover:bg-[#292524] transition disabled:opacity-60"
           >
             <Printer className="w-4 h-4" />
-            {printing ? 'Imprimindo...' : 'Imprimir'}
+            {printing ? 'Imprimindo…' : 'Imprimir'}
           </button>
         </div>
       </div>

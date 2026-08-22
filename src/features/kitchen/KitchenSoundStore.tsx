@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { useAlertChannel, type AlertChannel, type SystemPermission } from '../../lib/alertChannel';
-import { bannerTextFor, useAlertBanner } from '../../lib/alertBanner';
-import type { OrderAlert } from '../../shared/orderAlerts';
+import { bannerTextFor, useAlertBanner } from '../../ui/alertBanner';
+import type { OrderAlert } from '../../../contract/order/alerts';
 import { useKitchenSettings } from './KitchenSettingsStore';
 
 interface KitchenSoundContextType {

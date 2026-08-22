@@ -13,23 +13,15 @@ import {
   Trash2,
   TrendingUp,
 } from 'lucide-react';
-import type { Promotion } from '../../types';
-import {
-  PROMOTION_KIND_LABELS,
-  PROMOTION_STATUS_LABELS,
-  WEEKDAY_LABELS,
-  describePromotion,
-  describeWindow,
-  promotionStatus,
-  type PromotionStatus,
-} from '../../shared/promotions';
+import type { Promotion } from '../../../contract/catalog/types';
+import { PROMOTION_KIND_LABELS, PROMOTION_STATUS_LABELS, WEEKDAY_LABELS, describePromotion, describeWindow, promotionStatus, type PromotionStatus } from '../../../contract/catalog/promotions';
 import { useKitchenCatalog } from './KitchenCatalogStore';
 import { KitchenPromotionEditor } from './KitchenPromotionEditor';
 import { describeTarget, marginReport, targetProducts } from './kitchenPromotionDraft';
 import { StatusPill, type PillTone } from './KitchenSettingsUI';
 import { useNow } from './useNow';
+import { formatMoney } from '../../../contract/pricing/money';
 
-const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
 const STATUS_TONE: Record<PromotionStatus, PillTone> = {
   ativa: 'ok',
@@ -136,17 +128,17 @@ export const KitchenPromotionsPanel: React.FC = () => {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Metric icon={<BadgePercent className="w-4 h-4" />} label="Pedidos com promoção" value={String(totals.orders)} />
-        <Metric icon={<TrendingUp className="w-4 h-4" />} label="Faturamento gerado" value={money(totals.revenue)} />
+        <Metric icon={<TrendingUp className="w-4 h-4" />} label="Faturamento gerado" value={formatMoney(totals.revenue)} />
         <Metric
           icon={<AlertTriangle className="w-4 h-4" />}
           label="Desconto concedido"
-          value={money(totals.discount)}
+          value={formatMoney(totals.discount)}
           tone="warn"
         />
         <Metric
           icon={<TrendingUp className="w-4 h-4" />}
           label="Ticket médio promocional"
-          value={totals.orders > 0 ? money(totals.revenue / totals.orders) : '—'}
+          value={totals.orders > 0 ? formatMoney(totals.revenue / totals.orders) : '—'}
         />
       </div>
 
@@ -332,8 +324,8 @@ const PromotionCard: React.FC<{
 
   return (
     <article
-      className={`flex flex-col gap-3 rounded-2xl border bg-white p-4 transition hover:shadow-md ${
-        status === 'ativa' ? 'border-[#A7F3D0]' : 'border-[#E7E5E4]'
+      className={`flex flex-col gap-3 rounded-2xl border bg-white p-4 transition-colors ${
+        status === 'ativa' ? 'border-[#A7F3D0]' : 'border-[#E7E5E4] hover:border-[#D6D3D1]'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -354,7 +346,7 @@ const PromotionCard: React.FC<{
           label="Canal"
           value={promo.channel === 'ambos' ? 'Entrega e retirada' : promo.channel === 'delivery' ? 'Só entrega' : 'Só retirada'}
         />
-        {promo.minOrderValue > 0 && <Row label="Pedido mínimo" value={money(promo.minOrderValue)} />}
+        {promo.minOrderValue > 0 && <Row label="Pedido mínimo" value={formatMoney(promo.minOrderValue)} />}
       </dl>
 
       {hasLoss && (
@@ -383,8 +375,8 @@ const PromotionCard: React.FC<{
 
       <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#FAFAF9] p-2 text-center">
         <Stat label="Pedidos" value={String(promo.totalOrders || 0)} />
-        <Stat label="Faturou" value={money(promo.totalRevenue || 0)} />
-        <Stat label="Descontou" value={money(promo.totalDiscount || 0)} />
+        <Stat label="Faturou" value={formatMoney(promo.totalRevenue || 0)} />
+        <Stat label="Descontou" value={formatMoney(promo.totalDiscount || 0)} />
       </div>
 
       <div className="mt-auto flex gap-1.5">

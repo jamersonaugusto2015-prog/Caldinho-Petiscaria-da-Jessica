@@ -1,10 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { subscribePageLifecycle } from './pageLifecycle';
+import { devShopHeader, devShopSlug } from './devShop';
 
+/**
+ * A loja do socket sai do `Host` do handshake, igual ao HTTP — o servidor
+ * resolve e derruba a conexão que não pertence a loja nenhuma.
+ *
+ * Em desenvolvimento o `Host` é `localhost:3000`, sem subdomínio, então o
+ * header vai junto no handshake. Em produção `devShopHeader()` devolve `{}` e o
+ * servidor ignoraria o header de qualquer jeito.
+ */
 export const socket: Socket = io('/', {
   autoConnect: true,
   transports: ['websocket', 'polling'],
+  // O `extraHeaders` NÃO sobrevive ao transporte WebSocket (a API do navegador
+  // não deixa o cliente pôr header no handshake WS), então a loja de dev vai
+  // TAMBÉM pela query — que chega nos dois transportes. Em produção
+  // `devShopSlug()` é '' e nada disto viaja.
+  extraHeaders: devShopHeader(),
+  query: devShopSlug() ? { loja: devShopSlug() } : undefined,
 });
 
 // Este módulo é só transporte: conecta, reconecta e repassa eventos. Quem

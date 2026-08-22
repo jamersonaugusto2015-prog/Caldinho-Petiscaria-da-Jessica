@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bike, Check, Clock, RotateCcw, ShieldCheck, Store, Wallet, type LucideIcon } from 'lucide-react';
 import { kitchenApi as api } from '../../lib/api';
-import { normalizePixKey, validatePixKey } from '../../shared/pix';
+import { normalizePixKey, validatePixKey } from '../../../contract/payment/pix';
 import { useKitchenSettings } from './KitchenSettingsStore';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { useKitchenUpload } from './useKitchenUpload';
@@ -107,7 +107,7 @@ export const KitchenStoreSettings: React.FC = () => {
     setBackupRunning(true);
     try {
       await api.post('/backup/run');
-      triggerToast('Backup concluído com sucesso!');
+      triggerToast('Backup concluído.');
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : 'Erro ao executar backup.');
     } finally {
@@ -151,7 +151,7 @@ export const KitchenStoreSettings: React.FC = () => {
       triggerToast('Mercado Pago desconectado.');
       window.location.reload();
     } catch (error) {
-      triggerToast(error instanceof Error ? error.message : 'Erro ao desconectar.');
+      triggerToast(error instanceof Error ? error.message : 'Não deu para desconectar o Mercado Pago. Tente de novo em alguns segundos.');
       setMpBusy(false);
     }
   };
@@ -318,7 +318,7 @@ export const KitchenStoreSettings: React.FC = () => {
               </button>
               <button type="button" className="btn-primary flex-1 sm:flex-none" onClick={() => void save()} disabled={!dirty || saving}>
                 <Check className="h-4 w-4" />
-                {saving ? 'Salvando...' : 'Salvar alterações'}
+                {saving ? 'Salvando…' : 'Salvar alterações'}
               </button>
             </div>
           </div>

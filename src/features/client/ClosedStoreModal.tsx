@@ -1,8 +1,7 @@
 import React from 'react';
 import { useClientShell } from './ClientStore';
 import { Clock, X } from 'lucide-react';
-import { OpeningHour } from '../../types';
-
+import type { OpeningHour } from '../../../contract/shop/types';
 const WEEKDAY_NAMES = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 
 export const ClosedStoreModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {

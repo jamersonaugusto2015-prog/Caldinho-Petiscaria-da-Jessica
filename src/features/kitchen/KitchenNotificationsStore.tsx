@@ -1,7 +1,6 @@
 import React from 'react';
-import { AlertBannerProvider, useAlertBanner } from '../../lib/alertBanner';
-import type { AlertUrgency } from '../../shared/orderAlerts';
-
+import { AlertBannerProvider, useAlertBanner } from '../../ui/alertBanner';
+import type { AlertUrgency } from '../../../contract/order/alerts';
 type TriggerToast = (msg: string, urgency?: AlertUrgency) => void;
 
 /**

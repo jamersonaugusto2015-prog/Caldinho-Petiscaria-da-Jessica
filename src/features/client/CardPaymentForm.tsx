@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Brand, BRAND_FACE, detectBrand, formatExpiry, formatNumber, onlyDigits } from '../../shared/cardBrand';
-
+import { Brand, BRAND_FACE, detectBrand, formatExpiry, formatNumber, onlyDigits } from '../../../contract/payment/cardBrand';
+import { toApiAmount } from '../../../contract/pricing/money';
 export type CardPayload = {
   token: string;
   paymentMethodId: string;
@@ -134,7 +134,10 @@ export const CardPaymentForm = forwardRef<CardPaymentHandle, Props>(({ publicKey
         if (method?.id) setPaymentMethodId(method.id);
         if (method?.issuer?.id) setIssuerId(String(method.issuer.id));
         const plans = await mp.getInstallments({
-          amount: amount.toFixed(2),
+          // O SDK do Mercado Pago espera o valor como texto com PONTO decimal.
+          // Não é texto de tela: `formatMoney` escreveria "R$ 25,50" e o SDK
+          // não entenderia. `toApiAmount` garante as duas casas antes.
+          amount: toApiAmount(amount).toFixed(2),
           bin,
           paymentTypeId: 'credit_card',
         });

@@ -1,12 +1,16 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
-import { randomBytes } from 'crypto';
-import { INITIAL_PRODUCTS } from '../src/data/initialData';
-import { OpeningHour, SizeOption, StoreSettings } from '../src/types';
-import { DEFAULT_OPENING_HOURS, DEFAULT_SIZE_OPTIONS, DEFAULT_STORE_SETTINGS } from '../src/shared/defaults';
-import { normalizePixProvider } from '../src/shared/pix';
-import { hashPasswordSync } from './auth';
+import type { SizeOption } from '../contract/catalog/types';
+import type { OpeningHour, ShopId, StoreSettings } from '../contract/shop/types';
+import { DEFAULT_OPENING_HOURS, DEFAULT_SIZE_OPTIONS, DEFAULT_STORE_SETTINGS } from '../contract/shop/defaults';
+import { normalizePixProvider } from '../contract/payment/pix';
 import { DATA_DIR } from './paths';
+import { MIGRATIONS } from './infra/db/migrations/index';
+import { runMigrations } from './infra/db/runner';
+import { seedShop } from './infra/db/seed/createShop';
+import { parseStoredSettings } from '../contract/shop/settings';
+import { isValidShopSlug } from '../contract/shop/tenant';
+import { config } from './config';
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -15,290 +19,107 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS categories (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS orders (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    status TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS chat_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id TEXT NOT NULL,
-    data TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS drivers (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
-  );
-
-  -- Credencial por motoboy. Mora fora da linha do motoboy de propósito: o JSON
-  -- da tabela drivers é serializado para a cozinha e para o app, e um token
-  -- guardado lá vazaria junto na primeira rota que esquecesse de removê-lo.
-  CREATE TABLE IF NOT EXISTS driver_tokens (
-    token TEXT PRIMARY KEY,
-    driver_id TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_driver_tokens_driver ON driver_tokens (driver_id);
-
-  -- Inscrições de push do navegador. A coluna room é a MESMA string que a
-  -- audiência do pedido produz (kitchen, driver:<id>, customer:<id>), então
-  -- socket e push endereçam as pessoas do mesmo jeito: um esquema, dois canos.
-  -- O endpoint é a chave porque ele é o navegador: reinscrever a mesma aba tem
-  -- que sobrescrever a linha, não criar uma segunda e notificar em dobro.
-  CREATE TABLE IF NOT EXISTS push_subscriptions (
-    endpoint TEXT PRIMARY KEY,
-    room TEXT NOT NULL,
-    role TEXT NOT NULL,
-    data TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_room ON push_subscriptions (room);
-
-  CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS coupons (
-    code TEXT PRIMARY KEY,
-    data TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS promotions (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS loyalty (
-    customer_id TEXT PRIMARY KEY,
-    points INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS free_redeems (
-    token TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    used INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS geo_cache (
-    query TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
-
-// ---------- Migrações ----------
-function migrateOrdersCustomerId() {
-  const cols = db.prepare('PRAGMA table_info(orders)').all() as { name: string }[];
-  if (!cols.some((c) => c.name === 'customer_id')) {
-    db.exec('ALTER TABLE orders ADD COLUMN customer_id TEXT');
-  }
-}
-migrateOrdersCustomerId();
-
-// Índices para as consultas reais do app (kanban por status, histórico por
-// cliente, relatórios ordenados por data e chat por pedido). Sem eles, cada
-// consulta é um full table scan que piora conforme o banco cresce ao longo
-// dos anos. CREATE INDEX IF NOT EXISTS é idempotente: seguro em todo boot.
-// Roda depois das migrações acima: idx_orders_customer_created usa customer_id,
-// que só existe a partir daqui em um banco antigo (migrado, não recriado).
-db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-  CREATE INDEX IF NOT EXISTS idx_orders_customer_created ON orders(customer_id, created_at);
-  CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
-  CREATE INDEX IF NOT EXISTS idx_chat_messages_order_id ON chat_messages(order_id);
-`);
-
-// ---------- Seeds ----------
-function seedCategories() {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM categories').get() as { c: number }).c;
-  if (count > 0) return;
-  const defaults = [
-    { id: 'caldinhos', label: 'Caldinhos', emoji: '🍲', color: '#C2410C', sort: 0 },
-    { id: 'petiscos', label: 'Petiscos', emoji: '🍤', color: '#7C3AED', sort: 1 },
-    { id: 'bebidas', label: 'Bebidas', emoji: '🥤', color: '#2563EB', sort: 2 },
-    { id: 'combos', label: 'Combos', emoji: '🍱', color: '#059669', sort: 3 },
-  ];
-  const insert = db.prepare('INSERT INTO categories (id, data) VALUES (?, ?)');
-  const tx = db.transaction(() => {
-    for (const c of defaults) insert.run(c.id, JSON.stringify(c));
-  });
-  tx();
+/**
+ * O schema não nasce mais aqui. Ele vem de `server/infra/db/migrations/`, uma
+ * lista ordenada e versionada em `schema_version`. O que existia antes era um
+ * `db.exec` de 100 linhas com `IF NOT EXISTS` mais duas funções que varriam
+ * tabelas inteiras a cada boot para quase nunca achar nada.
+ *
+ * Falhar aqui derruba o boot de propósito: servir com o schema pela metade é
+ * pior do que não servir.
+ */
+const freshMigrations = runMigrations(db, MIGRATIONS);
+if (freshMigrations.length > 0) {
+  console.log(`🗂  Migrações aplicadas: ${freshMigrations.join(', ')}`);
 }
 
-function seedProducts() {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM products').get() as { c: number }).c;
-  if (count > 0) return;
-  const insert = db.prepare('INSERT INTO products (id, data) VALUES (?, ?)');
-  const tx = db.transaction(() => {
-    for (const p of INITIAL_PRODUCTS) insert.run(p.id, JSON.stringify(p));
-  });
-  tx();
-}
-
-// Bancos já populados não re-seedeam (seedProducts retorna cedo). Mas os combos
-// entram no catálogo de exemplo junto com a categoria Combos: sem esta correção,
-// uma loja com banco antigo nunca ganharia os combos novos. Só inserimos os que
-// faltam (id fixo) — nada de sobrescrever um produto que o dono já editou.
-function ensureSeedCombos() {
-  const insert = db.prepare('INSERT OR IGNORE INTO products (id, data) VALUES (?, ?)');
-  const tx = db.transaction(() => {
-    for (const p of INITIAL_PRODUCTS) {
-      if (p.category === 'combos') insert.run(p.id, JSON.stringify(p));
-    }
-  });
-  tx();
-}
-
-function seedCoupons() {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM coupons').get() as { c: number }).c;
-  if (count > 0) return;
-  const defaults = [
-    {
-      code: 'CALDINHO10',
-      discountPercent: 10,
-      minOrderValue: 30,
-      description: '10% de desconto em todo o cardápio!',
-    },
-    {
-      code: 'PRIMEIRO30',
-      discountFixed: 8.0,
-      minOrderValue: 35,
-      description: 'R$ 8,00 OFF no seu primeiro pedido do dia!',
-    },
-    {
-      code: 'FRETEGRATIS',
-      discountFixed: 5.0,
-      minOrderValue: 50,
-      description: 'R$ 5,00 de desconto na entrega!',
-    },
-  ];
-  const insert = db.prepare('INSERT INTO coupons (code, data) VALUES (?, ?)');
-  const tx = db.transaction(() => {
-    for (const c of defaults) insert.run(c.code, JSON.stringify(c));
-  });
-  tx();
-}
-
-function seedDrivers() {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM drivers').get() as { c: number }).c;
-  if (count > 0) return;
-  db.prepare('INSERT INTO drivers (id, data) VALUES (?, ?)').run(
-    'drv-1',
-    JSON.stringify({
-      id: 'drv-1',
-      name: 'Marcos Motoboy',
-      phone: '(81) 98765-4321',
-      password: hashPasswordSync('1234'),
-      bikeModel: 'Honda Biz 125',
-      plate: 'PCD-1A23',
-      active: true,
-      online: false,
-      createdAt: new Date().toISOString(),
-    })
-  );
-}
-
-// Migra senhas de motoboys em texto claro para hash
-function upgradeDriverPasswords() {
-  const rows = db.prepare('SELECT id, data FROM drivers').all() as { id: string; data: string }[];
-  for (const row of rows) {
-    const d = JSON.parse(row.data);
-    if (typeof d.password === 'string' && !d.password.startsWith('scrypt:')) {
-      d.password = hashPasswordSync(d.password);
-      db.prepare('UPDATE drivers SET data = ? WHERE id = ?').run(JSON.stringify(d), row.id);
-    }
-  }
-}
-upgradeDriverPasswords();
+/**
+ * A loja que já existia antes do multi-tenant. A migração `005_shops` cria a
+ * linha com este id; nenhum outro lugar do sistema inventa o número.
+ */
+export const LOJA_PADRAO: ShopId = 1;
 
 export const DEFAULT_SETTINGS: StoreSettings = DEFAULT_STORE_SETTINGS;
 
-function seedSettings() {
-  const upsert = db.prepare(
-    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING'
-  );
-  const base = DEFAULT_SETTINGS;
-  const rows: [string, string][] = [
-    ['store_name', base.storeName],
-    ['store_city', base.city],
-    ['store_lat', String(base.storeLat)],
-    ['store_lng', String(base.storeLng)],
-    ['store_address', base.storeAddress],
-    ['pickup_enabled', String(base.pickupEnabled)],
-    ['pickup_ready_minutes', String(base.pickupReadyMinutes)],
-    ['delivery_price_per_km', String(base.deliveryPricePerKm)],
-    ['delivery_base_fee', String(base.deliveryBaseFee)],
-    ['delivery_min_fee', String(base.deliveryMinFee)],
-    ['free_delivery_above', String(base.freeDeliveryAbove)],
-    ['max_delivery_km', String(base.maxDeliveryKm)],
-    ['min_order_value', String(base.minOrderValue)],
-    ['route_factor', String(base.routeFactor)],
-    ['driver_fee_per_delivery', String(base.driverFeePerDelivery)],
-    ['pix_provider', base.pixProvider],
-    ['pix_key', base.pixKey],
-    ['pix_merchant_name', base.pixMerchantName],
-    ['pix_merchant_city', base.pixMerchantCity],
-    ['card_on_delivery_enabled', String(base.cardOnDeliveryEnabled)],
-    ['store_whatsapp', base.storeWhatsApp],
-    ['order_sound_url', base.orderSoundUrl],
-    ['opening_hours', JSON.stringify(base.openingHours)],
-    ['size_options', JSON.stringify(base.sizeOptions)],
-    ['order_enabled', String(base.orderEnabled)],
-    ['force_open', String(base.forceOpen)],
-  ];
-  const tx = db.transaction(() => {
-    for (const [k, v] of rows) upsert.run(k, v);
-  });
-  tx();
+/**
+ * A loja 1 ganha catálogo, configurações, PIN e credenciais — uma vez só, e sem
+ * sobrescrever nada que o dono já tenha editado.
+ *
+ * As lojas seguintes nascem pelo painel super-admin (Fase 9), que chama
+ * `createShop` direto. Este passo existe só para a loja que veio antes do painel.
+ */
+seedShop(db, LOJA_PADRAO);
 
-  // PIN padrão da cozinha: 1234 (hash scrypt)
-  const pinRow = db.prepare("SELECT value FROM meta WHERE key = 'kitchen_pin_hash'").get();
-  if (!pinRow) {
-    db.prepare("INSERT INTO meta (key, value) VALUES ('kitchen_pin_hash', ?)").run(
-      hashPasswordSync('1234')
+/**
+ * O slug da loja original vem do ambiente, para BATER com o domínio de produção.
+ *
+ * A migração 005 cria a loja 1 com o slug provisório `loja` — que não resolve
+ * em domínio nenhum. Em produção o cliente chega por `Host`, e um slug que não
+ * casa com o domínio devolve 404 com a loja no ar mas invisível. Aqui, se
+ * `DEFAULT_SHOP_SLUG` estiver definido, a loja 1 passa a atender por ele. É
+ * idempotente e vale tanto no banco novo quanto no já migrado (a 005 não roda
+ * de novo, mas isto sim), então é o único ponto que conserta os dois casos.
+ */
+if (config.DEFAULT_SHOP_SLUG) {
+  const slug = config.DEFAULT_SHOP_SLUG.trim().toLowerCase();
+  if (!isValidShopSlug(slug)) {
+    throw new Error(
+      `DEFAULT_SHOP_SLUG inválido: "${slug}". Use minúsculas, números e hífens (ex.: caldinhodajessica).`
     );
   }
-
-  // Tokens de papel: gerados aleatoriamente uma única vez e persistidos
-  for (const role of ['kitchen', 'driver']) {
-    const key = `role_token_${role}`;
-    const existing = db.prepare('SELECT value FROM meta WHERE key = ?').get(key);
-    if (!existing) {
-      db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(
-        key,
-        `tok-${role}-${randomBytes(24).toString('hex')}`
-      );
+  const atual = db.prepare('SELECT slug FROM shops WHERE id = ?').get(LOJA_PADRAO) as
+    | { slug: string }
+    | undefined;
+  if (atual && atual.slug !== slug) {
+    // Recusa se o slug já for de OUTRA loja: dois donos no mesmo endereço é pior
+    // que o 404. O índice único de `shops.slug` também barraria, mas com um erro
+    // de constraint cru — melhor uma mensagem que diz o que fazer.
+    const ocupado = db.prepare('SELECT id FROM shops WHERE slug = ? AND id != ?').get(slug, LOJA_PADRAO);
+    if (ocupado) {
+      throw new Error(`DEFAULT_SHOP_SLUG "${slug}" já pertence a outra loja. Escolha outro.`);
     }
+    db.prepare('UPDATE shops SET slug = ? WHERE id = ?').run(slug, LOJA_PADRAO);
+    console.log(`🏷  Loja 1 passou a atender pelo slug "${slug}".`);
   }
 }
 
-seedCategories();
-seedProducts();
-ensureSeedCombos();
-seedCoupons();
-seedDrivers();
-seedSettings();
+// ---------- Acesso à tabela `meta` (configuração da loja) ----------
+
+/**
+ * A tabela `meta` guarda a configuração da loja em pares chave/valor. Estes dois
+ * são a ÚNICA porta para ela.
+ *
+ * Existiam quatro cópias deste upsert espalhadas (`backup.ts`, `mercadopago.ts`,
+ * `index.ts`, `routes.ts`), e nenhuma sabia de loja. Depois da migração
+ * `018_meta_shop`, a PK virou `(shop_id, key)` — e um `ON CONFLICT(key)` que não
+ * bate mais com nenhuma restrição não falha em silêncio: ele derruba a rota.
+ *
+ * SEGREDO NÃO MORA AQUI. PIN, tokens de papel e credenciais do Mercado Pago
+ * ficam em `shop_secrets` (`server/infra/secrets.ts`), fora do que
+ * `GET /settings` serializa.
+ */
+export function getMetaValue(shopId: ShopId, key: string, fallback = ''): string {
+  const row = db.prepare('SELECT value FROM meta WHERE shop_id = ? AND key = ?').get(shopId, key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? fallback;
+}
+
+export function setMetaValue(shopId: ShopId, key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO meta (shop_id, key, value) VALUES (?, ?, ?)
+     ON CONFLICT(shop_id, key) DO UPDATE SET value = excluded.value`
+  ).run(shopId, key, value);
+}
+
+export function deleteMetaValue(shopId: ShopId, key: string): void {
+  db.prepare('DELETE FROM meta WHERE shop_id = ? AND key = ?').run(shopId, key);
+}
 
 // ---------- Helpers de settings ----------
-export function getSettings(): StoreSettings {
+export function getSettings(shopId: ShopId): StoreSettings {
   const get = (key: string, fallback: string): string => {
-    const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+    const row = db.prepare('SELECT value FROM meta WHERE shop_id = ? AND key = ?').get(shopId, key) as
       | { value: string }
       | undefined;
     return row ? row.value : fallback;
@@ -319,7 +140,17 @@ export function getSettings(): StoreSettings {
   } catch {
     sizeOptions = DEFAULT_SIZE_OPTIONS;
   }
-  return {
+  /**
+   * O resultado passa por `parseStoredSettings` antes de sair daqui: a tabela
+   * `meta` guarda TEXTO, e esse texto já foi editado na mão, restaurado de
+   * backup antigo e gravado por versões anteriores com outras regras. Um
+   * `routeFactor` de 0.2 vindo do banco faria a conta de frete dizer que a rua
+   * é mais curta que a linha reta — e ninguém veria erro nenhum.
+   *
+   * Valor ruim cai no padrão em vez de derrubar: recusar a configuração inteira
+   * por causa de um campo torto fecharia a loja.
+   */
+  return parseStoredSettings({
     storeName: get('store_name', DEFAULT_SETTINGS.storeName),
     city: get('store_city', DEFAULT_SETTINGS.city),
     storeAddress: get('store_address', DEFAULT_SETTINGS.storeAddress),
@@ -345,57 +176,10 @@ export function getSettings(): StoreSettings {
     sizeOptions,
     pickupEnabled: get('pickup_enabled', String(DEFAULT_SETTINGS.pickupEnabled)) === 'true',
     pickupReadyMinutes: num('pickup_ready_minutes', DEFAULT_SETTINGS.pickupReadyMinutes),
+    loyaltyStampCost: num('loyalty_stamp_cost', DEFAULT_SETTINGS.loyaltyStampCost),
+    loyaltyRedeemCategory: get('loyalty_redeem_category', DEFAULT_SETTINGS.loyaltyRedeemCategory),
+    timezone: get('timezone', DEFAULT_SETTINGS.timezone),
     orderEnabled: get('order_enabled', 'true') === 'true',
     forceOpen: get('force_open', 'false') === 'true',
-  };
-}
-
-export function getRoleToken(role: 'kitchen' | 'driver'): string {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(`role_token_${role}`) as
-    | { value: string }
-    | undefined;
-  return row ? row.value : '';
-}
-
-// ---------- Fidelidade por cliente ----------
-export function getLoyaltyPoints(customerId: string): number {
-  const row = db.prepare('SELECT points FROM loyalty WHERE customer_id = ?').get(customerId) as
-    | { points: number }
-    | undefined;
-  return row ? row.points : 0;
-}
-
-export function addLoyaltyPoints(customerId: string, points: number): number {
-  if (!Number.isFinite(points)) return getLoyaltyPoints(customerId);
-  db.prepare(
-    'INSERT INTO loyalty (customer_id, points) VALUES (?, ?) ON CONFLICT(customer_id) DO UPDATE SET points = points + excluded.points'
-  ).run(customerId, points);
-  return getLoyaltyPoints(customerId);
-}
-
-export function deductLoyaltyPoints(customerId: string, points: number): number {
-  db.prepare(
-    'INSERT INTO loyalty (customer_id, points) VALUES (?, ?) ON CONFLICT(customer_id) DO UPDATE SET points = excluded.points'
-  ).run(customerId, Math.max(0, getLoyaltyPoints(customerId) - points));
-  return getLoyaltyPoints(customerId);
-}
-
-// ---------- Resgate de fidelidade ----------
-export function createFreeRedeem(productId: string): string {
-  const token = `LFT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-  db.prepare('INSERT INTO free_redeems (token, product_id) VALUES (?, ?)').run(token, productId);
-  return token;
-}
-
-export function peekFreeRedeem(token: string, productId: string): boolean {
-  const row = db.prepare('SELECT product_id, used FROM free_redeems WHERE token = ?').get(token) as
-    | { product_id: string; used: number }
-    | undefined;
-  return !!row && row.used === 0 && row.product_id === productId;
-}
-
-export function consumeFreeRedeem(token: string, productId: string): boolean {
-  if (!peekFreeRedeem(token, productId)) return false;
-  db.prepare('UPDATE free_redeems SET used = 1 WHERE token = ?').run(token);
-  return true;
+  }, DEFAULT_SETTINGS);
 }

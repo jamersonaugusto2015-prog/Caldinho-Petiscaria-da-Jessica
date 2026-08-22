@@ -1,14 +1,8 @@
 import { db } from './db';
+import { randomBytes } from 'crypto';
 import { DomainError } from './errors';
-import type {
-  AppliedPromotion,
-  Promotion,
-  PromotionChannel,
-  PromotionKind,
-  PromotionScope,
-  PromotionWindow,
-} from '../src/types';
-
+import type { AppliedPromotion, Promotion, PromotionChannel, PromotionKind, PromotionScope, PromotionWindow } from '../contract/catalog/types';
+import type { ShopId } from '../contract/shop/types';
 const KINDS: PromotionKind[] = ['desconto', 'leve_pague', 'brinde', 'frete'];
 const SCOPES: PromotionScope[] = ['produtos', 'categorias', 'todos'];
 const CHANNELS: PromotionChannel[] = ['ambos', 'delivery', 'pickup'];
@@ -64,7 +58,11 @@ export function normalizePromotion(body: unknown, existing?: Promotion): Promoti
     : existing?.channel ?? 'ambos';
 
   const promo: Promotion = {
-    id: existing?.id || 'promo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    // `randomBytes` em vez de `Date.now()+Math.random()`: o id é a chave da
+    // linha entre TODAS as lojas (a PK é só o id), e duas lojas gerando no
+    // mesmo milissegundo colidiam — o INSERT da segunda caía no DO UPDATE e
+    // reescrevia a promoção da primeira. 96 bits aleatórios não colidem.
+    id: existing?.id || 'promo-' + randomBytes(12).toString('hex'),
     name: name.slice(0, 60),
     kind,
     enabled: typeof b.enabled === 'boolean' ? b.enabled : existing?.enabled ?? true,
@@ -137,62 +135,108 @@ export function normalizePromotion(body: unknown, existing?: Promotion): Promoti
   return promo;
 }
 
-export function listPromotions(): Promotion[] {
-  const rows = db.prepare('SELECT data FROM promotions ORDER BY rowid').all() as { data: string }[];
+export function listPromotions(shopId: ShopId): Promotion[] {
+  const rows = db
+    .prepare('SELECT data FROM promotions WHERE shop_id = ? ORDER BY rowid')
+    .all(shopId) as { data: string }[];
   return rows.map((r) => JSON.parse(r.data) as Promotion);
 }
 
-export function getPromotion(id: string): Promotion | null {
-  const row = db.prepare('SELECT data FROM promotions WHERE id = ?').get(id) as
+export function getPromotion(shopId: ShopId, id: string): Promotion | null {
+  const row = db.prepare('SELECT data FROM promotions WHERE shop_id = ? AND id = ?').get(shopId, id) as
     | { data: string }
     | undefined;
   return row ? (JSON.parse(row.data) as Promotion) : null;
 }
 
-function write(promo: Promotion): Promotion {
+function write(shopId: ShopId, promo: Promotion): Promotion {
   db.prepare(
-    'INSERT INTO promotions (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data'
-  ).run(promo.id, JSON.stringify(promo));
+    `INSERT INTO promotions (shop_id, id, data) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET data = excluded.data`
+  ).run(shopId, promo.id, JSON.stringify(promo));
   return promo;
 }
 
-export function createPromotion(body: unknown): Promotion {
-  return write(normalizePromotion(body));
+export function createPromotion(shopId: ShopId, body: unknown): Promotion {
+  return write(shopId, normalizePromotion(body));
 }
 
-export function updatePromotion(id: string, body: unknown): Promotion {
-  const existing = getPromotion(id);
+export function updatePromotion(shopId: ShopId, id: string, body: unknown): Promotion {
+  const existing = getPromotion(shopId, id);
   if (!existing) throw new DomainError(404, 'Promoção não encontrada.');
-  return write(normalizePromotion(body, existing));
+  return write(shopId, normalizePromotion(body, existing));
 }
 
-export function deletePromotion(id: string): void {
-  const existing = getPromotion(id);
+export function deletePromotion(shopId: ShopId, id: string): void {
+  const existing = getPromotion(shopId, id);
   if (!existing) throw new DomainError(404, 'Promoção não encontrada.');
-  db.prepare('DELETE FROM promotions WHERE id = ?').run(id);
+  db.prepare('DELETE FROM promotions WHERE shop_id = ? AND id = ?').run(shopId, id);
 }
 
 /** Zera o contador de usos sem apagar o histórico de faturamento. */
-export function resetPromotionUses(id: string): Promotion {
-  const existing = getPromotion(id);
+export function resetPromotionUses(shopId: ShopId, id: string): Promotion {
+  const existing = getPromotion(shopId, id);
   if (!existing) throw new DomainError(404, 'Promoção não encontrada.');
-  return write({ ...existing, usedCount: 0 });
+  return write(shopId, { ...existing, usedCount: 0 });
 }
 
 /**
- * Grava o resultado de um pedido nas promoções que pegaram. Roda dentro da
- * transação do pedido: se o pedido não entrar, o contador não sobe.
+ * Segura uma vaga em cada promoção aplicada. Chamado ANTES de qualquer cobrança,
+ * dentro da transação que reserva o pedido (mesmo padrão do ADR-0003).
+ *
+ * O motivo: o teto (`maxUses`) era conferido ao montar o carrinho e o contador
+ * só subia depois do `await` da cobrança. Dois pedidos simultâneos liam o mesmo
+ * `usedCount` e os dois ganhavam a última vaga — a promoção estourava o teto.
+ * Aqui a leitura e a escrita acontecem sem `await` no meio, então a vaga é de
+ * quem chegar primeiro.
  */
-export function registerPromotionUses(applied: AppliedPromotion[], orderTotal: number): void {
+export function reservePromotionUses(shopId: ShopId, applied: AppliedPromotion[]): void {
   for (const entry of applied) {
-    const promo = getPromotion(entry.id);
+    const promo = getPromotion(shopId, entry.id);
     if (!promo) continue;
-    write({
+    if (promo.maxUses > 0 && promo.usedCount >= promo.maxUses) {
+      throw new DomainError(409, `A promoção "${promo.name}" acabou de esgotar. Refaça o carrinho.`);
+    }
+    write(shopId, { ...promo, usedCount: promo.usedCount + 1 });
+  }
+}
+
+/** Devolve as vagas seguradas por `reservePromotionUses` quando a cobrança falha. */
+export function releasePromotionUses(shopId: ShopId, applied: AppliedPromotion[]): void {
+  for (const entry of applied) {
+    const promo = getPromotion(shopId, entry.id);
+    if (!promo) continue;
+    write(shopId, { ...promo, usedCount: Math.max(0, promo.usedCount - 1) });
+  }
+}
+
+/**
+ * Grava o faturamento das promoções depois que o pedido é certo. NÃO mexe em
+ * `usedCount`: a vaga já foi segurada em `reservePromotionUses`.
+ */
+export function recordPromotionSale(shopId: ShopId, applied: AppliedPromotion[], orderTotal: number): void {
+  for (const entry of applied) {
+    const promo = getPromotion(shopId, entry.id);
+    if (!promo) continue;
+    write(shopId, {
       ...promo,
-      usedCount: promo.usedCount + 1,
       totalOrders: (promo.totalOrders ?? 0) + 1,
       totalDiscount: round((promo.totalDiscount ?? 0) + entry.discount),
       totalRevenue: round((promo.totalRevenue ?? 0) + orderTotal),
     });
   }
+}
+
+/**
+ * Reserva a vaga e grava o faturamento de uma vez. Serve o pedido que NÃO passa
+ * por cobrança online (dinheiro/maquininha): não existe `await` entre a leitura
+ * e a escrita, então as duas etapas cabem na mesma transação.
+ */
+export function registerPromotionUses(
+  shopId: ShopId,
+  applied: AppliedPromotion[],
+  orderTotal: number
+): void {
+  reservePromotionUses(shopId, applied);
+  recordPromotionSale(shopId, applied, orderTotal);
 }

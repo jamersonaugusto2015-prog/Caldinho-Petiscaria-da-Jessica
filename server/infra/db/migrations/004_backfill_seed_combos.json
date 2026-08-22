@@ -1,0 +1,270 @@
+[
+  {
+    "id": "com-1",
+    "name": "Combo Happy Hour (2 Caldinhos + 2 Cervejas)",
+    "description": "Escolha 2 Caldinhos (500ml) + 2 Cervejas 600ml. Economia de R$ 12,00.",
+    "category": "combos",
+    "basePrice": 58.9,
+    "originalPrice": 70.9,
+    "image": "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&q=80&w=800",
+    "isPopular": true,
+    "available": true,
+    "rating": 0,
+    "reviewsCount": 0,
+    "prepTimeMinutes": 15,
+    "comboSlots": [
+      {
+        "id": "slot-caldinho-1",
+        "label": "1º Caldinho (escolha o sabor)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-c1-0",
+            "label": "Caldinho de Feijão Preto"
+          },
+          {
+            "id": "opt-c1-1",
+            "label": "Caldinho de Camarão"
+          },
+          {
+            "id": "opt-c1-2",
+            "label": "Caldinho de Mocotó"
+          },
+          {
+            "id": "opt-c1-3",
+            "label": "Caldinho de Sururu"
+          },
+          {
+            "id": "opt-c1-4",
+            "label": "Caldinho de Vaca Atolada"
+          },
+          {
+            "id": "opt-c1-5",
+            "label": "Caldinho Verde de Mandioca"
+          }
+        ]
+      },
+      {
+        "id": "slot-caldinho-2",
+        "label": "2º Caldinho (escolha o sabor)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-c2-0",
+            "label": "Caldinho de Feijão Preto"
+          },
+          {
+            "id": "opt-c2-1",
+            "label": "Caldinho de Camarão"
+          },
+          {
+            "id": "opt-c2-2",
+            "label": "Caldinho de Mocotó"
+          },
+          {
+            "id": "opt-c2-3",
+            "label": "Caldinho de Sururu"
+          },
+          {
+            "id": "opt-c2-4",
+            "label": "Caldinho de Vaca Atolada"
+          },
+          {
+            "id": "opt-c2-5",
+            "label": "Caldinho Verde de Mandioca"
+          }
+        ]
+      },
+      {
+        "id": "slot-cerveja-1",
+        "label": "1ª Cerveja (escolha a marca)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-b1-0",
+            "label": "Heineken 600ml"
+          },
+          {
+            "id": "opt-b1-1",
+            "label": "Amstel 600ml"
+          },
+          {
+            "id": "opt-b1-2",
+            "label": "Spaten 600ml"
+          }
+        ]
+      },
+      {
+        "id": "slot-cerveja-2",
+        "label": "2ª Cerveja (escolha a marca)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-b2-0",
+            "label": "Heineken 600ml"
+          },
+          {
+            "id": "opt-b2-1",
+            "label": "Amstel 600ml"
+          },
+          {
+            "id": "opt-b2-2",
+            "label": "Spaten 600ml"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "com-2",
+    "name": "Combo Casal (2 Caldinhos + 1 Petisco Grande)",
+    "description": "Escolha 2 caldinhos à vontade + 1 petisco grande. Serve duas pessoas.",
+    "category": "combos",
+    "basePrice": 69.9,
+    "originalPrice": 82.9,
+    "image": "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&q=80&w=800",
+    "available": true,
+    "rating": 0,
+    "reviewsCount": 0,
+    "prepTimeMinutes": 22,
+    "comboSlots": [
+      {
+        "id": "slot-caldinho-2x",
+        "label": "Escolha 2 Caldinhos (sabores podem repetir ou variar)",
+        "required": true,
+        "minChoices": 2,
+        "maxChoices": 2,
+        "options": [
+          {
+            "id": "opt-c1-0",
+            "label": "Caldinho de Feijão Preto"
+          },
+          {
+            "id": "opt-c1-1",
+            "label": "Caldinho de Camarão"
+          },
+          {
+            "id": "opt-c1-2",
+            "label": "Caldinho de Mocotó"
+          },
+          {
+            "id": "opt-c1-3",
+            "label": "Caldinho de Sururu"
+          },
+          {
+            "id": "opt-c1-4",
+            "label": "Caldinho de Vaca Atolada"
+          },
+          {
+            "id": "opt-c1-5",
+            "label": "Caldinho Verde de Mandioca"
+          }
+        ]
+      },
+      {
+        "id": "slot-petisco",
+        "label": "Petisco (escolha a opção)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-p-0",
+            "label": "Batata Frita da Casa"
+          },
+          {
+            "id": "opt-p-1",
+            "label": "Carne de Sol Acebolada com Macaxeira"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "com-3",
+    "name": "Combo Família (3 Caldinhos + Petisco + 2 Bebidas)",
+    "description": "Escolha 3 caldinhos à vontade + 1 petisco grande + 2 cervejas 600ml. Serve de quatro a cinco pessoas.",
+    "category": "combos",
+    "basePrice": 96.9,
+    "originalPrice": 119.9,
+    "image": "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=800",
+    "isPopular": true,
+    "available": true,
+    "rating": 0,
+    "reviewsCount": 0,
+    "prepTimeMinutes": 28,
+    "comboSlots": [
+      {
+        "id": "slot-caldinho-3x",
+        "label": "Escolha 3 Caldinhos (sabores podem repetir ou variar)",
+        "required": true,
+        "minChoices": 3,
+        "maxChoices": 3,
+        "options": [
+          {
+            "id": "opt-c3-0",
+            "label": "Caldinho de Feijão Preto"
+          },
+          {
+            "id": "opt-c3-1",
+            "label": "Caldinho de Camarão"
+          },
+          {
+            "id": "opt-c3-2",
+            "label": "Caldinho de Mocotó"
+          },
+          {
+            "id": "opt-c3-3",
+            "label": "Caldinho de Sururu"
+          },
+          {
+            "id": "opt-c3-4",
+            "label": "Caldinho de Vaca Atolada"
+          },
+          {
+            "id": "opt-c3-5",
+            "label": "Caldinho Verde de Mandioca"
+          }
+        ]
+      },
+      {
+        "id": "slot-petisco-f",
+        "label": "Petisco Grande (escolha a opção)",
+        "required": true,
+        "options": [
+          {
+            "id": "opt-pf-0",
+            "label": "Batata Frita da Casa"
+          },
+          {
+            "id": "opt-pf-1",
+            "label": "Carne de Sol Acebolada com Macaxeira"
+          },
+          {
+            "id": "opt-pf-2",
+            "label": "Calabresa Acebolada com Queijo Coalho"
+          }
+        ]
+      },
+      {
+        "id": "slot-bebidas-2x",
+        "label": "Escolha 2 Bebidas",
+        "required": true,
+        "minChoices": 2,
+        "maxChoices": 2,
+        "options": [
+          {
+            "id": "opt-bf-0",
+            "label": "Heineken 600ml"
+          },
+          {
+            "id": "opt-bf-1",
+            "label": "Amstel 600ml"
+          },
+          {
+            "id": "opt-bf-2",
+            "label": "Spaten 600ml"
+          }
+        ]
+      }
+    ]
+  }
+]

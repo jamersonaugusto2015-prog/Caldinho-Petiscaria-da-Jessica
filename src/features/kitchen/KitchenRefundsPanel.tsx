@@ -1,16 +1,10 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, Undo2 } from 'lucide-react';
-import type { Order } from '../../types';
+import type { Order } from '../../../contract/order/types';
 import { useKitchenOrders } from './KitchenOrdersStore';
 import { Heading, Panel, Empty } from './KitchenPanels';
-import {
-  PAYMENT_METHOD_LABEL,
-  money,
-  owesRefund,
-  refundFailed,
-  shortDate,
-  shortDateTime,
-} from './kitchenOrderRules';
+import { PAYMENT_METHOD_LABEL, owesRefund, refundFailed, shortDate, shortDateTime } from './kitchenOrderRules';
+import { formatMoney } from '../../../contract/pricing/money';
 
 export const KitchenRefundsPanel: React.FC = () => {
   const { orders, busyOrderId, refundOrder } = useKitchenOrders();
@@ -36,7 +30,7 @@ export const KitchenRefundsPanel: React.FC = () => {
       <Heading
         icon={<Undo2 />}
         title="A devolver"
-        subtitle={`${queue.length} devolução(ões) em aberto · ${money(pendingTotal)}.`}
+        subtitle={`${queue.length} ${queue.length === 1 ? 'devolução' : 'devoluções'} em aberto · ${formatMoney(pendingTotal)}.`}
       />
 
       <Panel title="Devoluções em aberto">
@@ -65,7 +59,7 @@ export const KitchenRefundsPanel: React.FC = () => {
               <span className="text-[10px] text-[#57534E]">
                 {order.payment.refundedAt ? `em ${shortDate(order.payment.refundedAt)}` : '—'}
               </span>
-              <span className="font-extrabold text-[#059669]">{money(order.total)}</span>
+              <span className="font-extrabold text-[#059669]">{formatMoney(order.total)}</span>
             </div>
           ))}
           {done.length === 0 && <Empty text="Nenhuma devolução concluída ainda." />}
@@ -90,7 +84,7 @@ const RefundRow: React.FC<{ order: Order; busy: boolean; onRefund: () => void }>
     >
       <div className="flex items-center justify-between gap-2">
         <strong className="text-xs">{order.id}</strong>
-        <span className="text-sm font-extrabold text-[#B91C1C]">{money(order.total)}</span>
+        <span className="text-sm font-extrabold text-[#B91C1C]">{formatMoney(order.total)}</span>
       </div>
       <div className="text-[11px] text-[#57534E]">
         {order.customerName} · {PAYMENT_METHOD_LABEL[order.payment.method]}
@@ -108,7 +102,7 @@ const RefundRow: React.FC<{ order: Order; busy: boolean; onRefund: () => void }>
         </p>
       )}
       <button className="btn-primary w-full" disabled={busy} onClick={onRefund}>
-        {busy ? 'Devolvendo...' : failed ? `Tentar de novo · ${money(order.total)}` : `Devolver ${money(order.total)}`}
+        {busy ? 'Devolvendo…' : failed ? `Tentar de novo · ${formatMoney(order.total)}` : `Devolver ${formatMoney(order.total)}`}
       </button>
     </div>
   );

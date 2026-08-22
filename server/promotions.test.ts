@@ -20,6 +20,9 @@ const {
 } = await import('./promotions');
 const { db } = await import('./db');
 
+// Única loja usada neste arquivo: a migração 005_shops garante o id 1 em todo banco novo.
+const LOJA = 1;
+
 function reset() {
   db.prepare('DELETE FROM promotions').run();
 }
@@ -95,16 +98,16 @@ test('normalizePromotion limita a porcentagem a 100 e não aceita valores negati
 
 test('createPromotion grava e listPromotions devolve', () => {
   reset();
-  const created = createPromotion(base);
-  assert.equal(listPromotions().length, 1);
-  assert.equal(getPromotion(created.id)?.name, 'Happy hour');
+  const created = createPromotion(LOJA, base);
+  assert.equal(listPromotions(LOJA).length, 1);
+  assert.equal(getPromotion(LOJA, created.id)?.name, 'Happy hour');
 });
 
 test('updatePromotion preserva o histórico e os contadores', () => {
   reset();
-  const created = createPromotion(base);
-  registerPromotionUses([{ id: created.id, name: created.name, kind: 'desconto', discount: 4 }], 40);
-  const updated = updatePromotion(created.id, { name: 'Outro nome' });
+  const created = createPromotion(LOJA, base);
+  registerPromotionUses(LOJA, [{ id: created.id, name: created.name, kind: 'desconto', discount: 4 }], 40);
+  const updated = updatePromotion(LOJA, created.id, { name: 'Outro nome' });
   assert.equal(updated.name, 'Outro nome');
   assert.equal(updated.usedCount, 1);
   assert.equal(updated.totalDiscount, 4);
@@ -113,11 +116,11 @@ test('updatePromotion preserva o histórico e os contadores', () => {
 
 test('registerPromotionUses soma pedido, desconto e faturamento', () => {
   reset();
-  const created = createPromotion(base);
+  const created = createPromotion(LOJA, base);
   const entry = { id: created.id, name: created.name, kind: 'desconto' as const, discount: 3.5 };
-  registerPromotionUses([entry], 30);
-  registerPromotionUses([entry], 20);
-  const promo = getPromotion(created.id);
+  registerPromotionUses(LOJA, [entry], 30);
+  registerPromotionUses(LOJA, [entry], 20);
+  const promo = getPromotion(LOJA, created.id);
   assert.equal(promo?.totalOrders, 2);
   assert.equal(promo?.usedCount, 2);
   assert.equal(promo?.totalDiscount, 7);
@@ -126,23 +129,23 @@ test('registerPromotionUses soma pedido, desconto e faturamento', () => {
 
 test('registerPromotionUses ignora promoção já apagada', () => {
   reset();
-  const created = createPromotion(base);
-  deletePromotion(created.id);
+  const created = createPromotion(LOJA, base);
+  deletePromotion(LOJA, created.id);
   assert.doesNotThrow(() =>
-    registerPromotionUses([{ id: created.id, name: 'x', kind: 'desconto', discount: 1 }], 10)
+    registerPromotionUses(LOJA, [{ id: created.id, name: 'x', kind: 'desconto', discount: 1 }], 10)
   );
 });
 
 test('resetPromotionUses zera o contador sem apagar o faturamento', () => {
   reset();
-  const created = createPromotion(base);
-  registerPromotionUses([{ id: created.id, name: created.name, kind: 'desconto', discount: 5 }], 50);
-  const promo = resetPromotionUses(created.id);
+  const created = createPromotion(LOJA, base);
+  registerPromotionUses(LOJA, [{ id: created.id, name: created.name, kind: 'desconto', discount: 5 }], 50);
+  const promo = resetPromotionUses(LOJA, created.id);
   assert.equal(promo.usedCount, 0);
   assert.equal(promo.totalRevenue, 50);
 });
 
 test('updatePromotion e deletePromotion falham em id inexistente', () => {
-  assert.throws(() => updatePromotion('nao-existe', {}), /não encontrada/);
-  assert.throws(() => deletePromotion('nao-existe'), /não encontrada/);
+  assert.throws(() => updatePromotion(LOJA, 'nao-existe', {}), /não encontrada/);
+  assert.throws(() => deletePromotion(LOJA, 'nao-existe'), /não encontrada/);
 });

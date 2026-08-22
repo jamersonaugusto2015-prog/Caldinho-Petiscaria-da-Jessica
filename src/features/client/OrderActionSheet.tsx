@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 
 interface OrderActionSheetProps {
-  emoji: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   confirmLabel: string;
@@ -22,7 +22,7 @@ interface OrderActionSheetProps {
  * webviews do WhatsApp/Instagram, que é onde a maioria dos clientes abre a loja.
  */
 export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
-  emoji,
+  icon,
   title,
   description,
   confirmLabel,
@@ -57,8 +57,8 @@ export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        <div className="w-14 h-14 rounded-2xl bg-[#FEF2F2] flex items-center justify-center mb-4 text-2xl">
-          {emoji}
+        <div className="w-14 h-14 rounded-2xl bg-[#FEF2F2] flex items-center justify-center mb-4 text-[#B91C1C]">
+          {icon}
         </div>
 
         <h3 className="text-xl font-extrabold text-[#1C1917] pr-8">{title}</h3>

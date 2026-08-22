@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import {
-  expandVibratePattern,
-  SAMPLE_NEW_ORDER_SPEECH,
-  type AlertContext,
-  type OrderAlert,
-} from '../shared/orderAlerts';
-import type { Order } from '../types';
+import { expandVibratePattern, SAMPLE_NEW_ORDER_SPEECH, type AlertContext, type OrderAlert } from '../../contract/order/alerts';
+import type { Order } from '../../contract/order/types';
 import { appRole, isIos } from './appShell';
 import { ensurePushSubscription, pushStatus, type PushStatus } from './pushSubscription';
 import { playNewOrderSound, playOrderMp3, playPhoneBuzzPattern, primeSpeech, resumeAudio, speakPtBr } from './sound';

@@ -200,9 +200,9 @@ export const NotFoundScreen: React.FC = () => {
        `absolute inset-0`, que se medem pela caixa de padding — então eles
        continuam sangrando até a borda e só a cena e o texto entram na área
        segura. Embaixo o bloco de botões já tem o inset dele. */
-    <div className="pt-safe px-safe fixed inset-0 flex flex-col overflow-hidden bg-[#5B1212] text-white">
-      {/* ---------- Fundo ---------- */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#7F1D1D] via-[#991B1B] to-[#4C0F0F]" />
+    <div className="pt-safe px-safe fixed inset-0 flex flex-col overflow-hidden bg-[#7F1D1D] text-white">
+      {/* ---------- Fundo: cor chapada + pontilhado + vinheta. A cena da lupa
+          é o centro da tela; o fundo só precisa dar profundidade, não show. */}
       <div
         className="absolute inset-0 opacity-[0.14]"
         style={{
@@ -210,27 +210,6 @@ export const NotFoundScreen: React.FC = () => {
           backgroundSize: '26px 26px',
         }}
       />
-      <div className="absolute left-1/2 top-1/2 h-[110vmin] w-[110vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(253,230,138,0.20)_0%,rgba(253,230,138,0)_62%)]" />
-      {/* Bolhas desfocadas flutuando */}
-      {[
-        { l: '8%', t: '14%', s: 150, c: 'rgba(217,119,6,0.30)', d: '0s' },
-        { l: '78%', t: '10%', s: 190, c: 'rgba(253,230,138,0.16)', d: '1.4s' },
-        { l: '62%', t: '68%', s: 130, c: 'rgba(217,119,6,0.24)', d: '2.6s' },
-        { l: '16%', t: '62%', s: 110, c: 'rgba(253,230,138,0.14)', d: '3.4s' },
-      ].map((b, i) => (
-        <span
-          key={i}
-          className="nf-float pointer-events-none absolute rounded-full blur-2xl"
-          style={{
-            left: b.l,
-            top: b.t,
-            width: b.s,
-            height: b.s,
-            background: b.c,
-            animationDelay: b.d,
-          }}
-        />
-      ))}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(28,25,23,0.55)_100%)]" />
 
       {/* ---------- Cena animada ---------- */}
@@ -381,21 +360,21 @@ export const NotFoundScreen: React.FC = () => {
       {/* ---------- Texto e ações ---------- */}
       <div className="relative z-10 flex flex-col items-center gap-3 px-6 pb-[max(28px,env(safe-area-inset-bottom))] pt-2 text-center">
         <h1 className="nf-reveal text-xl font-black tracking-tight sm:text-2xl">
-          Ops! Esta página não existe.
+          Esta página não existe.
         </h1>
         <p className="nf-reveal max-w-xs text-xs font-medium text-[#FEE2E2]/80 sm:max-w-sm sm:text-sm">
-          Procuramos com lupa e não achamos nada aqui. Volte para o cardápio — o caldinho está quente.
+          Não achamos esta página. Volte para o cardápio.
         </p>
         <div className="nf-reveal mt-1 flex flex-wrap items-center justify-center gap-2.5">
           <button
             onClick={() => navigate('/', { replace: true })}
-            className="rounded-full bg-[#FDE68A] px-6 py-3 text-xs font-extrabold text-[#7F1D1D] shadow-lg shadow-black/25 transition hover:bg-white active:scale-95"
+            className="rounded-full bg-[#FDE68A] px-6 py-3 text-xs font-extrabold text-[#7F1D1D] shadow-lg shadow-black/25 transition-colors hover:bg-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
           >
             Voltar ao cardápio
           </button>
           <button
             onClick={() => navigate(-1)}
-            className="rounded-full border border-white/25 bg-white/10 px-6 py-3 text-xs font-extrabold text-white transition hover:bg-white/20 active:scale-95"
+            className="rounded-full border border-white/25 bg-white/10 px-6 py-3 text-xs font-extrabold text-white transition-colors hover:bg-white/20 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
           >
             Página anterior
           </button>

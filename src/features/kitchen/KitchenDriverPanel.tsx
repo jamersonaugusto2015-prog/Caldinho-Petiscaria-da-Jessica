@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bike, Clock, Radio } from 'lucide-react';
-import type { Driver } from '../../types';
-import { locationAgeLabel, locationFreshness } from '../../shared/driverFreshness';
+import type { Driver } from '../../../contract/driver/types';
+import { locationAgeLabel, locationFreshness } from '../../../contract/driver/freshness';
 import { useKitchenDrivers } from './KitchenDriversStore';
 import { useKitchenToast } from './KitchenNotificationsStore';
 import { Heading, Panel, Empty } from './KitchenPanels';

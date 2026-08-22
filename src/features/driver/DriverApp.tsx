@@ -20,7 +20,7 @@ export const DriverApp: React.FC = () => {
         showNameField
         hint={
           expired
-            ? 'Sua sessão expirou. Faça login novamente para continuar.'
+            ? 'Sua sessão expirou. Entre de novo com seu nome e senha.'
             : 'Use seu nome e a senha criada no painel da cozinha.'
         }
       />

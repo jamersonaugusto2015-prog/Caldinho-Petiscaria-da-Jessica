@@ -1,19 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import type {
-  ChatMessage,
-  Order,
-  PaymentMethod,
-  PaymentTiming,
-  Product,
-  PublicStoreSettings,
-} from '../../types';
+import type { Product } from '../../../contract/catalog/types';
+import type { ChatMessage, Order, PaymentMethod, PaymentTiming } from '../../../contract/order/types';
+import type { PublicStoreSettings } from '../../../contract/shop/types';
 import { api } from '../../lib/api';
 import { mergeById, useLiveSession } from '../../lib/liveSession';
 import { useAlertChannel, useAlertMemory, type AlertChannel } from '../../lib/alertChannel';
-import { bannerTextFor } from '../../lib/alertBanner';
-import { orderAlertFor, type AlertUrgency } from '../../shared/orderAlerts';
-import { LOYALTY_STAMP_COST } from '../../shared/constants';
+import { bannerTextFor } from '../../ui/alertBanner';
+import { orderAlertFor, type AlertUrgency } from '../../../contract/order/alerts';
 import { useCart } from './CartStore';
 
 export interface CheckoutContextValue {
@@ -113,8 +107,6 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
       const alert = orderAlertFor('client', 'order:updated', order, memory.contextFor(order));
       memory.remember(order);
       channel.deliver(alert);
-      // O confete é comemoração, não urgência: quem manda nele é a tabela.
-      if (alert?.celebrate) confetti({ particleCount: 100, spread: 90, origin: { y: 0.5 } });
     },
     [channel, memory]
   );
@@ -177,7 +169,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
       setLoyaltyPoints(result.loyaltyPoints);
       clearCart();
       confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-      triggerToast(`Pedido ${result.order.id} enviado com sucesso! 🍲🚀`);
+      triggerToast(`Pedido ${result.order.id} enviado.`);
       return { order: result.order };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao enviar pedido.';
@@ -190,7 +182,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
     try {
       const updated = await api.post<Order>(`/orders/${orderId}/rating`, { rating, comment, customerId });
       setOrders((previous) => previous.map((order) => (order.id === orderId ? updated : order)));
-      triggerToast('Obrigado pela sua avaliação! ⭐');
+      triggerToast('Avaliação enviada. Obrigado.');
     } catch {
       triggerToast('Não foi possível registrar a avaliação. Tente novamente.');
     }
@@ -226,7 +218,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
     try {
       const updated = await api.post<Order>(`/orders/${orderId}/complaint`, { customerId, text });
       setOrders((previous) => previous.map((order) => (order.id === orderId ? updated : order)));
-      triggerToast('Reclamação registrada. A loja responde pelo chat do pedido. 💬');
+      triggerToast('Reclamação registrada. A loja responde pelo chat do pedido.');
       return true;
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : 'Não foi possível registrar a reclamação.');
@@ -235,14 +227,15 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
   };
 
   const redeemLoyaltyReward = async (productId: string) => {
-    if (loyaltyPoints < LOYALTY_STAMP_COST) {
-      return { success: false, message: `Complete ${LOYALTY_STAMP_COST} pedidos entregues para ganhar seu caldinho grátis.` };
+    const custoSelos = settings.loyaltyStampCost || 10;
+    if (loyaltyPoints < custoSelos) {
+      return { success: false, message: `Complete ${custoSelos} pedidos entregues para ganhar seu item grátis.` };
     }
     if (!settings.isOpen) {
       setClosedModalOpen(true);
       return {
         success: false,
-        message: 'Loja fechada no momento. Volte quando reabrirmos para resgatar seu caldinho grátis.',
+        message: 'Loja fechada no momento. Volte quando reabrirmos para resgatar seu item grátis.',
       };
     }
     const product = products.find((item) => item.id === productId);
@@ -255,7 +248,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
       const added = addToCart({
         product,
         selectedExtras: [],
-        observation: 'GRÁTIS - Resgate Fidelidade! 🎉',
+        observation: 'Item grátis do cartão fidelidade',
         quantity: 1,
         isFree: true,
         freeToken: result.token,
@@ -266,8 +259,7 @@ export const CheckoutProvider: React.FC<CheckoutProviderProps> = ({
           message: 'A loja fechou durante o resgate e o item não entrou no carrinho. Fale com a loja pelo WhatsApp para não perder seu selo.',
         };
       }
-      confetti({ particleCount: 120, spread: 100, origin: { y: 0.6 } });
-      return { success: true, message: `Parabéns! 1x ${product.name} grátis no carrinho! 🎉` };
+      return { success: true, message: `${product.name} grátis adicionado ao carrinho.` };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Não foi possível resgatar.' };
     }

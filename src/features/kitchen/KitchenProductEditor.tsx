@@ -14,7 +14,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { Category, ComboSlot, ExtraOption, Product } from '../../types';
+import type { Category, ComboSlot, ExtraOption, Product } from '../../../contract/catalog/types';
 import { ACCEPTED_IMAGE_TYPES, validateImageFile } from '../../lib/image';
 import { useImageFramer } from '../../components/common/ImageFramer';
 import { useKitchenUpload } from './useKitchenUpload';
@@ -255,7 +255,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                    {uploading ? 'Enviando...' : 'Escolher do computador'}
+                    {uploading ? 'Enviando…' : 'Escolher do computador'}
                   </button>
                   <input
                     ref={fileInputRef}
@@ -273,12 +273,12 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
                 <label className="block">
                   <span className="text-[11px] font-bold text-[#57534E] flex items-center gap-1 mb-1">
                     <Link2 className="w-3 h-3" />
-                    ...ou cole o endereço de uma imagem
+                    …ou cole o endereço de uma imagem
                   </span>
                   <div className="flex gap-2">
                     <input
                       className="input"
-                      placeholder="https://..."
+                      placeholder="https://…"
                       value={form.image}
                       onChange={(event) => patch({ image: event.target.value })}
                     />
@@ -701,7 +701,7 @@ export const KitchenProductEditor: React.FC<Props> = ({ value, categories, onClo
             </button>
             <button className="btn-primary flex-1 py-3" disabled={saving || uploading}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {saving ? 'Salvando...' : original ? 'Salvar alterações' : 'Criar produto'}
+              {saving ? 'Salvando…' : original ? 'Salvar alterações' : 'Criar produto'}
             </button>
           </div>
         </footer>

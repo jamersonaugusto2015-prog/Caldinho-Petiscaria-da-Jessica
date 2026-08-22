@@ -1,3 +1,5 @@
+// O `.env` entra ANTES de qualquer outro import: `./config` é avaliado no
+// momento em que é importado, e ele precisa encontrar o ambiente já montado.
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
@@ -5,14 +7,32 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
+import { config } from './config';
+import type { ShopId } from '../contract/shop/types';
+import {
+  customerRoom,
+  driverRoom,
+  driversRoom,
+  kitchenRoom,
+  shopRoom,
+} from '../contract/shop/rooms';
+import { resolveShop, resolveTenant } from './http/middleware/tenant';
+import { platformRouter } from './http/routers/platform';
+import { requestLogger } from './http/middleware/logging';
+import {
+  driverLocationDeps,
+  driverPresenceDeps,
+  orderLifecycleDeps,
+} from './domain/deps';
 import { createRoutes, emitOrder, errorHandler } from './routes';
-import { db, getRoleToken, getSettings } from './db';
+import { LOJA_PADRAO, db, getMetaValue } from './db';
+import { getRoleToken, setSecret } from './infra/secrets';
+import { listShops, onShopsChanged, shopById } from './infra/shops';
 import { hashPasswordSync } from './auth';
 import { runBackup } from './backup';
+import { legacyUploadFallback, shopUploadsGuard } from './http/routers/uploads';
 import { UPLOADS_DIR } from './paths';
-import { listOrdersByStatus, loadDriver, saveDriver, saveOrder } from './orderStore';
 import { applyOrderEvent } from './orderLifecycle';
-import { earnStamp } from './loyalty';
 import { driverFromToken } from './driverSession';
 import { recordDriverLocation } from './driverLocation';
 import { createDriverPresence } from './driverPresence';
@@ -20,10 +40,11 @@ import { createDriverPresence } from './driverPresence';
 // Redefinição de emergência do PIN da cozinha via variável de ambiente:
 // defina KITCHEN_PIN_RESET=<novo pin> no painel do Render, faça deploy,
 // entre com o novo PIN e depois REMOVA a variável (senão ela redefine a cada boot).
-if (process.env.KITCHEN_PIN_RESET && process.env.KITCHEN_PIN_RESET.length >= 4) {
-  db.prepare(
-    "INSERT INTO meta (key, value) VALUES ('kitchen_pin_hash', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(hashPasswordSync(process.env.KITCHEN_PIN_RESET));
+// ⚠ Isto redefine o PIN da loja 1 e SÓ dela: uma variável de ambiente não sabe
+// endereçar uma loja entre várias. Na Fase 9 este bloco sai daqui e vira
+// `POST /api/platform/shops/:id/reset-pin`, no painel super-admin.
+if (config.KITCHEN_PIN_RESET) {
+  setSecret(LOJA_PADRAO, 'kitchen_pin_hash', hashPasswordSync(config.KITCHEN_PIN_RESET));
   console.log('🔑 PIN da cozinha redefinido via KITCHEN_PIN_RESET');
 }
 
@@ -32,7 +53,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const app = express();
+
+// Atrás do proxy do Render (e de qualquer CDN), o IP do cliente chega em
+// `X-Forwarded-For`. Sem isto o Express reporta o IP do proxy em `req.ip`:
+// todo mundo vira o MESMO IP, e o rate limit de login e os throttles passam a
+// contar o tráfego do prédio inteiro como se fosse uma pessoa só. `1` = confia
+// em exatamente um salto de proxy (o do Render), não na cadeia inteira.
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '25mb' }));
+
+/**
+ * O log vem antes de tudo: uma requisição que morre no middleware de loja (404
+ * de loja inexistente) é justamente a que precisa aparecer.
+ */
+app.use(requestLogger);
 
 // Headers de segurança básicos
 app.use((_req, res, next) => {
@@ -43,13 +78,87 @@ app.use((_req, res, next) => {
 });
 
 const server = http.createServer(app);
-const corsOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true;
+const corsOrigins = config.corsOrigins;
 const io = new Server(server, {
   cors: { origin: corsOrigins, methods: ['GET', 'POST', 'PATCH', 'DELETE'] },
 });
 
-app.use('/api', createRoutes(io));
-app.use('/api/uploads', express.static(UPLOADS_DIR));
+/**
+ * A loja entra AQUI, antes de qualquer rota.
+ *
+ * Toda rota de `/api` depende de `req.shop`, e `currentShop` lança se ele não
+ * estiver lá — de propósito. Uma rota que resolvesse a loja sozinha, ou que
+ * caísse na loja 1 em silêncio, é exatamente como uma loja passa a servir dados
+ * da outra sem ninguém perceber.
+ */
+/**
+ * Sem `SHOP_BASE_DOMAIN`, a resolução por `Host` cai numa heurística ambígua:
+ * `dominio.com.br` tem os mesmos três rótulos de `loja.dominio.com`, e o
+ * domínio raiz seria lido como uma loja chamada "dominio". Em produção isso é
+ * um erro de configuração que precisa aparecer no boot, não num 404 estranho
+ * semanas depois.
+ */
+if (config.isProduction && !config.SHOP_BASE_DOMAIN) {
+  console.warn(
+    '⚠️  SHOP_BASE_DOMAIN não configurado: a loja será resolvida por heurística de subdomínio, que é ambígua em domínios .com.br. Defina SHOP_BASE_DOMAIN=seudominio.com.br.'
+  );
+}
+
+/**
+ * `NODE_ENV` ausente liga, em silêncio, os atalhos de desenvolvimento — o
+ * header `x-shop-slug` passa a escolher a loja. Num deploy de verdade isso
+ * não pode passar despercebido.
+ */
+if (!process.env.NODE_ENV) {
+  console.warn(
+    '⚠️  NODE_ENV não definido: rodando em modo desenvolvimento (o header x-shop-slug escolhe a loja). Em produção, defina NODE_ENV=production.'
+  );
+}
+
+/**
+ * O painel da plataforma vem ANTES do `resolveTenant`, e é isso que o mantém
+ * fora de qualquer loja.
+ *
+ * Passar por ele significaria que `/api/platform/*` só responderia num
+ * subdomínio de loja — e o painel que CRIA lojas moraria dentro de uma delas.
+ * Ele atende no domínio raiz, onde `resolveTenant` responde "plataforma".
+ */
+app.use('/api/platform', platformRouter());
+
+/**
+ * `/api/health` fica ANTES do `resolveTenant`: o Render sonda essa rota com o
+ * Host do serviço (`*.onrender.com`), que não resolve loja nenhuma — atrás do
+ * `resolveTenant` a sonda levava 404 e o deploy inteiro era marcado como
+ * doente. Toca o banco de propósito: um "ok" tem que significar disco lido.
+ */
+app.get('/api/health', (_req, res) => {
+  try {
+    // `SELECT count(*) FROM shops` LÊ uma página do arquivo — `SELECT 1` era
+    // respondido sem tocar no disco, então dizia "ok" com o volume desmontado
+    // ou o arquivo corrompido, que é justamente o que o health precisa pegar.
+    db.prepare('SELECT count(*) FROM shops').get();
+  } catch (err) {
+    console.error('[health] o banco não respondeu:', err);
+    return res.status(503).json({ ok: false, error: 'Banco de dados indisponível.' });
+  }
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
+app.use('/api', resolveTenant, createRoutes(io));
+// `legacyUploadFallback` reescreve as URLs sem loja gravadas antes da Fase 10
+// para a pasta da loja padrão (ver server/http/routers/uploads.ts).
+app.use('/api/uploads', legacyUploadFallback, shopUploadsGuard, express.static(UPLOADS_DIR));
+
+/**
+ * Caminho de `/api` que nenhum router atendeu para aqui.
+ *
+ * Sem esta linha, ele caía no `app.get('*')` lá embaixo e recebia o HTML do
+ * SPA — com status 200. Quem chamou esperava JSON: o `fetch` do app quebra num
+ * "Unexpected token '<'", que não diz nada sobre o endereço estar errado.
+ */
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Endereço não encontrado nesta API.' });
+});
 
 // Em produção, serve o build do frontend.
 //
@@ -102,20 +211,93 @@ app.use(errorHandler);
 // A política de presença (janela de graça, multi-aba, volta do bolso) mora em
 // `driverPresence`; aqui ficam só os fios: quem conta os sockets e quem avisa
 // a cozinha.
-const driverPresence = createDriverPresence({
-  resolveDriver: driverFromToken,
-  loadDriver,
-  saveDriver,
-  countSessions: async (driverId) => (await io.in('driver:' + driverId).fetchSockets()).length,
-  onPresenceChanged: () => io.to('kitchen').emit('drivers:updated'),
+/**
+ * Uma presença POR LOJA. Ela guarda estado (temporizadores da janela de graça,
+ * contagem de abas), e uma instância só serviria a loja errada: o motoboy da
+ * loja B sairia do turno porque um da loja A fechou a aba.
+ *
+ * O mapa é preenchido sob demanda — a maior parte das lojas não tem motoboy
+ * conectado na maior parte do tempo.
+ */
+const presencaPorLoja = new Map<ShopId, ReturnType<typeof createDriverPresence>>();
+
+function presencaDe(shopId: ShopId) {
+  let presenca = presencaPorLoja.get(shopId);
+  if (!presenca) {
+    presenca = createDriverPresence(
+      driverPresenceDeps(shopId, {
+        resolveDriver: (token) => driverFromToken(shopId, token),
+        countSessions: async (driverId) =>
+          (await io.in(driverRoom(shopId, driverId)).fetchSockets()).length,
+        onPresenceChanged: () => io.to(kitchenRoom(shopId)).emit('drivers:updated'),
+      })
+    );
+    presencaPorLoja.set(shopId, presenca);
+  }
+  return presenca;
+}
+
+/**
+ * Desativou a loja no painel? O HTTP corta na requisição seguinte, mas um
+ * socket já conectado viveria para sempre recebendo pedido, chat e presença.
+ * Toda escrita em `shops` invalida o cache — e este ouvinte derruba os
+ * sockets das lojas que deixaram de estar ativas.
+ */
+onShopsChanged(() => {
+  void io.fetchSockets().then((sockets) => {
+    for (const conectado of sockets) {
+      const daLoja = conectado.data.shopId as ShopId | undefined;
+      if (daLoja != null && !shopById(daLoja)?.active) conectado.disconnect(true);
+    }
+  });
 });
 
 io.on('connection', (socket) => {
+  /**
+   * A LOJA DO SOCKET SAI DO HANDSHAKE, nunca do payload.
+   *
+   * É a mesma regra do HTTP, e pelo mesmo motivo: um `shopId` que o cliente
+   * informa é a chave da sala da cozinha de qualquer loja — cada pedido novo,
+   * com nome, telefone e endereço, entregue a quem pedisse.
+   */
+  const resolvida = resolveShop({
+    host: socket.handshake.headers.host,
+    // Em dev o slug pode chegar pelo header (transporte polling) OU pela query
+    // (WebSocket, onde o header não passa). Em produção o `resolveShop` ignora
+    // os dois: a loja sai do `Host`.
+    headerSlug:
+      (socket.handshake.headers['x-shop-slug'] as string | undefined) ||
+      (typeof socket.handshake.query.loja === 'string' ? socket.handshake.query.loja : undefined),
+  });
+  if (!resolvida || resolvida === 'plataforma' || !resolvida.active) {
+    // Sem loja não há sala nenhuma para entrar. Derrubar é mais honesto do que
+    // deixar um socket conectado que nunca receberia evento algum.
+    socket.disconnect(true);
+    return;
+  }
+  const shopId = resolvida.id;
+  socket.data.shopId = shopId;
+
+  // Sala de todo mundo desta loja: é por ela que passam os avisos de catálogo,
+  // cupom e configuração, que antes iam num `io.emit` para o servidor inteiro.
+  socket.join(shopRoom(shopId));
+
   socket.on(
     'join',
     (payload: { role?: string; token?: string; customerId?: string; online?: boolean }) => {
       const { role, token, customerId, online } = payload ?? {};
-      if (role === 'kitchen' && token === getRoleToken('kitchen')) socket.join('kitchen');
+      // Desativar a loja no painel vale para socket vivo também: o handshake
+      // aconteceu horas atrás, e este é o primeiro lugar onde dá para recusar.
+      if (!shopById(shopId)?.active) {
+        socket.disconnect(true);
+        return;
+      }
+      // O `token &&` recusa o vazio: `getRoleToken` devolve '' quando a loja
+      // não tem token gravado, e `'' === ''` abriria a sala da cozinha para
+      // qualquer socket anônimo dessa loja.
+      if (role === 'kitchen' && token && token === getRoleToken(shopId, 'kitchen')) {
+        socket.join(kitchenRoom(shopId));
+      }
       if (role === 'driver') {
         // A identidade sai do token, nunca do payload: o `driverId` enviado pelo
         // app punha qualquer motoboy dentro da sala privada de outro, que é por
@@ -125,41 +307,55 @@ io.on('connection', (socket) => {
         // turno", e é o que traz o motoboy de volta ao quadro da cozinha depois
         // de a tela ficar bloqueada tempo demais — sem ele precisar tocar em
         // nada. Quem ele é continua saindo da credencial.
-        const driver = driverPresence.join(typeof token === 'string' ? token : '', online);
+        const driver = presencaDe(shopId).join(typeof token === 'string' ? token : '', online);
         if (driver) {
           socket.data.driverId = driver.id;
-          socket.join('drivers');
+          socket.join(driversRoom(shopId));
           // Sala própria: só ela recebe os dados do cliente da corrida aceita.
-          socket.join('driver:' + driver.id);
+          socket.join(driverRoom(shopId, driver.id));
         }
       }
       if (typeof customerId === 'string' && customerId.trim() && customerId !== 'anon') {
-        socket.join('customer:' + customerId.trim().slice(0, 80));
+        socket.join(customerRoom(shopId, customerId.trim().slice(0, 80)));
       }
     }
   );
+
+  // Largar as salas de papel sem derrubar a conexão: é o que um logout no
+  // mesmo aparelho precisa, para o próximo usuário não herdar as salas do
+  // anterior. A sala da loja (catálogo, cupom, configuração) fica.
+  socket.on('leave', () => {
+    for (const sala of socket.rooms) {
+      if (sala !== socket.id && sala !== shopRoom(shopId)) socket.leave(sala);
+    }
+    socket.data.driverId = undefined;
+  });
 
   socket.on('driver:location', (payload: { lat?: number; lng?: number }) => {
     const driverId = socket.data.driverId as string | undefined;
     if (!driverId) return;
     const { lat, lng } = payload ?? {};
 
-    const moved = recordDriverLocation(driverId, lat, lng, {
-      loadDriver,
-      saveDriver,
-      listOrdersByStatus,
-      applyMove: (order, id, pointLat, pointLng, at) =>
+    const moved = recordDriverLocation(
+      driverId,
+      lat,
+      lng,
+      // A loja sai do socket, que a resolveu pelo `Host` do handshake. Sem
+      // isto, um ponto de GPS de um motoboy da loja A varreria as corridas da
+      // loja B procurando qual atualizar.
+      driverLocationDeps(shopId, (order, id, pointLat, pointLng, at) =>
         applyOrderEvent(
           order,
           { type: 'move', driverId: id, lat: pointLat, lng: pointLng, at },
-          { getSettings, getDriver: loadDriver, saveOrder, earnStamp }
-        ).order,
-    });
+          orderLifecycleDeps(shopId)
+        ).order
+      )
+    );
 
-    for (const order of moved) emitOrder(io, 'order:updated', order);
+    for (const order of moved) emitOrder(io, shopId, 'order:updated', order);
     // O pino do motoboy no mapa da cozinha não vem do pedido, então precisa
     // deste aviso — mas só quando alguma corrida de fato andou.
-    if (moved.length) io.to('kitchen').emit('drivers:updated');
+    if (moved.length) io.to(kitchenRoom(shopId)).emit('drivers:updated');
   });
 
   socket.on('disconnect', () => {
@@ -167,11 +363,11 @@ io.on('connection', (socket) => {
     if (!driverId) return;
     // Cair não é ir embora: `driverPresence` agenda o desligamento e a volta do
     // motoboy dentro da janela cancela o agendamento.
-    void driverPresence.disconnect(driverId);
+    void presencaDe(shopId).disconnect(driverId);
   });
 });
 
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = config.PORT;
 server.listen(PORT, () => {
   console.log(`🍲 Caldinho Express API rodando em http://localhost:${PORT}`);
   console.log('PIN da cozinha padrão: 1234 (alterável em Configurações)');
@@ -180,20 +376,33 @@ server.listen(PORT, () => {
 // ---------- Scheduler de backup automático (Google Drive) ----------
 const BACKUP_CHECK_MS = 30 * 60 * 1000; // verifica a cada 30 min
 setInterval(async () => {
-  const meta = (key: string, fallback = '') =>
-    (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined)?.value ?? fallback;
-
-  if (meta('backup_enabled', 'true') !== 'true') return;
-  const freqDays = Number(meta('backup_frequency_days', '1')) || 1;
-  const last = meta('backup_last_run');
-  if (last) {
-    const hoursSince = (Date.now() - new Date(last).getTime()) / 3600000;
-    if (hoursSince < freqDays * 24) return;
+  // Itera as lojas ATIVAS, cada uma com a sua frequência e a sua credencial do
+  // Drive. Sequencial de propósito, não `Promise.all`: são poucas lojas, e
+  // rodar uma de cada vez evita que várias fiquem tirando snapshot do mesmo
+  // SQLite ao mesmo tempo só para disputar I/O. O try/catch por loja é o que
+  // garante que uma falhando (credencial vencida, pasta do Drive apagada) não
+  // impede a próxima de rodar.
+  for (const shop of listShops()) {
+    if (!shop.active) continue;
+    try {
+      const meta = (key: string, fallback = '') => getMetaValue(shop.id, key, fallback);
+      if (meta('backup_enabled', 'true') !== 'true') continue;
+      const freqDays = Number(meta('backup_frequency_days', '1')) || 1;
+      const last = meta('backup_last_run');
+      if (last) {
+        const hoursSince = (Date.now() - new Date(last).getTime()) / 3600000;
+        if (hoursSince < freqDays * 24) continue;
+      }
+      const result = await runBackup(shop.id);
+      console.log(
+        result.ok
+          ? `[backup] ${shop.slug}: ok (${meta('backup_last_file')})`
+          : `[backup] ${shop.slug}: erro: ${result.error}`
+      );
+    } catch (err) {
+      console.error(`[backup] ${shop.slug}: falha inesperada no scheduler`, err);
+    }
   }
-  const result = await runBackup();
-  console.log(result.ok ? `[backup] ok: ${meta('backup_last_file')}` : `[backup] erro: ${result.error}`);
 }, BACKUP_CHECK_MS);
 
 // ---------- Ciclo de vida do processo ----------

@@ -61,7 +61,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
         className="absolute top-[calc(env(safe-area-inset-top,0px)+1.25rem)] left-[calc(env(safe-area-inset-left,0px)+1.25rem)] flex items-center gap-1.5 text-xs font-bold text-[#57534E] hover:text-[#B91C1C] transition"
       >
         <ArrowLeft className="w-4 h-4" />
-        <span>Voltar ao site do Cliente</span>
+        <span>Voltar ao cardápio</span>
       </Link>
 
       <div className="bg-white w-full max-w-sm rounded-3xl border border-[#E7E5E4] shadow-xl p-8 text-center">
@@ -71,7 +71,9 @@ export const LoginGate: React.FC<LoginGateProps> = ({
 
         <h1 className="text-xl font-extrabold text-[#1C1917]">{title}</h1>
         <p className="text-xs text-[#57534E] mt-1.5 mb-6">
-          Área restrita. Digite seu nome e senha de acesso para continuar.
+          {showNameField
+            ? 'Digite seu nome e a senha de acesso.'
+            : 'Digite a senha de acesso.'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -133,12 +135,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
             ) : (
               <ShieldCheck className="w-4 h-4" />
             )}
-            <span>{loading ? 'Validando...' : 'Entrar'}</span>
+            <span>{loading ? 'Validando…' : 'Entrar'}</span>
           </button>
         </form>
 
         <p className="text-[10px] text-[#A8A29E] mt-5">
-          {hint || 'Efetue login com as credenciais cadastradas no painel da cozinha.'}
+          {hint || 'Use a senha cadastrada no painel da cozinha.'}
         </p>
       </div>
     </div>
